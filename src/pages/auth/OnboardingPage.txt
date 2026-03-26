@@ -1,0 +1,807 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import {
+    Box,
+    Typography,
+    Button,
+    Paper,
+    Stack,
+    LinearProgress,
+    Fade,
+    Card,
+    CardActionArea,
+    Checkbox,
+    CircularProgress,
+} from '@mui/material';
+import BusinessRounded from '@mui/icons-material/BusinessRounded';
+import CreateNewFolderRounded from '@mui/icons-material/CreateNewFolderRounded';
+import ArrowForwardRounded from '@mui/icons-material/ArrowForwardRounded';
+import SkipNextRounded from '@mui/icons-material/SkipNextRounded';
+import { CompanyWizard } from '../../components/CompanyWizard';
+import { ProjectWizard, type ProjectFormData } from '../../components/ProjectWizard';
+import { ONBOARDING_USER_ROLE_OPTIONS } from '../../constants/onboarding';
+
+type OnboardingStatus = 'not_started' | 'in_progress' | 'completed' | 'skipped';
+
+type OnboardingPayload = {
+    onboardingSelectedRoles: string[];
+    onboardingStep: number;
+    onboardingStatus: OnboardingStatus;
+    onboardingCompanyCreated: boolean;
+    onboardingProjectCreated: boolean;
+    onboardingDraft?: Record<string, unknown>;
+};
+
+export type WizardCloseResult =
+    | { completed: false }
+    | { completed: true; companyId?: string | null; projectId?: string | null };
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
+
+const steps = ['Your Role', 'Company Setup', 'Create Project'];
+
+export function OnboardingPage() {
+    const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+
+    const onboardingEmail = useMemo(() => {
+        const fromQuery = searchParams.get('email')?.trim().toLowerCase();
+        const fromSession = sessionStorage.getItem('tce_onboarding_email')?.trim().toLowerCase();
+        return fromQuery || fromSession || 'anonymous';
+    }, [searchParams]);
+
+    const storageKey = useMemo(() => {
+        return `tce_onboarding_v1:${onboardingEmail}`;
+    }, [onboardingEmail]);
+
+    const isFreshSignup = useMemo(() => {
+        return (
+            searchParams.get('fresh') === '1' ||
+            sessionStorage.getItem('tce_onboarding_fresh') === '1'
+        );
+    }, [searchParams]);
+
+    const hasLoadedInitialStateRef = useRef(false);
+    const saveTimeoutRef = useRef<number | null>(null);
+
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+
+    const [activeStep, setActiveStep] = useState(0);
+    const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+    const [isCompanyWizardOpen, setIsCompanyWizardOpen] = useState(false);
+    const [isProjectWizardOpen, setIsProjectWizardOpen] = useState(false);
+    const [companyCreated, setCompanyCreated] = useState(false);
+    const [projectCreated, setProjectCreated] = useState(false);
+    const [onboardingDraft, setOnboardingDraft] = useState<Record<string, unknown>>({});
+    const [lastCreatedCompanyId, setLastCreatedCompanyId] = useState<string | null>(null);
+
+    const isJustExploring = selectedRoles.includes('exploring');
+    const isProjectDeveloper = selectedRoles.includes('develop');
+
+    const emptyOnboardingState: OnboardingPayload = {
+        onboardingSelectedRoles: [],
+        onboardingStep: 0,
+        onboardingStatus: 'not_started',
+        onboardingCompanyCreated: false,
+        onboardingProjectCreated: false,
+        onboardingDraft: {},
+    };
+
+    const getVisibleSteps = () => {
+        if (isJustExploring) return ['Your Role'];
+        if (!isProjectDeveloper) return ['Your Role', 'Company Setup'];
+        return steps;
+    };
+
+    const getProgressValue = () => {
+        const visibleSteps = getVisibleSteps();
+        const current = Math.min(activeStep, visibleSteps.length - 1);
+        return ((current + 1) / visibleSteps.length) * 100;
+    };
+
+    const buildPayload = (
+        overrides?: Partial<OnboardingPayload>
+    ): OnboardingPayload => ({
+        onboardingSelectedRoles: selectedRoles,
+        onboardingStep: activeStep,
+        onboardingStatus: 'in_progress',
+        onboardingCompanyCreated: companyCreated,
+        onboardingProjectCreated: projectCreated,
+        onboardingDraft,
+        ...overrides,
+    });
+
+    const persistOnboarding = async (payload: OnboardingPayload) => {
+        setSaving(true);
+        try {
+            localStorage.setItem(storageKey, JSON.stringify(payload));
+
+            const res = await fetch(`${API_BASE_URL}/user-profiles/me/onboarding`, {
+                method: 'PATCH',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(payload),
+            });
+
+            if (!res.ok) {
+                const text = await res.text().catch(() => '');
+                throw new Error(text || `Failed to persist onboarding (${res.status})`);
+            }
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const scheduleSave = (payload: OnboardingPayload) => {
+        if (saveTimeoutRef.current) {
+            window.clearTimeout(saveTimeoutRef.current);
+        }
+
+        saveTimeoutRef.current = window.setTimeout(() => {
+            void persistOnboarding(payload);
+        }, 400);
+    };
+
+    const toggleRole = (roleId: string) => {
+        setSelectedRoles((prev) => {
+            if (prev.includes(roleId)) {
+                return prev.filter((r) => r !== roleId);
+            }
+
+            if (roleId === 'exploring') {
+                return ['exploring'];
+            }
+
+            return [...prev.filter((r) => r !== 'exploring'), roleId];
+        });
+    };
+
+    const handleContinueFromRoles = async () => {
+        if (selectedRoles.length === 0) return;
+
+        if (isJustExploring) {
+            await persistOnboarding(
+                buildPayload({
+                    onboardingStep: 0,
+                    onboardingStatus: 'completed',
+                })
+            );
+            navigate('/dashboard');
+            return;
+        }
+
+        const nextStep = 1;
+        setActiveStep(nextStep);
+
+        scheduleSave(
+            buildPayload({
+                onboardingStep: nextStep,
+            })
+        );
+    };
+
+    const handleSkipCurrentStep = async () => {
+        // Step 0 (role selection) is mandatory for signup onboarding.
+        if (activeStep === 0) {
+            return;
+        }
+
+        if (activeStep === 1) {
+            await persistOnboarding(
+                buildPayload({
+                    onboardingStatus: 'completed',
+                    onboardingStep: 1,
+                })
+            );
+            localStorage.removeItem(storageKey);
+            navigate('/dashboard');
+            return;
+        }
+
+        await persistOnboarding(
+            buildPayload({
+                onboardingStatus: 'completed',
+                onboardingStep: 2,
+            })
+        );
+        localStorage.removeItem(storageKey);
+        navigate('/dashboard');
+    };
+
+    const handleSkipAll = async () => {
+        await persistOnboarding(
+            buildPayload({
+                onboardingStatus: 'skipped',
+            })
+        );
+        navigate('/dashboard');
+    };
+
+    const handleCompanyDraftChange = useCallback((draft: Record<string, unknown>) => {
+        setOnboardingDraft((prev) => {
+            const prevCompanyDraft =
+                prev.companyWizard && typeof prev.companyWizard === 'object'
+                    ? (prev.companyWizard as Record<string, unknown>)
+                    : undefined;
+
+            if (JSON.stringify(prevCompanyDraft) === JSON.stringify(draft)) {
+                return prev;
+            }
+
+            return {
+                ...prev,
+                companyWizard: draft,
+            };
+        });
+    }, []);
+
+    const handleCompanyWizardClose = async (result?: WizardCloseResult) => {
+        setIsCompanyWizardOpen(false);
+
+        if (!result?.completed) {
+            scheduleSave(buildPayload());
+            return;
+        }
+
+        setLastCreatedCompanyId(result.companyId ?? null);
+
+        const nextDraft = {
+            ...onboardingDraft,
+            companyWizard: {},
+        };
+        setOnboardingDraft(nextDraft);
+        setCompanyCreated(true);
+
+        if (isProjectDeveloper) {
+            const nextStep = 2;
+            setActiveStep(nextStep);
+
+            await persistOnboarding(
+                buildPayload({
+                    onboardingCompanyCreated: true,
+                    onboardingStep: nextStep,
+                    onboardingDraft: nextDraft,
+                })
+            );
+        } else {
+            await persistOnboarding(
+                buildPayload({
+                    onboardingCompanyCreated: true,
+                    onboardingStatus: 'completed',
+                    onboardingDraft: nextDraft,
+                })
+            );
+            navigate('/dashboard');
+        }
+    };
+
+    const handleProjectWizardClose = async (result?: WizardCloseResult) => {
+        setIsProjectWizardOpen(false);
+
+        if (!result?.completed) {
+            scheduleSave(buildPayload());
+            return;
+        }
+
+        const nextDraft = {
+            ...onboardingDraft,
+            projectWizard: {},
+        };
+
+        setOnboardingDraft(nextDraft);
+        setProjectCreated(true);
+
+        await persistOnboarding(
+            buildPayload({
+                onboardingProjectCreated: true,
+                onboardingStatus: 'completed',
+                onboardingDraft: nextDraft,
+            })
+        );
+
+        navigate('/dashboard');
+    };
+
+    useEffect(() => {
+        let mounted = true;
+
+        const load = async () => {
+            const readLocalState = (): Partial<OnboardingPayload> | undefined => {
+                const raw = localStorage.getItem(storageKey);
+                if (!raw) return undefined;
+
+                try {
+                    return JSON.parse(raw) as Partial<OnboardingPayload>;
+                } catch {
+                    return undefined;
+                }
+            };
+
+            const applyState = (data?: Partial<OnboardingPayload>) => {
+                if (!data) return false;
+
+                setSelectedRoles(
+                    Array.isArray(data.onboardingSelectedRoles)
+                        ? data.onboardingSelectedRoles
+                        : []
+                );
+                setActiveStep(
+                    typeof data.onboardingStep === 'number'
+                        ? data.onboardingStep
+                        : 0
+                );
+                setCompanyCreated(Boolean(data.onboardingCompanyCreated));
+                setProjectCreated(Boolean(data.onboardingProjectCreated));
+                setOnboardingDraft(
+                    data.onboardingDraft && typeof data.onboardingDraft === 'object'
+                        ? data.onboardingDraft
+                        : {}
+                );
+                return true;
+            };
+
+            const pickBetterState = (
+                serverData?: Partial<OnboardingPayload>,
+                localData?: Partial<OnboardingPayload>
+            ): Partial<OnboardingPayload> | undefined => {
+                if (!serverData && !localData) return undefined;
+                if (!serverData) return localData;
+                if (!localData) return serverData;
+
+                const serverStep =
+                    typeof serverData.onboardingStep === 'number'
+                        ? serverData.onboardingStep
+                        : 0;
+
+                const localStep =
+                    typeof localData.onboardingStep === 'number'
+                        ? localData.onboardingStep
+                        : 0;
+
+                const serverScore =
+                    serverStep +
+                    (serverData.onboardingCompanyCreated ? 10 : 0) +
+                    (serverData.onboardingProjectCreated ? 20 : 0);
+
+                const localScore =
+                    localStep +
+                    (localData.onboardingCompanyCreated ? 10 : 0) +
+                    (localData.onboardingProjectCreated ? 20 : 0);
+
+                return localScore > serverScore ? localData : serverData;
+            };
+
+            const hasMeaningfulProgress = (data?: Partial<OnboardingPayload>) => {
+                if (!data) return false;
+
+                return (
+                    (Array.isArray(data.onboardingSelectedRoles) &&
+                        data.onboardingSelectedRoles.length > 0) ||
+                    Boolean(data.onboardingCompanyCreated) ||
+                    Boolean(data.onboardingProjectCreated) ||
+                    (typeof data.onboardingStep === 'number' && data.onboardingStep > 0)
+                );
+            };
+
+            try {
+                const localData = isFreshSignup ? undefined : readLocalState();
+
+                const res = await fetch(`${API_BASE_URL}/user-profiles/me/onboarding`, {
+                    method: 'GET',
+                    credentials: 'include',
+                });
+
+                let serverData: Partial<OnboardingPayload> | undefined;
+
+                if (res.ok) {
+                    const json = await res.json();
+                    serverData = json?.data as Partial<OnboardingPayload> | undefined;
+                }
+
+                if (!mounted) return;
+
+                if (isFreshSignup) {
+                    localStorage.removeItem(storageKey);
+                    sessionStorage.removeItem('tce_onboarding_fresh');
+
+                    if (hasMeaningfulProgress(serverData)) {
+                        applyState(serverData);
+                        return;
+                    }
+
+                    applyState(emptyOnboardingState);
+                    return;
+                }
+
+                const chosen = pickBetterState(serverData, localData);
+
+                if (
+                    chosen?.onboardingStatus === 'completed' ||
+                    chosen?.onboardingStatus === 'skipped'
+                ) {
+                    navigate('/dashboard', { replace: true });
+                    return;
+                }
+
+                if (applyState(chosen)) return;
+
+                applyState(emptyOnboardingState);
+            } catch {
+                if (!mounted) return;
+
+                if (isFreshSignup) {
+                    localStorage.removeItem(storageKey);
+                    sessionStorage.removeItem('tce_onboarding_fresh');
+                    applyState(emptyOnboardingState);
+                    return;
+                }
+
+                const raw = localStorage.getItem(storageKey);
+                if (raw) {
+                    try {
+                        applyState(JSON.parse(raw) as Partial<OnboardingPayload>);
+                        return;
+                    } catch {
+                        // ignore
+                    }
+                }
+
+                applyState(emptyOnboardingState);
+            } finally {
+                if (mounted) {
+                    hasLoadedInitialStateRef.current = true;
+                    setLoading(false);
+                }
+            }
+        };
+
+        void load();
+
+        return () => {
+            mounted = false;
+            if (saveTimeoutRef.current) {
+                window.clearTimeout(saveTimeoutRef.current);
+            }
+        };
+    }, [navigate]);
+
+    useEffect(() => {
+        if (loading) return;
+        if (!hasLoadedInitialStateRef.current) return;
+
+        scheduleSave(
+            buildPayload({
+                onboardingStatus: selectedRoles.length > 0 ? 'in_progress' : 'not_started',
+            })
+        );
+    }, [selectedRoles, activeStep, companyCreated, projectCreated, onboardingDraft, loading]);
+
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'hidden') {
+                const payload = buildPayload({
+                    onboardingStatus: selectedRoles.length > 0 ? 'in_progress' : 'not_started',
+                });
+                localStorage.setItem(storageKey, JSON.stringify(payload));
+                void persistOnboarding(payload);
+            }
+        };
+
+        const handleBeforeUnload = () => {
+            const payload = buildPayload({
+                onboardingStatus: selectedRoles.length > 0 ? 'in_progress' : 'not_started',
+            });
+            localStorage.setItem(storageKey, JSON.stringify(payload));
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('beforeunload', handleBeforeUnload);
+
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+        };
+    }, [selectedRoles, activeStep, companyCreated, projectCreated, onboardingDraft]);
+
+    const visibleSteps = useMemo(() => getVisibleSteps(), [selectedRoles, activeStep]);
+
+    if (loading) {
+        return (
+            <Box minHeight="100vh" display="flex" alignItems="center" justifyContent="center">
+                <CircularProgress size={28} />
+            </Box>
+        );
+    }
+
+    return (
+        <Box minHeight="100vh" bgcolor="grey.50" display="flex" flexDirection="column">
+            <Box bgcolor="white" borderBottom={1} borderColor="grey.200" px={4} py={2}>
+                <Box display="flex" alignItems="center" justifyContent="space-between" maxWidth={1000} mx="auto">
+                    <Box display="flex" alignItems="center" gap={1}>
+                        <Box component="img" src="/tce-logo.svg" alt="The Carbon Economy" sx={{ height: 32, width: 'auto' }} />
+                        <Typography variant="subtitle2" fontWeight="bold">
+                            Complete your profile
+                        </Typography>
+                    </Box>
+
+                    <Button
+                        onClick={handleSkipAll}
+                        color="inherit"
+                        startIcon={<SkipNextRounded sx={{ fontSize: 16 }} />}
+                        sx={{ textTransform: 'none' }}
+                    >
+                        Skip onboarding
+                    </Button>
+                </Box>
+            </Box>
+
+            <LinearProgress
+                variant="determinate"
+                value={getProgressValue()}
+                sx={{
+                    bgcolor: 'grey.200',
+                    '& .MuiLinearProgress-bar': {
+                        bgcolor: 'grey.900',
+                    },
+                }}
+            />
+
+            <Box flex={1} display="flex" alignItems="center" justifyContent="center" p={4}>
+                <Box maxWidth={600} width="100%">
+                    <Fade in key={activeStep}>
+                        <Paper variant="outlined" sx={{ p: 4, borderRadius: 2 }}>
+                            {activeStep === 0 ? (
+                                <Stack spacing={3}>
+                                    <Box textAlign="center">
+                                        <Typography variant="h5" fontWeight="bold" gutterBottom>
+                                            How do you plan to use the platform?
+                                        </Typography>
+                                        <Typography variant="body2" color="text.secondary">
+                                            Select all that apply. This helps us personalize your experience.
+                                        </Typography>
+                                    </Box>
+
+                                    <Stack spacing={1.5}>
+                                        {ONBOARDING_USER_ROLE_OPTIONS.map((option) => {
+                                            const Icon = option.icon;
+                                            const isSelected = selectedRoles.includes(option.id);
+
+                                            return (
+                                                <Card
+                                                    key={option.id}
+                                                    variant="outlined"
+                                                    sx={{
+                                                        borderColor: isSelected ? 'primary.main' : 'grey.200',
+                                                        borderWidth: isSelected ? 2 : 1,
+                                                        bgcolor: isSelected ? 'primary.50' : 'transparent',
+                                                        transition: 'all 0.15s',
+                                                    }}
+                                                >
+                                                    <CardActionArea onClick={() => toggleRole(option.id)} sx={{ p: 2 }}>
+                                                        <Box display="flex" alignItems="center" gap={2}>
+                                                            <Checkbox checked={isSelected} size="small" sx={{ p: 0 }} />
+
+                                                            <Box
+                                                                sx={{
+                                                                    width: 40,
+                                                                    height: 40,
+                                                                    borderRadius: 1,
+                                                                    bgcolor: isSelected ? 'primary.100' : 'grey.100',
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'center',
+                                                                    flexShrink: 0,
+                                                                }}
+                                                            >
+                                                                <Icon
+                                                                    sx={{
+                                                                        fontSize: 20,
+                                                                        color: isSelected ? 'primary.main' : 'grey.500',
+                                                                    }}
+                                                                />
+                                                            </Box>
+
+                                                            <Box flex={1}>
+                                                                <Typography variant="body2" fontWeight="bold">
+                                                                    {option.label}
+                                                                </Typography>
+                                                                <Typography variant="caption" color="text.secondary">
+                                                                    {option.description}
+                                                                </Typography>
+                                                            </Box>
+                                                        </Box>
+                                                    </CardActionArea>
+                                                </Card>
+                                            );
+                                        })}
+                                    </Stack>
+
+                                    <Stack spacing={2}>
+                                        <Button
+                                            variant="contained"
+                                            size="large"
+                                            fullWidth
+                                            onClick={handleContinueFromRoles}
+                                            disabled={selectedRoles.length === 0 || saving}
+                                            endIcon={<ArrowForwardRounded sx={{ fontSize: 20 }} />}
+                                            sx={{ py: 1.5 }}
+                                        >
+                                            {isJustExploring ? 'Go to Dashboard' : 'Continue'}
+                                        </Button>
+
+                                        <Button
+                                            variant="text"
+                                            size="large"
+                                            fullWidth
+                                            onClick={handleSkipCurrentStep}
+                                            sx={{ color: 'text.secondary', textTransform: 'none' }}
+                                        >
+                                            Skip for now
+                                        </Button>
+                                    </Stack>
+                                </Stack>
+                            ) : activeStep === 1 ? (
+                                <Stack spacing={4} alignItems="center" textAlign="center">
+                                    <Box
+                                        width={80}
+                                        height={80}
+                                        bgcolor="grey.100"
+                                        borderRadius="50%"
+                                        display="flex"
+                                        alignItems="center"
+                                        justifyContent="center"
+                                    >
+                                        <BusinessRounded sx={{ fontSize: 40, color: 'grey.700' }} />
+                                    </Box>
+
+                                    <Box>
+                                        <Typography variant="h5" fontWeight="bold" gutterBottom>
+                                            Set up your organization
+                                        </Typography>
+                                        <Typography variant="body2" color="text.secondary">
+                                            Add your company details to start creating projects and connecting with the carbon ecosystem.
+                                        </Typography>
+                                    </Box>
+
+                                    <Stack spacing={2} width="100%">
+                                        <Button
+                                            variant="contained"
+                                            size="large"
+                                            fullWidth
+                                            onClick={() => setIsCompanyWizardOpen(true)}
+                                            endIcon={<ArrowForwardRounded sx={{ fontSize: 20 }} />}
+                                            sx={{ py: 1.5 }}
+                                        >
+                                            {companyCreated ? 'Edit Company' : 'Add Company'}
+                                        </Button>
+
+                                        <Button
+                                            variant="text"
+                                            size="large"
+                                            fullWidth
+                                            onClick={handleSkipCurrentStep}
+                                            sx={{ color: 'text.secondary', textTransform: 'none' }}
+                                        >
+                                            Skip for now
+                                        </Button>
+                                    </Stack>
+                                </Stack>
+                            ) : (
+                                <Stack spacing={4} alignItems="center" textAlign="center">
+                                    <Box
+                                        width={80}
+                                        height={80}
+                                        borderRadius="50%"
+                                        display="flex"
+                                        alignItems="center"
+                                        justifyContent="center"
+                                        sx={{ bgcolor: '#ecfdf5' }}
+                                    >
+                                        <CreateNewFolderRounded sx={{ fontSize: 40, color: '#059669' }} />
+                                    </Box>
+
+                                    <Box>
+                                        <Typography variant="h5" fontWeight="bold" gutterBottom>
+                                            Create your first project
+                                        </Typography>
+                                        <Typography variant="body2" color="text.secondary">
+                                            Set up a carbon project to track progress, share updates, and connect with potential partners.
+                                        </Typography>
+                                    </Box>
+
+                                    <Stack spacing={2} width="100%">
+                                        <Button
+                                            variant="contained"
+                                            size="large"
+                                            fullWidth
+                                            onClick={() => setIsProjectWizardOpen(true)}
+                                            endIcon={<ArrowForwardRounded sx={{ fontSize: 20 }} />}
+                                            sx={{ py: 1.5 }}
+                                        >
+                                            {projectCreated ? 'Edit Project' : 'Create Project'}
+                                        </Button>
+
+                                        <Button
+                                            variant="text"
+                                            size="large"
+                                            fullWidth
+                                            onClick={handleSkipCurrentStep}
+                                            sx={{ color: 'text.secondary', textTransform: 'none' }}
+                                        >
+                                            Skip for now
+                                        </Button>
+                                    </Stack>
+                                </Stack>
+                            )}
+                        </Paper>
+                    </Fade>
+
+                    <Box display="flex" justifyContent="center" gap={1} mt={3}>
+                        {visibleSteps.map((_, index) => (
+                            <Box
+                                key={index}
+                                sx={{
+                                    width: 8,
+                                    height: 8,
+                                    borderRadius: '50%',
+                                    bgcolor: index <= Math.min(activeStep, visibleSteps.length - 1) ? 'grey.900' : 'grey.300',
+                                    transition: 'background-color 0.2s',
+                                }}
+                            />
+                        ))}
+                    </Box>
+
+                    {saving && (
+                        <Typography variant="caption" color="text.secondary" display="block" textAlign="center" mt={2}>
+                            Saving your progress...
+                        </Typography>
+                    )}
+                </Box>
+            </Box>
+
+            <CompanyWizard
+                open={isCompanyWizardOpen}
+                onClose={handleCompanyWizardClose}
+                draft={
+                    onboardingDraft.companyWizard &&
+                        typeof onboardingDraft.companyWizard === 'object'
+                        ? (onboardingDraft.companyWizard as Record<string, unknown>)
+                        : undefined
+                }
+                onDraftChange={handleCompanyDraftChange}
+            />
+
+            <ProjectWizard
+                open={isProjectWizardOpen}
+                onClose={handleProjectWizardClose}
+                hasCompanies={companyCreated || Boolean(lastCreatedCompanyId)}
+                preferredCompanyId={lastCreatedCompanyId}
+                draft={
+                    onboardingDraft.projectWizard &&
+                        typeof onboardingDraft.projectWizard === 'object'
+                        ? (onboardingDraft.projectWizard as Partial<ProjectFormData>)
+                        : undefined
+                }
+                onDraftChange={(draft) => {
+                    setOnboardingDraft((prev) => {
+                        const nextDraft = {
+                            ...prev,
+                            projectWizard: draft,
+                        };
+
+                        scheduleSave(
+                            buildPayload({
+                                onboardingDraft: nextDraft,
+                            })
+                        );
+
+                        return nextDraft;
+                    });
+                }}
+            />
+        </Box>
+    );
+}

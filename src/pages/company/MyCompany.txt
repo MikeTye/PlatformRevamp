@@ -1,0 +1,589 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Box, Typography, Button, Paper } from '@mui/material';
+import { getCompanyDetail, patchCompanySection, getUserOptions } from './companyProfile.api';
+import { CompanyProfileView } from './CompanyProfileView';
+import type { CompanyPrivacyLevel, CompanyPrivacyMap, CompanyProfile } from './companyProfile.types';
+import {
+    CompanyEditorSection,
+    CompanySidebarEditor,
+    ExistingUserOption,
+    SidebarSavePayload,
+} from './CompanySidebarEditor';
+import { canEditCompany, canViewCompanySection } from './companyProfile.access';
+import MoreVertRounded from '@mui/icons-material/MoreVertRounded';
+import { IconButton, Menu, MenuItem } from '@mui/material';
+
+export function MyCompany() {
+    const { id = '' } = useParams<{ id: string }>();
+    const navigate = useNavigate();
+
+    const [company, setCompany] = useState<CompanyProfile | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [shareAnchorEl, setShareAnchorEl] = useState<HTMLElement | null>(null);
+
+    const [directoryUsers, setDirectoryUsers] = useState<ExistingUserOption[]>([]);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarSection, setSidebarSection] = useState<CompanyEditorSection>('');
+    const [editingItem, setEditingItem] = useState<any>(null);
+
+    const [teamMenuAnchorEl, setTeamMenuAnchorEl] = useState<HTMLElement | null>(null);
+    const [teamMenuMember, setTeamMenuMember] = useState<any>(null);
+    const [teamMenuIndex, setTeamMenuIndex] = useState<number | null>(null);
+
+    const handleTeamMenuOpen = (
+        event: React.MouseEvent<HTMLElement>,
+        member: any,
+        index: number
+    ) => {
+        setTeamMenuAnchorEl(event.currentTarget);
+        setTeamMenuMember(member);
+        setTeamMenuIndex(index);
+    };
+
+    const handleTeamMenuClose = () => {
+        setTeamMenuAnchorEl(null);
+        setTeamMenuMember(null);
+        setTeamMenuIndex(null);
+    };
+
+    const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState<string | null>(null);
+
+    const permissionUserOptions = useMemo<ExistingUserOption[]>(() => {
+        if (!company) return [];
+
+        const fromTeam = (company.team ?? []).map((member: any) => ({
+            id: String(member.id ?? ''),
+            name: String(member.name ?? ''),
+            email: member.email ?? undefined,
+        }));
+
+        const fromPermissions = (company.permissions ?? []).map((member: any) => ({
+            id: String(member.userId ?? member.id ?? ''),
+            name: String(member.name ?? ''),
+            email: member.email ?? undefined,
+        }));
+
+        const merged = [...fromTeam, ...fromPermissions].filter((item) => item.id && item.name);
+
+        const deduped = new Map<string, ExistingUserOption>();
+        for (const item of merged) {
+            if (!deduped.has(item.id)) deduped.set(item.id, item);
+        }
+
+        return [...deduped.values()];
+    }, [company]);
+
+    function getDefaultPrivacyMap(): CompanyPrivacyMap {
+        return {
+            header: 'public',
+            about: 'public',
+            media: 'public',
+            documents: 'public',
+            projects: 'public',
+            projectTypes: 'public',
+            services: 'public',
+            serviceCategories: 'public',
+            geographicalCoverage: 'public',
+            permissions: 'public',
+            team: 'public',
+        };
+    }
+
+    function withSectionPrivacy(
+        prev: CompanyProfile,
+        section: Exclude<CompanyEditorSection, ''>,
+        visibility: CompanyPrivacyLevel
+    ): CompanyProfile {
+        const currentPrivacy: CompanyPrivacyMap = prev.privacy ?? getDefaultPrivacyMap();
+
+        return {
+            ...prev,
+            privacy: {
+                ...currentPrivacy,
+                [section]: visibility,
+            },
+        };
+    }
+
+    function applyLocalCompanyPatch(
+        prev: CompanyProfile,
+        payload: SidebarSavePayload
+    ): CompanyProfile {
+        switch (payload.section) {
+            case 'header':
+                return withSectionPrivacy(
+                    {
+                        ...prev,
+                        displayName: payload.values.displayName,
+                        roles: payload.values.roles,
+                        type: payload.values.roles[0] as any,
+                        website: payload.values.website,
+                        description: payload.values.description,
+                        country: payload.values.country,
+                        countryCode: payload.values.countryCode ?? null,
+                    },
+                    'header',
+                    payload.values.visibility
+                );
+
+            case 'about':
+                return withSectionPrivacy(
+                    {
+                        ...prev,
+                        fullDescription: payload.values.fullDescription,
+                    },
+                    'about',
+                    payload.values.visibility
+                );
+
+            case 'services':
+                return withSectionPrivacy(
+                    {
+                        ...prev,
+                        services: payload.values.services,
+                    },
+                    'services',
+                    payload.values.visibility
+                );
+
+            case 'serviceCategories':
+                return withSectionPrivacy(
+                    {
+                        ...prev,
+                        serviceCategories: payload.values.serviceCategories,
+                        serviceTypes: payload.values.serviceCategories,
+                    },
+                    'serviceCategories',
+                    payload.values.visibility
+                );
+
+            case 'projectTypes':
+                return withSectionPrivacy(
+                    {
+                        ...prev,
+                        projectTypes: payload.values.projectTypes,
+                    },
+                    'projectTypes',
+                    payload.values.visibility
+                );
+
+            case 'geographicalCoverage':
+                return withSectionPrivacy(
+                    {
+                        ...prev,
+                        geographicalCoverage: payload.values.geographicalCoverage,
+                    },
+                    'geographicalCoverage',
+                    payload.values.visibility
+                );
+
+            case 'team': {
+                const values = payload.values;
+                const nextTeam = [...(prev.team ?? [])];
+                const nextPermissions = [...(prev.permissions ?? [])];
+
+                const matchesMember = (member: any, userId?: string, email?: string, name?: string) => {
+                    if (userId && member?.id === userId) return true;
+                    if (email && member?.email && String(member.email).toLowerCase() === email.toLowerCase()) return true;
+                    if (!userId && !email && name && member?.name === name) return true;
+                    return false;
+                };
+
+                if (values.action === 'remove') {
+                    const filteredTeam = nextTeam.filter(
+                        (member) => !matchesMember(member, values.userId, values.email, values.name)
+                    );
+
+                    const filteredPermissions = nextPermissions.filter((p) => {
+                        if (values.userId && p.userId === values.userId) return false;
+                        if (values.email && p.email && p.email.toLowerCase() === values.email.toLowerCase()) {
+                            return false;
+                        }
+                        if (!values.userId && !values.email && values.name && p.name === values.name) {
+                            return false;
+                        }
+                        return true;
+                    });
+
+                    return {
+                        ...prev,
+                        team: filteredTeam,
+                        permissions: filteredPermissions,
+                    };
+                }
+
+                const item = {
+                    id: values.userId ?? values.previousUserId ?? values.email ?? values.name,
+                    name: values.name,
+                    email: values.email,
+                    role: values.role,
+                };
+
+                const matchIndex = nextTeam.findIndex((member) =>
+                    matchesMember(
+                        member,
+                        values.previousUserId ?? values.userId,
+                        values.previousEmail ?? values.email,
+                        values.name
+                    )
+                );
+
+                if (matchIndex >= 0) {
+                    nextTeam[matchIndex] = item as any;
+                } else {
+                    nextTeam.push(item as any);
+                }
+
+                return {
+                    ...prev,
+                    team: nextTeam,
+                };
+            }
+
+            case 'permissions':
+                return withSectionPrivacy(
+                    {
+                        ...prev,
+                        permissions: payload.values.permissions,
+                        inheritCompanyPermissionsToProjects:
+                            payload.values.inheritCompanyPermissionsToProjects ??
+                            prev.inheritCompanyPermissionsToProjects ??
+                            false,
+                    },
+                    'permissions',
+                    payload.values.visibility
+                );
+
+            default:
+                return prev;
+        }
+    }
+
+    function toBackendSectionPayload(
+        payload: SidebarSavePayload
+    ):
+        | {
+            section: 'header' | 'about' | 'services' | 'serviceCategories' | 'geographicalCoverage' | 'permissions' | 'team' | 'projectTypes';
+            data: Record<string, unknown>;
+        }
+        | null {
+        switch (payload.section) {
+            case 'header':
+                return {
+                    section: 'header',
+                    data: {
+                        displayName: payload.values.displayName,
+                        description: payload.values.description,
+                        website: payload.values.website,
+                        country: payload.values.country,
+                        countryCode: payload.values.countryCode,
+                        roles: payload.values.roles,
+                        sectionPrivacy: {
+                            sectionKey: 'header',
+                            visibility: payload.values.visibility,
+                        },
+                    },
+                };
+
+            case 'team':
+                return {
+                    section: 'team',
+                    data:
+                        payload.values.action === 'remove'
+                            ? {
+                                action: 'remove',
+                                userId: payload.values.userId,
+                                email: payload.values.email,
+                                name: payload.values.name,
+                                sectionPrivacy: {
+                                    sectionKey: 'team',
+                                    visibility: payload.values.visibility,
+                                },
+                            }
+                            : {
+                                action: 'upsert',
+                                userId: payload.values.userId,
+                                email: payload.values.email,
+                                name: payload.values.name,
+                                role: payload.values.role,
+                                previousUserId: payload.values.previousUserId,
+                                previousEmail: payload.values.previousEmail,
+                                sectionPrivacy: {
+                                    sectionKey: 'team',
+                                    visibility: payload.values.visibility,
+                                },
+                            },
+                };
+
+            case 'about':
+                return {
+                    section: 'about',
+                    data: {
+                        fullDescription: payload.values.fullDescription,
+                        sectionPrivacy: {
+                            sectionKey: 'about',
+                            visibility: payload.values.visibility,
+                        },
+                    },
+                };
+
+            case 'services':
+                return {
+                    section: 'services',
+                    data: {
+                        services: payload.values.services,
+                        sectionPrivacy: {
+                            sectionKey: 'services',
+                            visibility: payload.values.visibility,
+                        },
+                    },
+                };
+
+            case 'serviceCategories':
+                return {
+                    section: 'serviceCategories',
+                    data: {
+                        serviceCategories: payload.values.serviceCategories,
+                        sectionPrivacy: {
+                            sectionKey: 'serviceCategories',
+                            visibility: payload.values.visibility,
+                        },
+                    },
+                };
+
+            case 'projectTypes':
+                return {
+                    section: 'projectTypes',
+                    data: {
+                        projectTypes: payload.values.projectTypes,
+                        sectionPrivacy: {
+                            sectionKey: 'projectTypes',
+                            visibility: payload.values.visibility,
+                        },
+                    },
+                };
+
+            case 'permissions':
+                return {
+                    section: 'permissions',
+                    data: {
+                        permissions: payload.values.permissions,
+                        inheritCompanyPermissionsToProjects:
+                            payload.values.inheritCompanyPermissionsToProjects ?? false,
+                        sectionPrivacy: {
+                            sectionKey: 'permissions',
+                            visibility: payload.values.visibility,
+                        },
+                    },
+                };
+
+            case 'geographicalCoverage':
+                return {
+                    section: 'geographicalCoverage',
+                    data: {
+                        geographicalCoverage: payload.values.geographicalCoverage ?? [],
+                        sectionPrivacy: {
+                            sectionKey: 'geographicalCoverage',
+                            visibility: payload.values.visibility,
+                        },
+                    },
+                };
+
+            default:
+                return null;
+        }
+    }
+
+    const handleSidebarSave = async (payload: SidebarSavePayload) => {
+        if (!company) return;
+
+        const previous = company;
+        const optimistic = applyLocalCompanyPatch(company, payload);
+
+        setCompany(optimistic);
+        setSaveError(null);
+        setSidebarOpen(false);
+
+        const backendPayload = toBackendSectionPayload(payload);
+        if (!backendPayload) return;
+
+        try {
+            setSaving(true);
+            const updated = await patchCompanySection(
+                company.id,
+                backendPayload.section,
+                backendPayload.data
+            );
+            setCompany(updated);
+        } catch (err) {
+            setCompany(previous);
+            setSaveError(err instanceof Error ? err.message : 'Failed to save changes');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const loadUserOptions = async (q = '') => {
+        try {
+            const options = await getUserOptions(q);
+            setDirectoryUsers(options);
+        } catch (err) {
+            setSaveError(err instanceof Error ? err.message : 'Failed to load users');
+        }
+    };
+
+    useEffect(() => {
+        let active = true;
+
+        (async () => {
+            try {
+                setLoading(true);
+                setSaveError(null);
+
+                const companyData = await getCompanyDetail(id);
+
+                if (!active) return;
+                setCompany(companyData);
+
+                // keep this only for team-add/search if you still need global lookup
+                await loadUserOptions('');
+            } catch (err) {
+                if (!active) return;
+                setCompany(null);
+                setSaveError(err instanceof Error ? err.message : 'Failed to load company');
+            } finally {
+                if (active) setLoading(false);
+            }
+        })();
+
+        return () => {
+            active = false;
+        };
+    }, [id]);
+
+    const openEditor = (section: CompanyEditorSection, item?: any) => {
+        setSidebarSection(section);
+        setEditingItem(item ?? null);
+        setSaveError(null);
+        setSidebarOpen(true);
+    };
+
+    if (loading) return <Box p={3}>Loading...</Box>;
+    if (!company) return <Box p={3}>Company not found.</Box>;
+
+    return (
+        <>
+            {saveError && (
+                <Paper
+                    variant="outlined"
+                    sx={{
+                        mb: 2,
+                        p: 2,
+                        borderRadius: 2,
+                        borderColor: 'error.light',
+                        bgcolor: 'error.50',
+                    }}
+                >
+                    <Typography variant="body2" color="error.main">
+                        {saveError}
+                    </Typography>
+                </Paper>
+            )}
+
+            <CompanyProfileView
+                company={company}
+                mode="edit"
+                backLabel="My Companies"
+                onBack={() => navigate('/companies?tab=my')}
+                canEdit={canEditCompany(company)}
+                canContact={false}
+                canShare
+                showOwnerBadge
+                shareAnchorEl={shareAnchorEl}
+                onOpenShare={setShareAnchorEl}
+                onCloseShare={() => setShareAnchorEl(null)}
+                canViewPrivateSection={(section) => canViewCompanySection(company, section)}
+                onEditSection={(section) => {
+                    if (section === 'header') {
+                        openEditor('header');
+                        return;
+                    }
+                    openEditor(section as CompanyEditorSection);
+                }}
+                onAddTeam={() => openEditor('team')}
+                onAddMedia={() => openEditor('media')}
+                onAddDocument={() => openEditor('documents')}
+                onOpenProjectWizard={() => navigate(`/projects/new?companyId=${encodeURIComponent(company.id)}`)}
+                renderTeamActions={(member, index) => (
+                    <IconButton
+                        size="small"
+                        onClick={(e) => handleTeamMenuOpen(e, member, index)}
+                        sx={{
+                            color: 'grey.400',
+                            '&:hover': {
+                                color: 'grey.600',
+                            },
+                        }}
+                    >
+                        <MoreVertRounded sx={{ fontSize: 18 }} />
+                    </IconButton>
+                )}
+                renderDocumentActions={(doc, index) => (
+                    <Button size="small" onClick={() => openEditor('documents', { ...doc, index })}>
+                        Edit
+                    </Button>
+                )}
+            />
+
+            <Menu
+                anchorEl={teamMenuAnchorEl}
+                open={Boolean(teamMenuAnchorEl)}
+                onClose={handleTeamMenuClose}
+            >
+                <MenuItem
+                    onClick={() => {
+                        if (teamMenuMember == null || teamMenuIndex == null) return;
+                        openEditor('team', { ...teamMenuMember, index: teamMenuIndex });
+                        handleTeamMenuClose();
+                    }}
+                >
+                    Edit
+                </MenuItem>
+
+                <MenuItem
+                    onClick={() => {
+                        if (teamMenuMember == null) return;
+
+                        handleSidebarSave({
+                            section: 'team',
+                            values: {
+                                action: 'remove',
+                                userId: teamMenuMember.id ? String(teamMenuMember.id) : undefined,
+                                email: teamMenuMember.email,
+                                name: teamMenuMember.name,
+                                visibility: company.privacy?.team ?? 'public',
+                            },
+                        });
+
+                        handleTeamMenuClose();
+                    }}
+                    sx={{ color: 'error.main' }}
+                >
+                    Remove
+                </MenuItem>
+            </Menu>
+
+            <CompanySidebarEditor
+                open={sidebarOpen}
+                onClose={() => setSidebarOpen(false)}
+                section={sidebarSection}
+                company={company}
+                existingUsers={sidebarSection === 'permissions' ? permissionUserOptions : directoryUsers}
+                editingItem={editingItem}
+                onSave={handleSidebarSave}
+            />
+        </>
+    );
+}

@@ -1,0 +1,1735 @@
+import React, { useState, Component } from 'react';
+import { useNavigate } from 'react-router-dom';
+import TrendingUpRounded from '@mui/icons-material/TrendingUpRounded';
+import BusinessRounded from '@mui/icons-material/BusinessRounded';
+import ParkRounded from '@mui/icons-material/ParkRounded';
+import FolderRounded from '@mui/icons-material/FolderRounded';
+import GroupRounded from '@mui/icons-material/GroupRounded';
+import ArrowForwardRounded from '@mui/icons-material/ArrowForwardRounded';
+import MoreHorizRounded from '@mui/icons-material/MoreHorizRounded';
+import TimelineRounded from '@mui/icons-material/TimelineRounded';
+import CalendarTodayRounded from '@mui/icons-material/CalendarTodayRounded';
+import AttachMoneyRounded from '@mui/icons-material/AttachMoneyRounded';
+import BuildRounded from '@mui/icons-material/BuildRounded';
+import PeopleRounded from '@mui/icons-material/PeopleRounded';
+import CloseRounded from '@mui/icons-material/CloseRounded';
+import DescriptionRounded from '@mui/icons-material/DescriptionRounded';
+import ShowChartRounded from '@mui/icons-material/ShowChartRounded';
+import AddRounded from '@mui/icons-material/AddRounded';
+import {
+  Box,
+  Typography,
+  Paper,
+  Chip,
+  Stack,
+  Avatar,
+  IconButton,
+  Button,
+  Popover,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Divider } from
+'@mui/material';
+import {
+  ProjectStageIndicator,
+  ProjectStage } from
+'../components/ProjectStageIndicator';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import * as L from 'leaflet';
+// Fix for default marker icon
+const icon = L.icon({
+  iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
+  iconRetinaUrl:
+  'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+const flags: Record<string, string> = {
+  MY: '🇲🇾',
+  ID: '🇮🇩',
+  VN: '🇻🇳',
+  TH: '🇹🇭',
+  PH: '🇵🇭',
+  SG: '🇸🇬'
+};
+const recentProjects = [
+{
+  id: 'CUP-MY042713-5',
+  name: 'Sarawak Peatland Rewetting Initiative',
+  stage: 'Design' as ProjectStage,
+  country: 'Malaysia',
+  countryCode: 'MY',
+  dateAdded: '2d',
+  type: 'Peatland'
+},
+{
+  id: 'CUP-ID109482-4',
+  name: 'Kalimantan Forest Conservation',
+  stage: 'Validation' as ProjectStage,
+  country: 'Indonesia',
+  countryCode: 'ID',
+  dateAdded: '5d',
+  type: 'REDD+'
+},
+{
+  id: 'CUP-VN028471-3',
+  name: 'Mekong Delta Blue Carbon',
+  stage: 'Concept' as ProjectStage,
+  country: 'Vietnam',
+  countryCode: 'VN',
+  dateAdded: '1w',
+  type: 'Blue Carbon'
+},
+{
+  id: 'CUP-TH056219-7',
+  name: 'Northern Thailand Reforestation',
+  stage: 'Listed' as ProjectStage,
+  country: 'Thailand',
+  countryCode: 'TH',
+  dateAdded: '1w',
+  type: 'ARR'
+}];
+
+const mapPins = [
+{
+  id: 'CUP-MY042713-5',
+  name: 'Sarawak Peatland Rewetting',
+  stage: 'Design' as ProjectStage,
+  country: 'Malaysia',
+  countryCode: 'MY',
+  type: 'Peatland',
+  lat: 2.5,
+  lng: 111.5
+},
+{
+  id: 'CUP-ID109482-4',
+  name: 'Kalimantan Forest Conservation',
+  stage: 'Validation' as ProjectStage,
+  country: 'Indonesia',
+  countryCode: 'ID',
+  type: 'REDD+',
+  lat: 0.5,
+  lng: 116.5
+},
+{
+  id: 'CUP-VN028471-3',
+  name: 'Mekong Delta Blue Carbon',
+  stage: 'Concept' as ProjectStage,
+  country: 'Vietnam',
+  countryCode: 'VN',
+  type: 'Blue Carbon',
+  lat: 10.0,
+  lng: 106.5
+},
+{
+  id: 'CUP-TH056219-7',
+  name: 'Northern Thailand Reforestation',
+  stage: 'Listed' as ProjectStage,
+  country: 'Thailand',
+  countryCode: 'TH',
+  type: 'ARR',
+  lat: 18.8,
+  lng: 98.9
+}];
+
+interface ProjectUpdate {
+  id: number;
+  project: string;
+  projectId: string;
+  title: string;
+  description: string;
+  date: string;
+  author: string;
+  type: 'Milestone' | 'Registry' | 'Document' | 'Social';
+}
+const recentUpdates: ProjectUpdate[] = [
+{
+  id: 1,
+  project: 'Sarawak Peatland Rewetting',
+  projectId: 'CUP-MY042713-5',
+  title: 'Baseline survey team deployed',
+  description:
+  'A team of 12 surveyors has been deployed to conduct the baseline assessment across 5,000 hectares of peatland.',
+  date: 'Today',
+  author: 'James Wong',
+  type: 'Milestone'
+},
+{
+  id: 2,
+  project: 'Kalimantan Forest Conservation',
+  projectId: 'CUP-ID109482-4',
+  title: 'Validation audit scheduled',
+  description:
+  'Verra validation audit has been scheduled for next month. All documentation has been submitted.',
+  date: 'Yesterday',
+  author: 'Budi Santoso',
+  type: 'Registry'
+},
+{
+  id: 3,
+  project: 'Mekong Delta Blue Carbon',
+  projectId: 'CUP-VN028471-3',
+  title: 'Concept note drafted',
+  description:
+  'Initial concept note has been completed outlining the project scope and methodology.',
+  date: '2d',
+  author: 'Nguyen Van Minh',
+  type: 'Document'
+},
+{
+  id: 4,
+  project: 'Sabah Rainforest Conservation',
+  projectId: 'CUP-MY156789-2',
+  title: 'Community agreement signed',
+  description:
+  'Formal agreement signed with 3 indigenous communities covering benefit-sharing arrangements.',
+  date: '3d',
+  author: 'Sarah Chen',
+  type: 'Social'
+}];
+
+const newCompanies = [
+{
+  id: 'borneo-carbon',
+  name: 'Borneo Carbon Partners',
+  type: 'Project Developer',
+  country: 'Malaysia',
+  countryCode: 'MY',
+  joined: '2w'
+},
+{
+  id: 'pachama',
+  name: 'Pachama',
+  type: 'Service Provider',
+  country: 'Singapore',
+  countryCode: 'SG',
+  joined: '3w'
+},
+{
+  id: 'ecoforest-indonesia',
+  name: 'EcoForest Indonesia',
+  type: 'Project Developer',
+  country: 'Indonesia',
+  countryCode: 'ID',
+  joined: '1mo'
+}];
+
+const activeOpportunities = [
+{
+  id: 1,
+  project: 'Sarawak Peatland Rewetting',
+  type: 'Financing',
+  desc: 'Seed funding for feasibility',
+  urgent: true
+},
+{
+  id: 2,
+  project: 'Kalimantan Forest Conservation',
+  type: 'Technical advisor',
+  desc: 'Methodology selection support',
+  urgent: true
+},
+{
+  id: 3,
+  project: 'Mekong Delta Blue Carbon',
+  type: 'Buyers',
+  desc: 'Forward purchase agreements',
+  urgent: false
+}];
+
+const upcomingEvents = [
+{
+  id: 1,
+  date: new Date(2025, 3, 15),
+  title: 'Validation site visit',
+  project: 'Kalimantan Forest Project',
+  type: 'site-visit'
+},
+{
+  id: 2,
+  date: new Date(2025, 4, 2),
+  title: 'Q2 report due',
+  project: 'All projects',
+  type: 'deadline'
+},
+{
+  id: 3,
+  date: new Date(2025, 4, 10),
+  title: 'Community meeting',
+  project: 'Sarawak Peatland',
+  type: 'meeting'
+}];
+
+export function DashboardPage() {
+  const navigate = useNavigate();
+  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
+  const [selectedUpdate, setSelectedUpdate] = useState<ProjectUpdate | null>(
+    null
+  );
+  const handleUpdateClick = (update: ProjectUpdate) => {
+    setSelectedUpdate(update);
+    setUpdateDialogOpen(true);
+  };
+  const handleUpdateDialogClose = () => {
+    setUpdateDialogOpen(false);
+    setSelectedUpdate(null);
+  };
+  const anchorEl = null;
+  const open = Boolean(anchorEl);
+  const formatDate = (date: Date) => {
+    const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec'];
+
+    return {
+      month: months[date.getMonth()],
+      day: date.getDate()
+    };
+  };
+  const isUpcoming = (date: Date) => {
+    const now = new Date();
+    const diff = date.getTime() - now.getTime();
+    const days = diff / (1000 * 60 * 60 * 24);
+    return days <= 7 && days >= 0;
+  };
+  const getUpdateIcon = (type: string) => {
+    const iconSx = {
+      fontSize: 14,
+      color: 'grey.500'
+    };
+    switch (type) {
+      case 'Milestone':
+        return <TrendingUpRounded sx={iconSx} />;
+      case 'Registry':
+        return <BusinessRounded sx={iconSx} />;
+      case 'Document':
+        return <DescriptionRounded sx={iconSx} />;
+      case 'Social':
+        return <GroupRounded sx={iconSx} />;
+      default:
+        return <TimelineRounded sx={iconSx} />;
+    }
+  };
+  return (
+    <Box minHeight="100vh" bgcolor="white" color="text.secondary">
+      {/* Header */}
+      <Box
+        bgcolor="white"
+        borderBottom={1}
+        borderColor="grey.200"
+        px={3}
+        py={2}>
+
+        <Typography variant="h6" fontWeight="bold" color="text.primary">
+          Dashboard
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          Overview of your portfolio and market activity
+        </Typography>
+      </Box>
+
+      <Box
+        p={{
+          xs: 2,
+          sm: 3
+        }}
+        sx={{
+          width: '100%',
+          overflow: 'hidden'
+        }}>
+
+        {/* METRICS ROW */}
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: {
+              xs: 'repeat(2, 1fr)',
+              lg: 'repeat(4, 1fr)'
+            },
+            gap: {
+              xs: 1.5,
+              sm: 2
+            },
+            mb: 3
+          }}>
+
+          {/* Metric Card 1 - Projects */}
+          <Paper
+            variant="outlined"
+            onClick={() => navigate('/projects')}
+            sx={{
+              p: {
+                xs: 1.5,
+                sm: 2
+              },
+              borderRadius: 2,
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              '&:hover': {
+                borderColor: 'grey.400'
+              },
+              minHeight: {
+                xs: 100,
+                sm: 120
+              }
+            }}>
+
+            <Box
+              display="flex"
+              justifyContent="space-between"
+              alignItems="flex-start"
+              mb={0.5}>
+
+              <Box
+                sx={{
+                  p: {
+                    xs: 0.5,
+                    sm: 1
+                  },
+                  borderRadius: 1,
+                  color: 'grey.700'
+                }}>
+
+                <FolderRounded
+                  sx={{
+                    fontSize: 20
+                  }} />
+
+              </Box>
+              <Chip
+                label="+2"
+                size="small"
+                color="success"
+                variant="outlined"
+                sx={{
+                  height: 18,
+                  fontSize: '0.625rem',
+                  bgcolor: 'success.50',
+                  borderColor: 'success.200',
+                  '& .MuiChip-label': {
+                    px: 0.75
+                  }
+                }} />
+
+            </Box>
+            <Box>
+              <Typography
+                variant="h4"
+                fontWeight="bold"
+                color="text.primary"
+                sx={{
+                  fontSize: {
+                    xs: '1.5rem',
+                    sm: '1.75rem',
+                    md: '2rem'
+                  },
+                  lineHeight: 1.2
+                }}>
+
+                12
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{
+                  fontSize: {
+                    xs: '0.7rem',
+                    sm: '0.75rem'
+                  }
+                }}>
+
+                Total projects
+              </Typography>
+            </Box>
+          </Paper>
+
+          {/* Metric Card 2 - Companies */}
+          <Paper
+            variant="outlined"
+            onClick={() => navigate('/companies')}
+            sx={{
+              p: {
+                xs: 1.5,
+                sm: 2
+              },
+              borderRadius: 2,
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              '&:hover': {
+                borderColor: 'grey.400'
+              },
+              minHeight: {
+                xs: 100,
+                sm: 120
+              }
+            }}>
+
+            <Box
+              display="flex"
+              justifyContent="space-between"
+              alignItems="flex-start"
+              mb={0.5}>
+
+              <Box
+                sx={{
+                  p: {
+                    xs: 0.5,
+                    sm: 1
+                  },
+                  borderRadius: 1,
+                  color: 'grey.700'
+                }}>
+
+                <BusinessRounded
+                  sx={{
+                    fontSize: 20
+                  }} />
+
+              </Box>
+              <Chip
+                label="+1"
+                size="small"
+                sx={{
+                  height: 18,
+                  fontSize: '0.625rem',
+                  bgcolor: 'grey.100',
+                  '& .MuiChip-label': {
+                    px: 0.75
+                  }
+                }} />
+
+            </Box>
+            <Box>
+              <Typography
+                variant="h4"
+                fontWeight="bold"
+                color="text.primary"
+                sx={{
+                  fontSize: {
+                    xs: '1.5rem',
+                    sm: '1.75rem',
+                    md: '2rem'
+                  },
+                  lineHeight: 1.2
+                }}>
+
+                11
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{
+                  fontSize: {
+                    xs: '0.7rem',
+                    sm: '0.75rem'
+                  }
+                }}>
+
+                Total companies
+              </Typography>
+            </Box>
+          </Paper>
+
+          {/* Metric Card 3 - Credits */}
+          <Paper
+            variant="outlined"
+            sx={{
+              p: {
+                xs: 1.5,
+                sm: 2
+              },
+              borderRadius: 2,
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              minHeight: {
+                xs: 100,
+                sm: 120
+              }
+            }}>
+
+            <Box
+              display="flex"
+              justifyContent="space-between"
+              alignItems="flex-start"
+              mb={0.5}>
+
+              <Box
+                sx={{
+                  p: {
+                    xs: 0.5,
+                    sm: 1
+                  },
+                  borderRadius: 1,
+                  color: 'grey.700'
+                }}>
+
+                <ParkRounded
+                  sx={{
+                    fontSize: 20
+                  }} />
+
+              </Box>
+              <Typography
+                variant="caption"
+                color="success.main"
+                fontWeight="medium"
+                display="flex"
+                alignItems="center"
+                gap={0.5}
+                sx={{
+                  fontSize: '0.625rem'
+                }}>
+
+                <TrendingUpRounded
+                  sx={{
+                    fontSize: 10
+                  }} />
+                {' '}
+                +12%
+              </Typography>
+            </Box>
+            <Box>
+              <Typography
+                variant="h4"
+                fontWeight="bold"
+                color="text.primary"
+                sx={{
+                  fontSize: {
+                    xs: '1.5rem',
+                    sm: '1.75rem',
+                    md: '2rem'
+                  },
+                  lineHeight: 1.2
+                }}>
+
+                245k
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{
+                  fontSize: {
+                    xs: '0.7rem',
+                    sm: '0.75rem'
+                  }
+                }}>
+
+                Credits (tCO2e)
+              </Typography>
+            </Box>
+          </Paper>
+
+          {/* Metric Card 4 - Opportunities */}
+          <Paper
+            variant="outlined"
+            onClick={() => navigate('/opportunities')}
+            sx={{
+              p: {
+                xs: 1.5,
+                sm: 2
+              },
+              borderRadius: 2,
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              '&:hover': {
+                borderColor: 'grey.400'
+              },
+              minHeight: {
+                xs: 100,
+                sm: 120
+              }
+            }}>
+
+            <Box
+              display="flex"
+              justifyContent="space-between"
+              alignItems="flex-start"
+              mb={0.5}>
+
+              <Box
+                sx={{
+                  p: {
+                    xs: 0.5,
+                    sm: 1
+                  },
+                  borderRadius: 1,
+                  color: 'grey.700'
+                }}>
+
+                <ShowChartRounded
+                  sx={{
+                    fontSize: 20
+                  }} />
+
+              </Box>
+              <Chip
+                label="3 urgent"
+                size="small"
+                color="warning"
+                variant="outlined"
+                sx={{
+                  height: 18,
+                  fontSize: '0.625rem',
+                  bgcolor: 'warning.50',
+                  borderColor: 'warning.200',
+                  '& .MuiChip-label': {
+                    px: 0.75
+                  }
+                }} />
+
+            </Box>
+            <Box>
+              <Typography
+                variant="h4"
+                fontWeight="bold"
+                color="text.primary"
+                sx={{
+                  fontSize: {
+                    xs: '1.5rem',
+                    sm: '1.75rem',
+                    md: '2rem'
+                  },
+                  lineHeight: 1.2
+                }}>
+
+                8
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{
+                  fontSize: {
+                    xs: '0.7rem',
+                    sm: '0.75rem'
+                  }
+                }}>
+
+                Opportunities
+              </Typography>
+            </Box>
+          </Paper>
+        </Box>
+
+        {/* MAIN CONTENT AREA */}
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: {
+              xs: '1fr',
+              lg: '1fr 1fr'
+            },
+            gap: 3,
+            mb: 3,
+            minWidth: 0,
+            overflow: 'hidden'
+          }}>
+
+          {/* LEFT COLUMN */}
+          <Stack
+            spacing={3}
+            sx={{
+              minWidth: 0,
+              width: '100%'
+            }}>
+
+            {/* ACTIVE OPPORTUNITIES */}
+            <Paper
+              variant="outlined"
+              sx={{
+                borderRadius: 2,
+                overflow: 'hidden'
+              }}>
+
+              <Box
+                p={2}
+                borderBottom={1}
+                borderColor="grey.100"
+                display="flex"
+                justifyContent="space-between"
+                alignItems="center">
+
+                <Typography
+                  variant="subtitle2"
+                  fontWeight="bold"
+                  color="text.primary">
+
+                  Active opportunities
+                </Typography>
+                <Button
+                  size="small"
+                  endIcon={
+                  <ArrowForwardRounded
+                    sx={{
+                      fontSize: 14
+                    }} />
+
+                  }
+                  onClick={() => navigate('/opportunities')}
+                  sx={{
+                    textTransform: 'none',
+                    color: 'text.secondary',
+                    fontSize: '0.75rem'
+                  }}>
+
+                  View all
+                </Button>
+              </Box>
+              <Box>
+                {activeOpportunities.map((opp, i) => {
+                  const oppIcons: Record<string, React.ReactNode> = {
+                    Financing:
+                    <AttachMoneyRounded
+                      sx={{
+                        fontSize: 18,
+                        color: opp.urgent ? 'warning.main' : 'grey.500'
+                      }} />,
+
+
+                    'Technical advisor':
+                    <BuildRounded
+                      sx={{
+                        fontSize: 18,
+                        color: opp.urgent ? 'warning.main' : 'grey.500'
+                      }} />,
+
+
+                    Buyers:
+                    <PeopleRounded
+                      sx={{
+                        fontSize: 18,
+                        color: opp.urgent ? 'warning.main' : 'grey.500'
+                      }} />
+
+
+                  };
+                  return (
+                    <Box
+                      key={opp.id}
+                      onClick={() =>
+                      navigate(
+                        `/projects?need=${encodeURIComponent(opp.type)}`
+                      )
+                      }
+                      sx={{
+                        p: 2,
+                        borderBottom:
+                        i < activeOpportunities.length - 1 ? 1 : 0,
+                        borderColor: 'grey.100',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 2,
+                        cursor: 'pointer',
+                        '&:hover': {
+                          bgcolor: 'grey.50'
+                        }
+                      }}>
+
+                      <Box
+                        sx={{
+                          width: 36,
+                          height: 36,
+                          bgcolor: opp.urgent ? 'warning.50' : 'grey.100',
+                          borderRadius: 1,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0
+                        }}>
+
+                        {oppIcons[opp.type] ||
+                        <ShowChartRounded
+                          sx={{
+                            fontSize: 18,
+                            color: 'grey.500'
+                          }} />
+
+                        }
+                      </Box>
+                      <Box flex={1} minWidth={0} overflow="hidden">
+                        <Box display="flex" alignItems="center" gap={1}>
+                          <Typography
+                            variant="body2"
+                            fontWeight="medium"
+                            color="text.primary"
+                            noWrap>
+
+                            {opp.type}
+                          </Typography>
+                          {opp.urgent &&
+                          <Chip
+                            label="Urgent"
+                            size="small"
+                            sx={{
+                              height: 16,
+                              fontSize: '0.625rem',
+                              bgcolor: 'warning.100',
+                              color: 'warning.800',
+                              flexShrink: 0
+                            }} />
+
+                          }
+                        </Box>
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          noWrap>
+
+                          {opp.project} · {opp.desc}
+                        </Typography>
+                      </Box>
+                      <ArrowForwardRounded
+                        sx={{
+                          fontSize: 14,
+                          color: 'grey.400'
+                        }} />
+
+                    </Box>);
+
+                })}
+              </Box>
+            </Paper>
+
+            {/* NEW PROJECTS */}
+            <Paper
+              variant="outlined"
+              sx={{
+                borderRadius: 2,
+                overflow: 'hidden'
+              }}>
+
+              <Box
+                p={2}
+                borderBottom={1}
+                borderColor="grey.100"
+                display="flex"
+                justifyContent="space-between"
+                alignItems="center">
+
+                <Typography
+                  variant="subtitle2"
+                  fontWeight="bold"
+                  color="text.primary">
+
+                  Recently added projects
+                </Typography>
+                <Button
+                  size="small"
+                  endIcon={
+                  <ArrowForwardRounded
+                    sx={{
+                      fontSize: 14
+                    }} />
+
+                  }
+                  onClick={() => navigate('/projects')}
+                  sx={{
+                    textTransform: 'none',
+                    color: 'text.secondary',
+                    fontSize: '0.75rem'
+                  }}>
+
+                  View all
+                </Button>
+              </Box>
+              <Box>
+                {recentProjects.map((project, i) =>
+                <Box
+                  key={project.id}
+                  onClick={() => navigate(`/projects/${project.id}`)}
+                  sx={{
+                    p: 2,
+                    borderBottom: i < recentProjects.length - 1 ? 1 : 0,
+                    borderColor: 'grey.100',
+                    cursor: 'pointer',
+                    '&:hover': {
+                      bgcolor: 'grey.50'
+                    },
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 2
+                  }}>
+
+                    <Box
+                    display="flex"
+                    alignItems="center"
+                    gap={2}
+                    flex={1}
+                    minWidth={0}>
+
+                      <Box
+                      sx={{
+                        width: 40,
+                        height: 40,
+                        bgcolor: 'grey.100',
+                        borderRadius: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0
+                      }}>
+
+                        <ParkRounded
+                        sx={{
+                          fontSize: 20,
+                          color: 'grey.500'
+                        }} />
+
+                      </Box>
+                      <Box minWidth={0}>
+                        <Typography
+                        variant="body2"
+                        fontWeight="medium"
+                        color="text.primary"
+                        noWrap>
+
+                          {project.name}
+                        </Typography>
+                        <Box
+                        display="flex"
+                        alignItems="center"
+                        gap={1}
+                        mt={0.5}>
+
+                          <ProjectStageIndicator stage={project.stage} />
+                          <Typography variant="caption" color="text.secondary">
+                            {flags[project.countryCode]} {project.country}
+                          </Typography>
+                        </Box>
+                      </Box>
+                    </Box>
+                    <Typography
+                    variant="caption"
+                    color="text.disabled"
+                    sx={{
+                      flexShrink: 0
+                    }}>
+
+                      {project.dateAdded}
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+            </Paper>
+
+            {/* PROJECT UPDATES FEED */}
+            <Paper
+              variant="outlined"
+              sx={{
+                borderRadius: 2,
+                overflow: 'hidden'
+              }}>
+
+              <Box
+                p={2}
+                borderBottom={1}
+                borderColor="grey.100"
+                display="flex"
+                justifyContent="space-between"
+                alignItems="center">
+
+                <Typography
+                  variant="subtitle2"
+                  fontWeight="bold"
+                  color="text.primary">
+
+                  Project updates
+                </Typography>
+                <IconButton size="small">
+                  <MoreHorizRounded
+                    sx={{
+                      fontSize: 16
+                    }} />
+
+                </IconButton>
+              </Box>
+              <Box>
+                {recentUpdates.map((update, i) =>
+                <Box
+                  key={update.id}
+                  onClick={() => handleUpdateClick(update)}
+                  sx={{
+                    p: 2,
+                    borderBottom: i < recentUpdates.length - 1 ? 1 : 0,
+                    borderColor: 'grey.100',
+                    display: 'flex',
+                    gap: 2,
+                    cursor: 'pointer',
+                    '&:hover': {
+                      bgcolor: 'grey.50'
+                    }
+                  }}>
+
+                    <Box
+                    sx={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: '50%',
+                      bgcolor: 'grey.100',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                      mt: 0.5
+                    }}>
+
+                      {getUpdateIcon(update.type)}
+                    </Box>
+                    <Box flex={1} minWidth={0}>
+                      <Box
+                      display="flex"
+                      justifyContent="space-between"
+                      alignItems="flex-start"
+                      gap={1}>
+
+                        <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        noWrap>
+
+                          {update.project}
+                        </Typography>
+                        <Typography
+                        variant="caption"
+                        color="text.disabled"
+                        sx={{
+                          flexShrink: 0
+                        }}>
+
+                          {update.date}
+                        </Typography>
+                      </Box>
+                      <Typography
+                      variant="body2"
+                      fontWeight="medium"
+                      color="text.primary"
+                      mt={0.5}
+                      noWrap>
+
+                        {update.title}
+                      </Typography>
+                      <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      mt={0.5}
+                      display="block">
+
+                        by {update.author}
+                      </Typography>
+                    </Box>
+                  </Box>
+                )}
+              </Box>
+            </Paper>
+          </Stack>
+
+          {/* RIGHT COLUMN */}
+          <Stack
+            spacing={3}
+            sx={{
+              minWidth: 0,
+              width: '100%'
+            }}>
+
+            {/* PROJECT LOCATIONS MAP - widget sized */}
+            <Paper
+              variant="outlined"
+              sx={{
+                borderRadius: 2,
+                overflow: 'hidden'
+              }}>
+
+              <Box
+                p={2}
+                borderBottom={1}
+                borderColor="grey.100"
+                display="flex"
+                justifyContent="space-between"
+                alignItems="center">
+
+                <Typography
+                  variant="subtitle2"
+                  fontWeight="bold"
+                  color="text.primary">
+
+                  Project locations
+                </Typography>
+                <Button
+                  size="small"
+                  endIcon={
+                  <ArrowForwardRounded
+                    sx={{
+                      fontSize: 14
+                    }} />
+
+                  }
+                  onClick={() => navigate('/projects')}
+                  sx={{
+                    textTransform: 'none',
+                    color: 'text.secondary',
+                    fontSize: '0.75rem'
+                  }}>
+
+                  View all projects
+                </Button>
+              </Box>
+              <Box
+                sx={{
+                  width: '100%',
+                  height: 280,
+                  bgcolor: 'grey.50',
+                  position: 'relative'
+                }}>
+
+                <MapContainer
+                  center={[2.5, 110]}
+                  zoom={4}
+                  style={{
+                    height: '100%',
+                    width: '100%'
+                  }}
+                  scrollWheelZoom={false}>
+
+                  <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+
+                  {mapPins.map((pin) =>
+                  <Marker
+                    key={pin.id}
+                    position={[pin.lat, pin.lng]}
+                    icon={icon}>
+
+                      <Popup>
+                        <Box
+                        sx={{
+                          minWidth: 200
+                        }}>
+
+                          <Typography
+                          variant="subtitle2"
+                          fontWeight="bold"
+                          gutterBottom>
+
+                            {pin.name}
+                          </Typography>
+                          <Box
+                          display="flex"
+                          alignItems="center"
+                          gap={1}
+                          mb={1}>
+
+                            <ProjectStageIndicator
+                            stage={pin.stage}
+                            size="small" />
+
+                            <Chip
+                            label={pin.type}
+                            size="small"
+                            sx={{
+                              height: 20,
+                              fontSize: '0.625rem'
+                            }} />
+
+                          </Box>
+                          <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          display="block"
+                          mb={1}>
+
+                            {flags[pin.countryCode]} {pin.country}
+                          </Typography>
+                          <Button
+                          size="small"
+                          variant="outlined"
+                          fullWidth
+                          onClick={() => navigate(`/projects/${pin.id}`)}
+                          sx={{
+                            fontSize: '0.75rem',
+                            py: 0.5
+                          }}>
+
+                            View Details
+                          </Button>
+                        </Box>
+                      </Popup>
+                    </Marker>
+                  )}
+                </MapContainer>
+              </Box>
+              <Box p={2} borderTop={1} borderColor="grey.100">
+                <Typography variant="caption" color="text.secondary">
+                  Showing 12 projects across 4 countries
+                </Typography>
+              </Box>
+            </Paper>
+
+            {/* NEW COMPANIES */}
+            <Paper
+              variant="outlined"
+              sx={{
+                borderRadius: 2,
+                overflow: 'hidden'
+              }}>
+
+              <Box
+                p={2}
+                borderBottom={1}
+                borderColor="grey.100"
+                display="flex"
+                justifyContent="space-between"
+                alignItems="center">
+
+                <Typography
+                  variant="subtitle2"
+                  fontWeight="bold"
+                  color="text.primary">
+
+                  New companies
+                </Typography>
+                <Button
+                  size="small"
+                  endIcon={
+                  <ArrowForwardRounded
+                    sx={{
+                      fontSize: 14
+                    }} />
+
+                  }
+                  onClick={() => navigate('/companies')}
+                  sx={{
+                    textTransform: 'none',
+                    color: 'text.secondary',
+                    fontSize: '0.75rem'
+                  }}>
+
+                  View all
+                </Button>
+              </Box>
+              <Box>
+                {newCompanies.map((company, i) =>
+                <Box
+                  key={company.id}
+                  onClick={() => navigate(`/companies/${company.id}`)}
+                  sx={{
+                    p: 2,
+                    borderBottom: i < newCompanies.length - 1 ? 1 : 0,
+                    borderColor: 'grey.100',
+                    cursor: 'pointer',
+                    '&:hover': {
+                      bgcolor: 'grey.50'
+                    },
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 2
+                  }}>
+
+                    <Avatar
+                    sx={{
+                      width: 32,
+                      height: 32,
+                      bgcolor: 'grey.100',
+                      color: 'grey.600',
+                      fontSize: '0.75rem',
+                      fontWeight: 500
+                    }}>
+
+                      {company.name.substring(0, 2).toUpperCase()}
+                    </Avatar>
+                    <Box flex={1} minWidth={0}>
+                      <Typography
+                      variant="body2"
+                      fontWeight="medium"
+                      color="text.primary"
+                      noWrap>
+
+                        {company.name}
+                      </Typography>
+                      <Box display="flex" alignItems="center" gap={1} mt={0.5}>
+                        <Chip
+                        label={
+                        company.type === 'Project Developer' ?
+                        'Developer' :
+                        'Provider'
+                        }
+                        size="small"
+                        sx={{
+                          height: 16,
+                          fontSize: '0.625rem',
+                          bgcolor: 'grey.100'
+                        }} />
+
+                        <Typography variant="caption" color="text.secondary">
+                          {flags[company.countryCode]} {company.country}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Box>
+                )}
+              </Box>
+            </Paper>
+
+            {/* SAVED ITEMS */}
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 2,
+                borderRadius: 2
+              }}>
+
+              <Typography
+                variant="subtitle2"
+                fontWeight="bold"
+                color="text.primary"
+                mb={2}>
+
+                Saved items
+              </Typography>
+              <Stack spacing={2}>
+                <Box
+                  display="flex"
+                  alignItems="center"
+                  justifyContent="space-between"
+                  sx={{
+                    p: 1.5,
+                    bgcolor: 'grey.50',
+                    borderRadius: 1,
+                    cursor: 'pointer',
+                    '&:hover': {
+                      bgcolor: 'grey.100'
+                    }
+                  }}
+                  onClick={() => navigate('/projects')}>
+
+                  <Box display="flex" alignItems="center" gap={1.5}>
+                    <FolderRounded
+                      sx={{
+                        fontSize: 16,
+                        color: 'grey.500'
+                      }} />
+
+                    <Typography variant="body2" fontWeight="medium">
+                      Saved projects
+                    </Typography>
+                  </Box>
+                  <Chip
+                    label="5"
+                    size="small"
+                    sx={{
+                      height: 20,
+                      bgcolor: 'white',
+                      border: 1,
+                      borderColor: 'grey.200'
+                    }} />
+
+                </Box>
+                <Box
+                  display="flex"
+                  alignItems="center"
+                  justifyContent="space-between"
+                  sx={{
+                    p: 1.5,
+                    bgcolor: 'grey.50',
+                    borderRadius: 1,
+                    cursor: 'pointer',
+                    '&:hover': {
+                      bgcolor: 'grey.100'
+                    }
+                  }}
+                  onClick={() => navigate('/companies')}>
+
+                  <Box display="flex" alignItems="center" gap={1.5}>
+                    <BusinessRounded
+                      sx={{
+                        fontSize: 16,
+                        color: 'grey.500'
+                      }} />
+
+                    <Typography variant="body2" fontWeight="medium">
+                      Saved companies
+                    </Typography>
+                  </Box>
+                  <Chip
+                    label="2"
+                    size="small"
+                    sx={{
+                      height: 20,
+                      bgcolor: 'white',
+                      border: 1,
+                      borderColor: 'grey.200'
+                    }} />
+
+                </Box>
+              </Stack>
+            </Paper>
+
+            {/* UPCOMING EVENTS */}
+            <Paper
+              variant="outlined"
+              sx={{
+                borderRadius: 2,
+                overflow: 'hidden'
+              }}>
+
+              <Box
+                p={2}
+                borderBottom={1}
+                borderColor="grey.100"
+                display="flex"
+                alignItems="center"
+                gap={1}>
+
+                <CalendarTodayRounded
+                  sx={{
+                    fontSize: 16,
+                    color: 'grey.500'
+                  }} />
+
+                <Typography
+                  variant="subtitle2"
+                  fontWeight="bold"
+                  color="text.primary">
+
+                  Upcoming events
+                </Typography>
+              </Box>
+              <Box>
+                {upcomingEvents.map((event, i) => {
+                  const { month, day } = formatDate(event.date);
+                  const isSoon = isUpcoming(event.date);
+                  return (
+                    <Box
+                      key={event.id}
+                      sx={{
+                        p: 2,
+                        borderBottom: i < upcomingEvents.length - 1 ? 1 : 0,
+                        borderColor: 'grey.100',
+                        display: 'flex',
+                        gap: 2
+                      }}>
+
+                      <Box
+                        sx={{
+                          width: 44,
+                          height: 44,
+                          bgcolor: isSoon ? 'error.50' : 'grey.100',
+                          borderRadius: 1,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                          border: 1,
+                          borderColor: isSoon ? 'error.200' : 'grey.200'
+                        }}>
+
+                        <Typography
+                          variant="caption"
+                          color={isSoon ? 'error.main' : 'text.secondary'}
+                          fontWeight="bold"
+                          lineHeight={1}
+                          sx={{
+                            fontSize: '0.625rem',
+                            textTransform: 'uppercase'
+                          }}>
+
+                          {month}
+                        </Typography>
+                        <Typography
+                          variant="body1"
+                          fontWeight="bold"
+                          lineHeight={1}
+                          color={isSoon ? 'error.main' : 'text.primary'}>
+
+                          {day}
+                        </Typography>
+                      </Box>
+                      <Box flex={1}>
+                        <Typography
+                          variant="body2"
+                          fontWeight="medium"
+                          color="text.primary">
+
+                          {event.title}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {event.project}
+                        </Typography>
+                        {isSoon &&
+                        <Chip
+                          label="This week"
+                          size="small"
+                          sx={{
+                            height: 16,
+                            fontSize: '0.625rem',
+                            bgcolor: 'error.50',
+                            color: 'error.700',
+                            mt: 0.5
+                          }} />
+
+                        }
+                      </Box>
+                    </Box>);
+
+                })}
+              </Box>
+            </Paper>
+          </Stack>
+        </Box>
+      </Box>
+
+      {/* Update Detail Dialog */}
+      <Dialog
+        open={updateDialogOpen}
+        onClose={handleUpdateDialogClose}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2
+          }
+        }}>
+
+        {selectedUpdate &&
+        <>
+            <DialogTitle
+            sx={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              pb: 1
+            }}>
+
+              <Box>
+                <Typography variant="h6" fontWeight="bold" color="text.primary">
+                  {selectedUpdate.title}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {selectedUpdate.project}
+                </Typography>
+              </Box>
+              <IconButton
+              size="small"
+              onClick={handleUpdateDialogClose}
+              sx={{
+                mt: -0.5,
+                mr: -1
+              }}>
+
+                <CloseRounded
+                sx={{
+                  fontSize: 18
+                }} />
+
+              </IconButton>
+            </DialogTitle>
+            <Divider />
+            <DialogContent
+            sx={{
+              pt: 2
+            }}>
+
+              <Box display="flex" alignItems="center" gap={2} mb={2}>
+                <Box
+                sx={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: '50%',
+                  bgcolor: 'grey.100',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+
+                  {getUpdateIcon(selectedUpdate.type)}
+                </Box>
+                <Box>
+                  <Typography
+                  variant="body2"
+                  fontWeight="medium"
+                  color="text.primary">
+
+                    {selectedUpdate.author}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {selectedUpdate.date}
+                  </Typography>
+                </Box>
+                <Chip
+                label={selectedUpdate.type}
+                size="small"
+                sx={{
+                  ml: 'auto',
+                  height: 24,
+                  bgcolor: 'grey.100'
+                }} />
+
+              </Box>
+              <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{
+                lineHeight: 1.6
+              }}>
+
+                {selectedUpdate.description}
+              </Typography>
+            </DialogContent>
+            <Divider />
+            <DialogActions
+            sx={{
+              p: 2
+            }}>
+
+              <Button
+              variant="outlined"
+              size="small"
+              onClick={handleUpdateDialogClose}
+              sx={{
+                textTransform: 'none',
+                borderColor: 'grey.300',
+                color: 'text.secondary'
+              }}>
+
+                Close
+              </Button>
+              <Button
+              variant="contained"
+              startIcon={<AddRounded />}
+              onClick={() => navigate('/projects')}
+              sx={{
+                textTransform: 'none'
+              }}>
+
+                View Project
+              </Button>
+            </DialogActions>
+          </>
+        }
+      </Dialog>
+    </Box>);
+
+}
