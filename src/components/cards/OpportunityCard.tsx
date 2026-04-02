@@ -25,8 +25,7 @@ export type OpportunityType =
     | 'Technical Advisor'
     | 'Buyers'
     | 'MRV Provider'
-    | 'Insurance'
-    | 'Local Partners';
+    | 'Insurance';
 export interface OpportunityCardProps {
     id: string;
     type: OpportunityType;

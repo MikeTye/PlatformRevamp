@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Alert,
     Box,
@@ -196,6 +196,8 @@ export function ProjectWizard({
     const [errorMessage, setErrorMessage] = useState('');
     const [infoMessage, setInfoMessage] = useState('');
 
+    const contentScrollRef = useRef<HTMLDivElement | null>(null);
+
     const availableStates = useMemo(
         () => getStatesForCountry(formData.country),
         [formData.country]
@@ -217,6 +219,11 @@ export function ProjectWizard({
 
         void loadCompanies();
     }, [open, preferredCompanyId]);
+
+    useEffect(() => {
+        if (!open) return;
+        contentScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+    }, [activeStep, open]);
 
     const resetWizard = () => {
         setActiveStep(0);
@@ -481,6 +488,7 @@ export function ProjectWizard({
             </Box>
 
             <Box
+                ref={contentScrollRef}
                 sx={{
                     flex: 1,
                     overflowY: 'auto',

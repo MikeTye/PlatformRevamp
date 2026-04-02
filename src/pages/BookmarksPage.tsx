@@ -352,17 +352,6 @@ export function BookmarksPage() {
                     <Typography variant="h5" fontWeight="bold" color="text.primary">
                         Bookmarks
                     </Typography>
-
-                    <Chip
-                        label={opportunities.length > 0 ? 'Partial backend support' : 'Projects & companies live'}
-                        size="small"
-                        color="warning"
-                        sx={{
-                            height: 20,
-                            fontSize: '0.625rem',
-                            fontWeight: 600,
-                        }}
-                    />
                 </Box>
 
                 <Box px={3}>

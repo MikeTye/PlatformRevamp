@@ -1,555 +1,412 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Box,
-  Typography,
-  Button,
-  TextField,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Paper,
-  IconButton,
-  Stack,
-  Divider,
-  InputAdornment,
-  Chip,
-  Avatar } from
-'@mui/material';
+    Box,
+    Typography,
+    Button,
+    TextField,
+    FormControl,
+    InputLabel,
+    Select,
+    MenuItem,
+    IconButton,
+    Stack,
+    CircularProgress,
+    Alert,
+} from '@mui/material';
+import type { SelectChangeEvent } from '@mui/material/Select';
 import CloseRounded from '@mui/icons-material/CloseRounded';
-import AutoAwesomeRounded from '@mui/icons-material/AutoAwesomeRounded';
-import CloudUploadRounded from '@mui/icons-material/CloudUploadRounded';
-import SendRounded from '@mui/icons-material/SendRounded';
-import ImageRounded from '@mui/icons-material/ImageRounded';
-import FolderRounded from '@mui/icons-material/FolderRounded';
-import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
 import { useNavigate } from 'react-router-dom';
+
 interface UpdateWizardProps {
-  open: boolean;
-  onClose: () => void;
+    open: boolean;
+    onClose: () => void;
 }
-// Mock projects data
-const mockProjects = [
-{
-  id: 'CUP-MY042713-5',
-  name: 'Sarawak Peatland Rewetting Initiative',
-  stage: 'Design',
-  type: 'Peatland',
-  country: 'Malaysia',
-  countryFlag: '🇲🇾'
-},
-{
-  id: 'CUP-MY156789-2',
-  name: 'Sabah Rainforest Conservation',
-  stage: 'Listed',
-  type: 'REDD+',
-  country: 'Malaysia',
-  countryFlag: '🇲🇾'
-},
-{
-  id: 'CUP-ID203847-2',
-  name: 'Sumatra Mangrove Restoration',
-  stage: 'Design',
-  type: 'Blue Carbon',
-  country: 'Indonesia',
-  countryFlag: '🇮🇩'
-}];
+
+type ProjectOption = {
+    id: string;
+    name: string;
+    stage?: string | null;
+    type?: string | null;
+    country?: string | null;
+};
+
+type ListProjectsResponse = {
+    items?: Array<{
+        id: string;
+        name: string;
+        stage?: string | null;
+        type?: string | null;
+        country?: string | null;
+    }>;
+};
+
+type MeResponse = {
+    ok?: boolean;
+    user?: {
+        id: string;
+        email: string;
+        name?: string | null;
+        avatarUrl?: string | null;
+    };
+};
 
 export function UpdateWizard({ open, onClose }: UpdateWizardProps) {
-  const navigate = useNavigate();
-  const [selectedProject, setSelectedProject] = useState('');
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setImageFile(e.target.files[0]);
-    }
-  };
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setImageFile(e.dataTransfer.files[0]);
-    }
-  };
-  const handlePost = () => {
-    // In a real app, this would save the update
-    onClose();
-    if (selectedProject) {
-      navigate(`/projects/${selectedProject}`);
-    }
-  };
-  const canPost = selectedProject && title && description;
-  if (!open) return null;
-  const selectedProjectData = mockProjects.find((p) => p.id === selectedProject);
-  return (
-    <Box
-      sx={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        bgcolor: 'white',
-        zIndex: 1300,
-        display: 'flex',
-        flexDirection: 'column'
-      }}>
+    const navigate = useNavigate();
 
-      {/* Header */}
-      <Box
-        sx={{
-          height: 64,
-          borderBottom: 1,
-          borderColor: 'grey.200',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          px: 3,
-          bgcolor: 'white'
-        }}>
+    const [projects, setProjects] = useState<ProjectOption[]>([]);
+    const [projectsLoading, setProjectsLoading] = useState(false);
+    const [projectsError, setProjectsError] = useState<string | null>(null);
 
-        <Box display="flex" alignItems="center" gap={2}>
-          <IconButton onClick={onClose} size="small">
-            <CloseRounded
-              sx={{
-                fontSize: 20
-              }} />
+    const [selectedProject, setSelectedProject] = useState('');
+    const [title, setTitle] = useState('');
+    const [dateLabel, setDateLabel] = useState(new Date().toISOString().split('T')[0] ?? '');
+    const [description, setDescription] = useState('');
+    const [type, setType] = useState<'progress' | 'stage'>('progress');
 
-          </IconButton>
-          <Typography variant="h6" fontWeight="bold">
-            Post Update
-          </Typography>
-        </Box>
-        <Button
-          onClick={onClose}
-          sx={{
-            color: 'text.secondary'
-          }}>
+    const [submitting, setSubmitting] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
 
-          Cancel
-        </Button>
-      </Box>
+    const [currentUserName, setCurrentUserName] = useState('');
+    const [meLoading, setMeLoading] = useState(false);
 
-      {/* Main Content Area */}
-      <Box
-        sx={{
-          display: 'flex',
-          flex: 1,
-          overflow: 'hidden'
-        }}>
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
 
-        {/* Left: Form Content */}
-        <Box
-          sx={{
-            flex: 1,
-            overflowY: 'auto',
-            p: {
-              xs: 2,
-              md: 4
+    useEffect(() => {
+        if (!open) return;
+
+        let cancelled = false;
+
+        async function loadMe() {
+            setMeLoading(true);
+
+            try {
+                const res = await fetch(`${API_BASE_URL}/auth/me`, {
+                    credentials: 'include',
+                    headers: {
+                        Accept: 'application/json',
+                    },
+                });
+
+                if (!res.ok) {
+                    throw new Error(`Failed to load current user (${res.status})`);
+                }
+
+                const data = (await res.json()) as MeResponse;
+                const name = data?.user?.name?.trim() ?? '';
+
+                if (!cancelled) {
+                    setCurrentUserName(name);
+                }
+            } catch {
+                if (!cancelled) {
+                    setCurrentUserName('');
+                }
+            } finally {
+                if (!cancelled) {
+                    setMeLoading(false);
+                }
             }
-          }}>
+        }
 
-          <Box maxWidth={640} mx="auto">
-            <Stack spacing={4}>
-              <Box>
-                <Typography variant="h5" fontWeight="bold" gutterBottom>
-                  Share a Project Update
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Keep your followers informed about project progress,
-                  milestones, and news.
-                </Typography>
-              </Box>
+        void loadMe();
 
-              {/* Project Selection */}
-              <Box>
-                <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
-                  Select Project
-                </Typography>
-                <Stack spacing={1}>
-                  {mockProjects.map((project) =>
-                  <Paper
-                    key={project.id}
-                    variant="outlined"
-                    onClick={() => setSelectedProject(project.id)}
-                    sx={{
-                      p: 2,
-                      cursor: 'pointer',
-                      borderColor:
-                      selectedProject === project.id ?
-                      'primary.main' :
-                      'grey.200',
-                      bgcolor:
-                      selectedProject === project.id ?
-                      'primary.50' :
-                      'transparent',
-                      '&:hover': {
-                        borderColor: 'primary.main',
-                        bgcolor: 'grey.50'
-                      },
-                      transition: 'all 0.15s ease'
-                    }}>
+        return () => {
+            cancelled = true;
+        };
+    }, [open, API_BASE_URL]);
 
-                      <Box display="flex" alignItems="center" gap={2}>
-                        <Box
-                        sx={{
-                          width: 40,
-                          height: 40,
-                          borderRadius: 1,
-                          bgcolor: 'grey.100',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}>
+    useEffect(() => {
+        if (!open) return;
 
-                          <FolderRounded
-                          sx={{
-                            color: 'grey.500'
-                          }} />
+        let cancelled = false;
 
-                        </Box>
-                        <Box flex={1} minWidth={0}>
-                          <Typography
-                          variant="body2"
-                          fontWeight="medium"
-                          noWrap>
+        async function loadProjects() {
+            setProjectsLoading(true);
+            setProjectsError(null);
 
-                            {project.name}
-                          </Typography>
-                          <Box
-                          display="flex"
-                          alignItems="center"
-                          gap={1}
-                          mt={0.5}>
+            try {
+                const res = await fetch(`${API_BASE_URL}/projects?scope=my&page=1&pageSize=100&sortBy=updated&sortDir=desc`, {
+                    credentials: 'include',
+                });
 
-                            <Typography
-                            variant="caption"
-                            color="text.secondary">
+                if (!res.ok) {
+                    throw new Error(`Failed to load projects (${res.status})`);
+                }
 
-                              {project.countryFlag} {project.country}
-                            </Typography>
-                            <Chip
-                            label={project.stage}
-                            size="small"
-                            sx={{
-                              height: 18,
-                              fontSize: '0.625rem',
-                              bgcolor: 'grey.100'
-                            }} />
+                const data = (await res.json()) as ListProjectsResponse;
+                const items = Array.isArray(data?.items) ? data.items : [];
 
-                            <Chip
-                            label={project.type}
-                            size="small"
-                            sx={{
-                              height: 18,
-                              fontSize: '0.625rem',
-                              bgcolor: 'grey.100'
-                            }} />
+                if (!cancelled) {
+                    setProjects(
+                        items.map((item) => ({
+                            id: item.id,
+                            name: item.name,
+                            stage: item.stage ?? null,
+                            type: item.type ?? null,
+                            country: item.country ?? null,
+                        }))
+                    );
+                }
+            } catch (err) {
+                if (!cancelled) {
+                    setProjectsError(err instanceof Error ? err.message : 'Failed to load projects');
+                    setProjects([]);
+                }
+            } finally {
+                if (!cancelled) {
+                    setProjectsLoading(false);
+                }
+            }
+        }
 
-                          </Box>
-                        </Box>
-                        {selectedProject === project.id &&
-                      <CheckCircleRounded
-                        sx={{
-                          color: 'primary.main'
-                        }} />
+        void loadProjects();
 
-                      }
-                      </Box>
-                    </Paper>
-                  )}
-                </Stack>
-              </Box>
+        return () => {
+            cancelled = true;
+        };
+    }, [open]);
 
-              <Divider />
+    useEffect(() => {
+        if (!open) {
+            setSelectedProject('');
+            setTitle('');
+            setDateLabel(new Date().toISOString().split('T')[0] ?? '');
+            setDescription('');
+            setType('progress');
+            setSubmitError(null);
+            setProjectsError(null);
+            setCurrentUserName('');
+        }
+    }, [open]);
 
-              {/* Update Content */}
-              <Stack spacing={3}>
-                <TextField
-                  label="Update Title"
-                  fullWidth
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g., Baseline survey completed"
-                  disabled={!selectedProject} />
+    const selectedProjectData = useMemo(
+        () => projects.find((project) => project.id === selectedProject) ?? null,
+        [projects, selectedProject]
+    );
 
+    const canPost =
+        !!selectedProject &&
+        title.trim().length > 0 &&
+        description.trim().length > 0 &&
+        !submitting;
 
-                <TextField
-                  label="Date"
-                  type="date"
-                  fullWidth
-                  defaultValue={new Date().toISOString().split('T')[0]}
-                  InputLabelProps={{
-                    shrink: true
-                  }}
-                  disabled={!selectedProject} />
+    const handleProjectChange = (event: SelectChangeEvent<string>) => {
+        setSelectedProject(event.target.value);
+    };
 
+    const handlePost = async () => {
+        if (!canPost) return;
 
-                <TextField
-                  label="Description"
-                  fullWidth
-                  multiline
-                  minRows={4}
-                  maxRows={8}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Share what's new with your project..."
-                  disabled={!selectedProject} />
+        setSubmitting(true);
+        setSubmitError(null);
 
+        try {
+            const res = await fetch(`${API_BASE_URL}/projects/${selectedProject}/updates`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    title: title.trim(),
+                    description: description.trim(),
+                    dateLabel: dateLabel || null,
+                    type,
+                    authorName: currentUserName || null,
+                }),
+            });
 
-                {/* Image Upload */}
-                <Box>
-                  <Typography
-                    variant="subtitle2"
-                    fontWeight="bold"
-                    gutterBottom>
+            if (!res.ok) {
+                const payload = await res.json().catch(() => null);
+                throw new Error(payload?.message || `Failed to create update (${res.status})`);
+            }
 
-                    Add Photo (Optional)
-                  </Typography>
-                  <Box
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                    component="label"
-                    sx={{
-                      display: 'block',
-                      border: '2px dashed',
-                      borderColor: imageFile ?
-                      'success.main' :
-                      isDragging ?
-                      'primary.main' :
-                      'grey.300',
-                      borderRadius: 2,
-                      p: 3,
-                      textAlign: 'center',
-                      bgcolor: imageFile ?
-                      'success.50' :
-                      isDragging ?
-                      'primary.50' :
-                      'grey.50',
-                      cursor: selectedProject ? 'pointer' : 'not-allowed',
-                      opacity: selectedProject ? 1 : 0.5,
-                      transition: 'all 0.2s ease',
-                      '&:hover': selectedProject ?
-                      {
-                        borderColor: 'primary.main',
-                        bgcolor: 'primary.50'
-                      } :
-                      {}
-                    }}>
+            onClose();
+            navigate(`/projects/${selectedProject}`);
+        } catch (err) {
+            setSubmitError(err instanceof Error ? err.message : 'Failed to create update');
+        } finally {
+            setSubmitting(false);
+        }
+    };
 
-                    <input
-                      type="file"
-                      hidden
-                      accept="image/*"
-                      onChange={handleImageUpload}
-                      disabled={!selectedProject} />
+    if (!open) return null;
 
-                    {imageFile ?
-                    <Box
-                      display="flex"
-                      alignItems="center"
-                      justifyContent="center"
-                      gap={2}>
-
-                        <CheckCircleRounded
-                        sx={{
-                          color: 'success.main',
-                          fontSize: 28
-                        }} />
-
-                        <Box textAlign="left">
-                          <Typography
-                          variant="body2"
-                          fontWeight="medium"
-                          color="success.dark">
-
-                            {imageFile.name}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {(imageFile.size / 1024 / 1024).toFixed(2)} MB
-                          </Typography>
-                        </Box>
-                        <IconButton
-                        size="small"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setImageFile(null);
-                        }}
-                        sx={{
-                          ml: 1
-                        }}>
-
-                          <CloseRounded
-                          sx={{
-                            fontSize: 18
-                          }} />
-
-                        </IconButton>
-                      </Box> :
-
-                    <Box>
-                        <ImageRounded
-                        sx={{
-                          fontSize: 40,
-                          color: 'grey.400',
-                          mb: 1
-                        }} />
-
-                        <Typography variant="body2" color="text.secondary">
-                          Drop an image here or click to browse
-                        </Typography>
-                        <Typography variant="caption" color="text.disabled">
-                          PNG, JPG up to 10MB
-                        </Typography>
-                      </Box>
-                    }
-                  </Box>
-                </Box>
-              </Stack>
-            </Stack>
-          </Box>
-        </Box>
-
-        {/* Right: AI Sidebar */}
+    return (
         <Box
-          sx={{
-            width: 300,
-            borderLeft: 1,
-            borderColor: 'grey.200',
-            bgcolor: 'grey.50',
-            display: {
-              xs: 'none',
-              lg: 'flex'
-            },
-            flexDirection: 'column'
-          }}>
-
-          <Box p={3} borderBottom={1} borderColor="grey.200">
+            sx={{
+                position: 'fixed',
+                inset: 0,
+                bgcolor: 'white',
+                zIndex: 1300,
+                display: 'flex',
+                flexDirection: 'column',
+            }}
+        >
             <Box
-              display="flex"
-              alignItems="center"
-              gap={1}
-              color="primary.main"
-              mb={1}>
-
-              <AutoAwesomeRounded
                 sx={{
-                  fontSize: 18
-                }} />
-
-              <Typography variant="subtitle2" fontWeight="bold">
-                AI Assistant
-              </Typography>
-            </Box>
-            <Typography variant="caption" color="text.secondary">
-              Here to help with your update.
-            </Typography>
-          </Box>
-
-          <Box flex={1} p={3} overflow="auto">
-            <Box display="flex" gap={2}>
-              <Box
-                sx={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: '50%',
-                  bgcolor: 'primary.100',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0
-                }}>
-
-                <AutoAwesomeRounded
-                  sx={{
-                    fontSize: 14,
-                    color: 'grey.800'
-                  }} />
-
-              </Box>
-              <Paper
-                elevation={0}
-                sx={{
-                  p: 2,
-                  bgcolor: 'white',
-                  border: 1,
-                  borderColor: 'grey.200',
-                  borderRadius: '0px 12px 12px 12px'
-                }}>
-
-                <Typography variant="body2" color="text.primary">
-                  {selectedProject ?
-                  'Great choice! Share meaningful progress updates to keep stakeholders engaged. Include specific metrics or milestones when possible.' :
-                  'Select a project to post an update. Regular updates help build trust with potential partners and buyers.'}
-                </Typography>
-              </Paper>
-            </Box>
-          </Box>
-
-          <Box p={3} borderTop={1} borderColor="grey.200">
-            <TextField
-              fullWidth
-              size="small"
-              placeholder="Ask me anything..."
-              InputProps={{
-                endAdornment:
-                <InputAdornment position="end">
-                    <IconButton size="small">
-                      <SendRounded
-                      sx={{
-                        fontSize: 16
-                      }} />
-
+                    height: 64,
+                    borderBottom: 1,
+                    borderColor: 'grey.200',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    px: 3,
+                    bgcolor: 'white',
+                }}
+            >
+                <Box display="flex" alignItems="center" gap={2}>
+                    <IconButton onClick={onClose} size="small">
+                        <CloseRounded sx={{ fontSize: 20 }} />
                     </IconButton>
-                  </InputAdornment>
+                    <Typography variant="h6" fontWeight="bold">
+                        Post Update
+                    </Typography>
+                </Box>
 
-              }} />
+                <Button onClick={onClose} sx={{ color: 'text.secondary' }}>
+                    Cancel
+                </Button>
+            </Box>
 
-          </Box>
+            <Box sx={{ flex: 1, overflowY: 'auto', p: { xs: 2, md: 4 } }}>
+                <Box maxWidth={640} mx="auto">
+                    <Stack spacing={3}>
+                        <Box>
+                            <Typography variant="h5" fontWeight="bold" gutterBottom>
+                                Share a Project Update
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                Select one of your projects and publish a new update.
+                            </Typography>
+                        </Box>
+
+                        {projectsError && <Alert severity="error">{projectsError}</Alert>}
+                        {submitError && <Alert severity="error">{submitError}</Alert>}
+
+                        <FormControl fullWidth disabled={projectsLoading || submitting}>
+                            <InputLabel id="project-select-label">Project</InputLabel>
+                            <Select
+                                labelId="project-select-label"
+                                value={selectedProject}
+                                label="Project"
+                                onChange={handleProjectChange}
+                            >
+                                {projects.map((project) => (
+                                    <MenuItem key={project.id} value={project.id}>
+                                        {project.name}
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+
+                        {projectsLoading && (
+                            <Box display="flex" alignItems="center" gap={1}>
+                                <CircularProgress size={18} />
+                                <Typography variant="body2" color="text.secondary">
+                                    Loading your projects...
+                                </Typography>
+                            </Box>
+                        )}
+
+                        {selectedProjectData && (
+                            <Box
+                                sx={{
+                                    px: 2,
+                                    py: 1.5,
+                                    borderRadius: 2,
+                                    border: '1px solid',
+                                    borderColor: 'grey.200',
+                                    bgcolor: 'grey.50',
+                                }}
+                            >
+                                <Typography variant="body2" fontWeight="medium">
+                                    {selectedProjectData.name}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    {[selectedProjectData.stage, selectedProjectData.type, selectedProjectData.country]
+                                        .filter(Boolean)
+                                        .join(' • ')}
+                                </Typography>
+                            </Box>
+                        )}
+
+                        <TextField
+                            label="Update Title"
+                            fullWidth
+                            value={title}
+                            onChange={(e) => setTitle(e.target.value)}
+                            placeholder="e.g. Baseline survey completed"
+                            disabled={!selectedProject || submitting}
+                        />
+
+                        <FormControl fullWidth disabled={!selectedProject || submitting}>
+                            <InputLabel id="update-type-label">Update Type</InputLabel>
+                            <Select
+                                labelId="update-type-label"
+                                value={type}
+                                label="Update Type"
+                                onChange={(e) => setType(e.target.value as 'progress' | 'stage')}
+                            >
+                                <MenuItem value="progress">Progress</MenuItem>
+                                <MenuItem value="stage">Stage</MenuItem>
+                            </Select>
+                        </FormControl>
+
+                        <TextField
+                            label="Date"
+                            type="date"
+                            fullWidth
+                            value={dateLabel}
+                            onChange={(e) => setDateLabel(e.target.value)}
+                            InputLabelProps={{ shrink: true }}
+                            disabled={!selectedProject || submitting}
+                        />
+
+                        <TextField
+                            label="Posted by"
+                            fullWidth
+                            value={currentUserName}
+                            disabled
+                            placeholder={meLoading ? 'Loading...' : 'Your name'}
+                        />
+
+                        <TextField
+                            label="Description"
+                            fullWidth
+                            multiline
+                            minRows={5}
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                            placeholder="Share what changed, what was achieved, or what comes next..."
+                            disabled={!selectedProject || submitting}
+                        />
+                    </Stack>
+                </Box>
+            </Box>
+
+            <Box
+                sx={{
+                    height: 72,
+                    borderTop: 1,
+                    borderColor: 'grey.200',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'flex-end',
+                    px: { xs: 2, md: 4 },
+                    bgcolor: 'white',
+                }}
+            >
+                <Button
+                    variant="contained"
+                    onClick={handlePost}
+                    disabled={!canPost}
+                    size="large"
+                    sx={{ px: 4 }}
+                >
+                    {submitting ? 'Posting...' : 'Post Update'}
+                </Button>
+            </Box>
         </Box>
-      </Box>
-
-      {/* Footer Actions */}
-      <Box
-        sx={{
-          height: 72,
-          borderTop: 1,
-          borderColor: 'grey.200',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'flex-end',
-          px: {
-            xs: 2,
-            md: 4
-          },
-          bgcolor: 'white'
-        }}>
-
-        <Button
-          variant="contained"
-          onClick={handlePost}
-          disabled={!canPost}
-          size="large"
-          sx={{
-            px: 4
-          }}>
-
-          Post Update
-        </Button>
-      </Box>
-    </Box>);
-
+    );
 }

@@ -52,8 +52,14 @@ export interface CompanyFormData {
     otherProjectType: string;
     regions: string[];
 
-    // new
     logoPreview?: string;
+    logo?: {
+        tempKey: string;
+        tempAssetUrl: string;
+        contentType: string;
+        originalName: string;
+        sha256?: string;
+    };
 }
 
 type CreateCompanyResponse = {
@@ -98,6 +104,16 @@ function buildInitialFormData(draft?: Record<string, unknown>): CompanyFormData 
 
         logoPreview:
             typeof draft?.logoPreview === 'string' ? draft.logoPreview : undefined,
+        logo:
+            draft?.logo && typeof draft.logo === "object"
+                ? {
+                    tempKey: typeof (draft.logo as any).tempKey === "string" ? (draft.logo as any).tempKey : "",
+                    tempAssetUrl: typeof (draft.logo as any).tempAssetUrl === "string" ? (draft.logo as any).tempAssetUrl : "",
+                    contentType: typeof (draft.logo as any).contentType === "string" ? (draft.logo as any).contentType : "",
+                    originalName: typeof (draft.logo as any).originalName === "string" ? (draft.logo as any).originalName : "",
+                    sha256: typeof (draft.logo as any).sha256 === "string" ? (draft.logo as any).sha256 : undefined,
+                }
+                : undefined,
     };
 }
 
@@ -186,27 +202,77 @@ export function CompanyWizard({
         }
     };
 
-    const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const uploadOnboardingLogo = async (file: File) => {
+        const body = new FormData();
+        body.append("logo", file);
+
+        const response = await fetch(`${API_BASE_URL}/user-profiles/me/onboarding/company-logo`, {
+            method: "POST",
+            credentials: "include",
+            body,
+        });
+
+        if (!response.ok) {
+            let message = `Failed to upload logo: ${response.status}`;
+            try {
+                const payload = await response.json();
+                message = payload?.error || payload?.message || message;
+            } catch {
+                // ignore
+            }
+            throw new Error(message);
+        }
+
+        const payload = await response.json();
+
+        return {
+            tempKey: String(payload?.data?.tempKey ?? ""),
+            tempAssetUrl: String(payload?.data?.tempAssetUrl ?? ""),
+            contentType: String(payload?.data?.contentType ?? file.type),
+            originalName: String(payload?.data?.originalName ?? file.name),
+            sha256:
+                typeof payload?.data?.sha256 === "string" ? payload.data.sha256 : undefined,
+        };
+    };
+
+    const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        if (!file.type.startsWith('image/')) {
-            console.error('Logo must be an image');
+        if (!file.type.startsWith("image/")) {
+            setSubmitError("Logo must be an image");
             return;
         }
 
         if (file.size > 1 * 1024 * 1024) {
-            console.error('Logo must be 1MB or smaller');
+            setSubmitError("Logo must be 1MB or smaller");
             return;
         }
 
-        setLogoFile(file);
+        setSubmitError("");
 
         const reader = new FileReader();
-        reader.onloadend = () => {
+        reader.onloadend = async () => {
             const preview = reader.result as string;
             setLogoPreview(preview);
+
+            try {
+                const uploaded = await uploadOnboardingLogo(file);
+
+                updateFormData((prev) => ({
+                    ...prev,
+                    logo: uploaded,
+                    logoPreview: preview,
+                }));
+
+                setLogoFile(null);
+            } catch (error) {
+                const message =
+                    error instanceof Error ? error.message : "Failed to upload onboarding logo";
+                setSubmitError(message);
+            }
         };
+
         reader.readAsDataURL(file);
     };
 
@@ -778,22 +844,29 @@ async function createCompany(
 ): Promise<CreateCompanyResponse> {
     const body = new FormData();
 
-    body.append('name', formData.name);
-    body.append('description', formData.description);
-    body.append('primaryGeography', formData.primaryGeography);
-    body.append('roles', JSON.stringify(formData.roles));
-    body.append('serviceCategories', JSON.stringify(formData.serviceCategories));
-    body.append('projectTypes', JSON.stringify(formData.projectTypes));
-    body.append('otherProjectType', formData.otherProjectType);
-    body.append('regions', JSON.stringify(formData.regions));
+    body.append("name", formData.name);
+    body.append("description", formData.description);
+    body.append("primaryGeography", formData.primaryGeography);
+    body.append("roles", JSON.stringify(formData.roles));
+    body.append("serviceCategories", JSON.stringify(formData.serviceCategories));
+    body.append("projectTypes", JSON.stringify(formData.projectTypes));
+    body.append("otherProjectType", formData.otherProjectType);
+    body.append("regions", JSON.stringify(formData.regions));
 
     if (logoFile) {
-        body.append('logo', logoFile);
+        body.append("logo", logoFile);
+    } else if (formData.logo?.tempKey) {
+        body.append("onboardingLogoTempKey", formData.logo.tempKey);
+        body.append("onboardingLogoContentType", formData.logo.contentType);
+        body.append("onboardingLogoOriginalName", formData.logo.originalName);
+        if (formData.logo.sha256) {
+            body.append("onboardingLogoSha256", formData.logo.sha256);
+        }
     }
 
     const response = await fetch(`${API_BASE_URL}/companies`, {
-        method: 'POST',
-        credentials: 'include',
+        method: "POST",
+        credentials: "include",
         body,
     });
 
@@ -815,6 +888,6 @@ async function createCompany(
     const payload = await response.json();
 
     return {
-        id: String(payload?.id ?? payload?.data?.id ?? payload?.companyId ?? ''),
+        id: String(payload?.id ?? payload?.data?.id ?? payload?.companyId ?? ""),
     };
 }

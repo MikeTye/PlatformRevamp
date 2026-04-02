@@ -77,7 +77,7 @@ export function OnboardingPage() {
     const [lastCreatedCompanyId, setLastCreatedCompanyId] = useState<string | null>(null);
 
     const isJustExploring = selectedRoles.includes('exploring');
-    const isProjectDeveloper = selectedRoles.includes('develop');
+    // const isProjectDeveloper = selectedRoles.includes('develop');
 
     const emptyOnboardingState: OnboardingPayload = {
         onboardingSelectedRoles: [],
@@ -90,8 +90,11 @@ export function OnboardingPage() {
 
     const getVisibleSteps = () => {
         if (isJustExploring) return ['Your Role'];
-        if (!isProjectDeveloper) return ['Your Role', 'Company Setup'];
-        return steps;
+        return ['Your Role', 'Company Setup'];
+
+        // TEMP: Project onboarding is disabled until ProjectWizard is complete.
+        // if (!isProjectDeveloper) return ['Your Role', 'Company Setup'];
+        // return steps;
     };
 
     const getProgressValue = () => {
@@ -255,27 +258,39 @@ export function OnboardingPage() {
         setOnboardingDraft(nextDraft);
         setCompanyCreated(true);
 
-        if (isProjectDeveloper) {
-            const nextStep = 2;
-            setActiveStep(nextStep);
+        await persistOnboarding(
+            buildPayload({
+                onboardingCompanyCreated: true,
+                onboardingStatus: 'completed',
+                onboardingDraft: nextDraft,
+                onboardingStep: 1,
+            })
+        );
+        localStorage.removeItem(storageKey);
+        navigate('/dashboard');
 
-            await persistOnboarding(
-                buildPayload({
-                    onboardingCompanyCreated: true,
-                    onboardingStep: nextStep,
-                    onboardingDraft: nextDraft,
-                })
-            );
-        } else {
-            await persistOnboarding(
-                buildPayload({
-                    onboardingCompanyCreated: true,
-                    onboardingStatus: 'completed',
-                    onboardingDraft: nextDraft,
-                })
-            );
-            navigate('/dashboard');
-        }
+        // TEMP: Project onboarding is disabled until ProjectWizard is complete.
+        // if (isProjectDeveloper) {
+        //     const nextStep = 2;
+        //     setActiveStep(nextStep);
+        //
+        //     await persistOnboarding(
+        //         buildPayload({
+        //             onboardingCompanyCreated: true,
+        //             onboardingStep: nextStep,
+        //             onboardingDraft: nextDraft,
+        //         })
+        //     );
+        // } else {
+        //     await persistOnboarding(
+        //         buildPayload({
+        //             onboardingCompanyCreated: true,
+        //             onboardingStatus: 'completed',
+        //             onboardingDraft: nextDraft,
+        //         })
+        //     );
+        //     navigate('/dashboard');
+        // }
     };
 
     const handleProjectWizardClose = async (result?: WizardCloseResult) => {
@@ -328,11 +343,17 @@ export function OnboardingPage() {
                         ? data.onboardingSelectedRoles
                         : []
                 );
-                setActiveStep(
+                // 3) Normalize previously saved step 2 back to step 1 when loading.
+                // Inside applyState(), replace setActiveStep(...) with this:
+
+                const resolvedStep =
                     typeof data.onboardingStep === 'number'
                         ? data.onboardingStep
-                        : 0
-                );
+                        : 0;
+
+                // TEMP: Project onboarding is disabled until ProjectWizard is complete.
+                setActiveStep(resolvedStep > 1 ? 1 : resolvedStep);
+
                 setCompanyCreated(Boolean(data.onboardingCompanyCreated));
                 setProjectCreated(Boolean(data.onboardingProjectCreated));
                 setOnboardingDraft(
@@ -774,7 +795,7 @@ export function OnboardingPage() {
                 onDraftChange={handleCompanyDraftChange}
             />
 
-            <ProjectWizard
+            {/* <ProjectWizard
                 open={isProjectWizardOpen}
                 onClose={handleProjectWizardClose}
                 hasCompanies={companyCreated || Boolean(lastCreatedCompanyId)}
@@ -802,7 +823,7 @@ export function OnboardingPage() {
                         return nextDraft;
                     });
                 }}
-            />
+            /> */}
         </Box>
     );
 }

@@ -1,52 +1,25 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Alert, Box, Button, CircularProgress, Drawer, Stack, Typography } from '@mui/material';
-import SettingsRounded from '@mui/icons-material/SettingsRounded';
+import { Alert, Box, CircularProgress, Stack, Typography } from '@mui/material';
 import ProjectProfileView, {
     ProjectProfileData,
     ProjectRole,
     ProjectSectionKey,
+    ProjectEditorTarget,
+    ProjectAccess,
 } from './ProjectProfileView';
 import ProjectSidebarEditor from './ProjectSidebarEditor';
 
-// Replace this with your actual editor component later.
-function ProjectSidebarEditorPlaceholder({
-    section,
-    open,
-    onClose,
-}: {
-    section: ProjectSectionKey | null;
-    open: boolean;
-    onClose: () => void;
-}) {
-    return (
-        <Drawer anchor="right" open={open} onClose={onClose}>
-            <Box sx={{ width: 420, p: 3 }}>
-                <Stack spacing={2}>
-                    <Typography variant="h6" fontWeight={700}>
-                        Sidebar Editor
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                        Active section: {section || '—'}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                        Keep this as the separate editing surface. The profile view should stay presentation-first.
-                    </Typography>
-                    <Button variant="contained" onClick={onClose}>
-                        Close
-                    </Button>
-                </Stack>
-            </Box>
-        </Drawer>
-    );
-}
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 
-type ProjectApiResponse = ProjectProfileData & {
+type ProjectApiResponse = Omit<ProjectProfileData, 'documents' | 'media'> & {
+    documents?: ProjectProfileData['documents'];
+    media?: ProjectProfileData['media'];
     myRole?: ProjectRole | null;
     saved?: boolean;
 };
 
-export default function MyProject() {
+export function MyProject() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
 
@@ -58,9 +31,45 @@ export default function MyProject() {
     const [isSaved, setIsSaved] = useState(false);
 
     const [editorOpen, setEditorOpen] = useState(false);
-    const [activeSection, setActiveSection] = useState<ProjectSectionKey | null>(null);
+    const [activeSection, setActiveSection] = useState<ProjectEditorTarget | null>(null);
 
     const canEdit = myRole === 'creator';
+
+    const access: ProjectAccess = useMemo(
+        () => ({
+            isProjectMember: Boolean(myRole),
+            projectRole: myRole,
+            canViewPrivateSections: myRole === 'creator' || myRole === 'viewer',
+        }),
+        [myRole],
+    );
+
+    const handleBack = useCallback(() => {
+        navigate('/projects?tab=my');
+    }, [navigate]);
+
+    const handleShare = useCallback(async () => {
+        const shareUrl = window.location.href;
+        const shareTitle = project?.name ?? 'Project';
+
+        try {
+            if (navigator.share) {
+                await navigator.share({
+                    title: shareTitle,
+                    url: shareUrl,
+                });
+                return;
+            }
+        } catch {
+            // fall through to clipboard
+        }
+
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+        } catch {
+            window.prompt('Copy this link:', shareUrl);
+        }
+    }, [project]);
 
     const loadProject = useCallback(async () => {
         if (!id) {
@@ -73,8 +82,7 @@ export default function MyProject() {
         setError(null);
 
         try {
-            // Replace with your real endpoint.
-            const res = await fetch(`/api/projects/${id}`, {
+            const res = await fetch(`${API_BASE_URL}/projects/${id}/edit`, {
                 credentials: 'include',
             });
 
@@ -95,6 +103,7 @@ export default function MyProject() {
                 country: json.country ?? null,
                 region: json.region ?? null,
                 coverImageUrl: json.coverImageUrl ?? null,
+                projectVisibility: json.projectVisibility ?? null,
                 storyProblem: json.storyProblem ?? null,
                 storyApproach: json.storyApproach ?? null,
                 methodology: json.methodology ?? null,
@@ -103,7 +112,6 @@ export default function MyProject() {
                 registryProjectId: json.registryProjectId ?? null,
                 totalAreaHa: json.totalAreaHa ?? null,
                 estimatedAnnualRemoval: json.estimatedAnnualRemoval ?? null,
-                coBenefits: json.coBenefits ?? [],
                 readiness: json.readiness ?? [],
                 serviceProviders: json.serviceProviders ?? [],
                 opportunities: json.opportunities ?? [],
@@ -111,6 +119,8 @@ export default function MyProject() {
                 documents: json.documents ?? [],
                 media: json.media ?? [],
                 team: json.team ?? [],
+                latitude: json.latitude ?? null,
+                longitude: json.longitude ?? null,
                 sectionVisibility: json.sectionVisibility ?? {},
             });
 
@@ -127,17 +137,16 @@ export default function MyProject() {
         void loadProject();
     }, [loadProject]);
 
-    const handleOpenEditor = useCallback((section: ProjectSectionKey) => {
-        if (!canEdit) return;
-        setActiveSection(section);
-        setEditorOpen(true);
-    }, [canEdit]);
+    const handleOpenEditor = useCallback(
+        (section: ProjectEditorTarget) => {
+            if (!canEdit) return;
+            if (section === 'readiness') return;
 
-    const handleOpenSettings = useCallback(() => {
-        if (!canEdit) return;
-        setActiveSection('overview');
-        setEditorOpen(true);
-    }, [canEdit]);
+            setActiveSection(section);
+            setEditorOpen(true);
+        },
+        [canEdit],
+    );
 
     const handleToggleSave = useCallback(async () => {
         if (!project) return;
@@ -146,22 +155,36 @@ export default function MyProject() {
         setIsSaved(next);
 
         try {
-            const res = await fetch(`/api/saved-projects/${project.id}`, {
-                method: next ? 'POST' : 'DELETE',
-                credentials: 'include',
-            });
+            if (next) {
+                const res = await fetch(`${API_BASE_URL}/saved-items`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        entityType: 'project',
+                        entityId: project.id,
+                    }),
+                });
 
-            if (!res.ok) {
-                throw new Error('Failed to update saved state');
+                if (!res.ok) {
+                    throw new Error(`Failed to save item (${res.status})`);
+                }
+            } else {
+                const res = await fetch(`${API_BASE_URL}/saved-items/project/${project.id}`, {
+                    method: 'DELETE',
+                    credentials: 'include',
+                });
+
+                if (!res.ok) {
+                    throw new Error(`Failed to remove saved item (${res.status})`);
+                }
             }
         } catch {
             setIsSaved(!next);
         }
     }, [project, isSaved]);
-
-    const handleBack = useCallback(() => {
-        navigate('/projects?tab=my');
-    }, [navigate]);
 
     const content = useMemo(() => {
         if (loading) {
@@ -199,23 +222,19 @@ export default function MyProject() {
                     project={project}
                     mode="edit"
                     currentUserRole={myRole}
+                    access={access}
                     canEdit={canEdit}
                     isSaved={isSaved}
-                    onToggleSave={handleToggleSave}
                     onBack={handleBack}
+                    onShare={handleShare}
+                    onToggleSave={handleToggleSave}
                     onOpenEditor={handleOpenEditor}
-                    onOpenSettings={handleOpenSettings}
-                    renderSidebarAnchor={
-                        canEdit ? (
-                            <Button
-                                variant="outlined"
-                                startIcon={<SettingsRounded />}
-                                onClick={handleOpenSettings}
-                            >
-                                Edit
-                            </Button>
-                        ) : null
-                    }
+                    onOpenSettings={() => handleOpenEditor('settings')}
+                    headerBar={{
+                        backLabel: 'Back to My Projects',
+                        contextLabel: project.companyName || project.name,
+                        showSettingsButton: canEdit,
+                    }}
                 />
 
                 <ProjectSidebarEditor
@@ -223,22 +242,79 @@ export default function MyProject() {
                     section={activeSection}
                     project={project}
                     onClose={() => setEditorOpen(false)}
+                    onProjectChange={(nextProject) => {
+                        setProject(nextProject);
+                    }}
                     onSave={async (patch) => {
                         if (!project) return;
 
-                        const nextProject = {
+                        const nextTeam =
+                            patch.team === undefined
+                                ? project.team
+                                : patch.team.map((member) => {
+                                    if (member.memberType === 'company') {
+                                        const companyId = member.companyId ?? member.memberId;
+
+                                        const existing =
+                                            project.team?.find(
+                                                (item) =>
+                                                    item.memberType === 'company' &&
+                                                    (item.companyId ?? item.memberId) === companyId,
+                                            ) ?? null;
+
+                                        return {
+                                            id: existing?.id ?? crypto.randomUUID(),
+                                            memberType: 'company' as const,
+                                            memberId: companyId,
+                                            userId: null,
+                                            companyId,
+                                            name: member.name ?? existing?.name ?? '',
+                                            role: member.role ?? existing?.role ?? null,
+                                            companyName: member.companyName ?? existing?.companyName ?? '',
+                                            avatarUrl: member.avatarUrl ?? existing?.avatarUrl ?? null,
+                                            permission: null,
+                                        };
+                                    }
+
+                                    const memberUserId = member.userId ?? member.memberId;
+
+                                    const existing =
+                                        project.team?.find(
+                                            (item) =>
+                                                item.memberType === 'user' &&
+                                                (item.userId ?? item.memberId) === memberUserId,
+                                        ) ?? null;
+
+                                    return {
+                                        id: existing?.id ?? crypto.randomUUID(),
+                                        memberType: 'user' as const,
+                                        memberId: memberUserId,
+                                        userId: memberUserId,
+                                        companyId: null,
+                                        name: member.name ?? existing?.name ?? '',
+                                        role: member.role ?? existing?.role ?? null,
+                                        companyName: member.companyName ?? existing?.companyName ?? '',
+                                        avatarUrl: member.avatarUrl ?? existing?.avatarUrl ?? null,
+                                        permission: member.permission ?? existing?.permission ?? 'viewer',
+                                    };
+                                });
+
+                        const nextProject: ProjectProfileData = {
                             ...project,
                             ...patch,
-                            sectionVisibility: {
-                                ...(project.sectionVisibility ?? {}),
-                                ...(patch.sectionVisibility ?? {}),
-                            },
+                            team: nextTeam,
+                            sectionVisibility: patch.sectionVisibility
+                                ? {
+                                    ...(project.sectionVisibility ?? {}),
+                                    ...(patch.sectionVisibility ?? {}),
+                                }
+                                : project.sectionVisibility,
                         };
 
                         setProject(nextProject);
 
                         try {
-                            const res = await fetch(`/api/projects/${project.id}`, {
+                            const res = await fetch(`${API_BASE_URL}/projects/${project.id}`, {
                                 method: 'PATCH',
                                 credentials: 'include',
                                 headers: {
@@ -263,12 +339,13 @@ export default function MyProject() {
         error,
         project,
         myRole,
+        access,
         canEdit,
         isSaved,
-        handleToggleSave,
         handleBack,
+        handleShare,
+        handleToggleSave,
         handleOpenEditor,
-        handleOpenSettings,
         editorOpen,
         activeSection,
     ]);

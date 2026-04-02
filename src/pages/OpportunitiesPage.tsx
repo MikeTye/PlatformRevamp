@@ -1,768 +1,940 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Box,
-  Typography,
-  Paper,
-  InputBase,
-  IconButton,
-  Button,
-  Select,
-  MenuItem,
-  Chip,
-  FormControl,
-  InputLabel,
-  Checkbox,
-  ListItemText,
-  Tabs,
-  Tab } from
-'@mui/material';
+    Box,
+    Typography,
+    Paper,
+    InputBase,
+    IconButton,
+    Button,
+    Select,
+    MenuItem,
+    Chip,
+    FormControl,
+    InputLabel,
+    Checkbox,
+    ListItemText,
+    Tabs,
+    Tab,
+    CircularProgress
+} from '@mui/material';
 import SearchRounded from '@mui/icons-material/SearchRounded';
 import CloseRounded from '@mui/icons-material/CloseRounded';
 import {
-  OpportunityCard,
-  OpportunityType } from
-'../components/cards/OpportunityCard';
+    OpportunityCard,
+    OpportunityType
+} from '../components/cards/OpportunityCard';
 import { ProjectStage } from '../components/ProjectStageIndicator';
 import { MobileFilterSheet } from '../components/MobileFilterSheet';
-interface Opportunity {
-  id: string;
-  type: OpportunityType;
-  description: string;
-  projectName: string;
-  projectUpid: string;
-  developer: string;
-  stage: ProjectStage;
-  country: string;
-  countryCode: string;
-  urgent: boolean;
+import countryCodes from '../data/countrycode.json';
+
+type BackendProjectListItem = {
+    id: string;
+    upid: string | null;
+    name: string;
+    developer: string;
+    description: string | null;
+    stage: ProjectStage;
+    type: string;
+    country: string | null;
+    countryCode: string | null;
+    region: string | null;
+    lat: number | null;
+    lng: number | null;
+    updatedAt: string;
+    opportunities: string[];
+    isSaved: boolean;
+    isMine: boolean;
+};
+
+type BackendFacetOption = {
+    value: string;
+    count: number;
+};
+
+type BackendListProjectsResponse = {
+    items: BackendProjectListItem[];
+    total: number;
+    page: number;
+    pageSize: number;
+    sortBy: string;
+    sortDir: 'asc' | 'desc';
+    counts: {
+        all: number;
+        my: number;
+        saved: number;
+    };
+    filters: {
+        stages: BackendFacetOption[];
+        types: BackendFacetOption[];
+        countries: BackendFacetOption[];
+        opportunities: BackendFacetOption[];
+    };
+};
+
+type BackendProjectDetailOpportunity = {
+    id: string;
+    type: string;
+    description?: string | null;
+    urgent?: boolean;
+    isActive?: boolean;
+    sortOrder?: number | null;
+};
+
+type BackendProjectDetail = {
+    id: string;
+    upid: string | null;
+    name: string;
+    companyName: string | null;
+    stage: ProjectStage;
+    country: string | null;
+    opportunities: BackendProjectDetailOpportunity[];
+};
+
+type SavedOpportunityRow = {
+    entityType: 'opportunity';
+    savedAt: string;
+    opportunity: {
+        id: string;
+        projectId: string;
+        type: string;
+        description: string;
+        urgent: boolean;
+        sortOrder: number;
+        isActive: boolean;
+        projectName: string;
+        projectUpid: string | null;
+        developer: string;
+        stage: string | null;
+        country: string | null;
+        countryCode: string | null;
+        isMine: boolean;
+    };
+};
+
+type SavedItemsResponse = {
+    projects: unknown[];
+    companies: unknown[];
+    opportunities: SavedOpportunityRow[];
+};
+
+type Opportunity = {
+    id: string;
+    projectId: string;
+    type: OpportunityType;
+    description: string;
+    projectName: string;
+    projectUpid: string;
+    developer: string;
+    stage: ProjectStage;
+    country: string;
+    countryCode: string;
+    urgent: boolean;
+    isSaved: boolean;
+    isMine?: boolean;
+    savedAt?: string;
+};
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
+
+const FALLBACK_OPPORTUNITY_TYPES: OpportunityType[] = [
+    'Financing',
+    'Technical Advisor',
+    'Buyers',
+    'MRV Provider',
+    'Insurance'
+];
+
+const FALLBACK_STAGES: ProjectStage[] = [
+    'Exploration',
+    'Concept',
+    'Design',
+    'Listed',
+    'Validation',
+    'Registered',
+    'Issued',
+    'Closed'
+];
+
+type CountryCodeEntry = {
+    country: string;
+    code: string;
+    iso: string;
+};
+
+type BackendOpportunityListItem = {
+    id: string;
+    projectId: string;
+    projectName: string;
+    type: string;
+    description: string | null;
+    urgent: boolean;
+    createdAt: string;
+};
+
+type BackendListProjectOpportunitiesResponse = {
+    items: BackendOpportunityListItem[];
+};
+
+const COUNTRY_CODE_MAP = new Map(
+    (countryCodes as CountryCodeEntry[]).map((item) => [
+        item.country.trim().toLowerCase(),
+        item.iso.trim().toUpperCase()
+    ])
+);
+
+function toCountryCode(country: string | null | undefined, fallback?: string | null) {
+    if (fallback && fallback.trim()) return fallback.trim().toUpperCase();
+    if (!country) return '';
+    return COUNTRY_CODE_MAP.get(country.trim().toLowerCase()) ?? country.slice(0, 2).toUpperCase();
 }
-const mockOpportunities: Opportunity[] = [
-{
-  id: '1',
-  type: 'Financing',
-  description:
-  'Seed funding for feasibility study and initial community engagement.',
-  projectName: 'Sarawak Peatland Rewetting Initiative',
-  projectUpid: 'CUP-MY042713-5',
-  developer: 'Borneo Carbon Partners',
-  stage: 'Design',
-  country: 'Malaysia',
-  countryCode: 'MY',
-  urgent: true
-},
-{
-  id: '2',
-  type: 'Technical Advisor',
-  description: 'Methodology selection support for blue carbon pathway.',
-  projectName: 'Kalimantan Forest Conservation',
-  projectUpid: 'CUP-ID109482-4',
-  developer: 'EcoForest Indonesia',
-  stage: 'Validation',
-  country: 'Indonesia',
-  countryCode: 'ID',
-  urgent: true
-},
-{
-  id: '3',
-  type: 'Buyers',
-  description: 'Forward purchase agreements for 2026 vintage.',
-  projectName: 'Mekong Delta Blue Carbon',
-  projectUpid: 'CUP-VN028471-3',
-  developer: 'Mekong Carbon',
-  stage: 'Concept',
-  country: 'Vietnam',
-  countryCode: 'VN',
-  urgent: false
-},
-{
-  id: '4',
-  type: 'Insurance',
-  description: 'Political risk insurance for project implementation phase.',
-  projectName: 'Northern Thailand Reforestation',
-  projectUpid: 'CUP-TH056219-7',
-  developer: 'Thai Forest Trust',
-  stage: 'Listed',
-  country: 'Thailand',
-  countryCode: 'TH',
-  urgent: false
-},
-{
-  id: '5',
-  type: 'MRV Provider',
-  description: 'Remote sensing and ground-truthing partner needed.',
-  projectName: 'Sumatra Mangrove Restoration',
-  projectUpid: 'CUP-ID203847-2',
-  developer: 'Blue Carbon Asia',
-  stage: 'Design',
-  country: 'Indonesia',
-  countryCode: 'ID',
-  urgent: true
-},
-{
-  id: '6',
-  type: 'Financing',
-  description: 'Series A equity investment for project scaling.',
-  projectName: 'Palawan Forest Protection',
-  projectUpid: 'CUP-PH091234-8',
-  developer: 'Philippine Carbon Corp',
-  stage: 'Exploration',
-  country: 'Philippines',
-  countryCode: 'PH',
-  urgent: false
-},
-{
-  id: '7',
-  type: 'Technical Advisor',
-  description: 'Biodiversity baseline assessment expertise.',
-  projectName: 'Myanmar Teak Reforestation',
-  projectUpid: 'CUP-MM078562-1',
-  developer: 'Golden Forest Co',
-  stage: 'Concept',
-  country: 'Myanmar',
-  countryCode: 'MM',
-  urgent: false
-},
-{
-  id: '8',
-  type: 'Buyers',
-  description: 'Spot market buyers for issued credits.',
-  projectName: 'Cambodia Community Forest',
-  projectUpid: 'CUP-KH045678-9',
-  developer: 'Mekong Carbon',
-  stage: 'Issued',
-  country: 'Cambodia',
-  countryCode: 'KH',
-  urgent: true
-},
-{
-  id: '9',
-  type: 'Insurance',
-  description: 'Reversal risk coverage for buffer pool contribution.',
-  projectName: 'Laos Watershed Protection',
-  projectUpid: 'CUP-LA089123-4',
-  developer: 'SE Asia Carbon Trust',
-  stage: 'Validation',
-  country: 'Laos',
-  countryCode: 'LA',
-  urgent: false
-},
-{
-  id: '10',
-  type: 'Financing',
-  description: 'Debt financing for nursery infrastructure.',
-  projectName: 'Sabah Rainforest Conservation',
-  projectUpid: 'CUP-MY156789-2',
-  developer: 'Borneo Carbon Partners',
-  stage: 'Listed',
-  country: 'Malaysia',
-  countryCode: 'MY',
-  urgent: false
-}];
 
-const opportunityTypes: OpportunityType[] = [
-'Financing',
-'Technical Advisor',
-'Buyers',
-'MRV Provider',
-'Insurance'];
+function asOpportunityType(value: string): OpportunityType | null {
+    const allowed: OpportunityType[] = [
+        'Financing',
+        'Technical Advisor',
+        'Buyers',
+        'MRV Provider',
+        'Insurance'
+    ];
 
-const stages: ProjectStage[] = [
-'Exploration',
-'Concept',
-'Design',
-'Listed',
-'Validation',
-'Registered',
-'Issued',
-'Closed'];
+    return allowed.includes(value as OpportunityType) ? (value as OpportunityType) : null;
+}
 
-const countries = [
-'Indonesia',
-'Malaysia',
-'Vietnam',
-'Thailand',
-'Philippines',
-'Myanmar',
-'Cambodia',
-'Laos'];
+function asProjectStage(value: string | null | undefined): ProjectStage | null {
+    if (!value) return null;
+    return FALLBACK_STAGES.includes(value as ProjectStage) ? (value as ProjectStage) : null;
+}
+
+function buildFallbackDescription(type: string, projectName: string) {
+    return `Open ${type.toLowerCase()} opportunity for ${projectName}.`;
+}
+
+async function apiGet<T>(path: string): Promise<T> {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+            Accept: 'application/json'
+        }
+    });
+
+    if (!response.ok) {
+        throw new Error(`Request failed: ${response.status}`);
+    }
+
+    const json = await response.json();
+    return (json?.data ?? json) as T;
+}
+
+async function apiPost<T>(path: string, body: unknown): Promise<T> {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+        throw new Error(`Request failed: ${response.status}`);
+    }
+
+    const json = await response.json();
+    return (json?.data ?? json) as T;
+}
+
+async function apiDelete(path: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: {
+            Accept: 'application/json'
+        }
+    });
+
+    if (!response.ok) {
+        throw new Error(`Request failed: ${response.status}`);
+    }
+}
+
+function isOpportunity(item: Opportunity | null): item is Opportunity {
+    return item !== null;
+}
+
+function mapSavedOpportunityToOpportunity(row: SavedOpportunityRow): Opportunity | null {
+    const type = asOpportunityType(row.opportunity.type);
+    const stage = asProjectStage(row.opportunity.stage);
+
+    if (!type || !stage) return null;
+
+    return {
+        id: row.opportunity.id,
+        projectId: row.opportunity.projectId,
+        type,
+        description:
+            row.opportunity.description?.trim() ||
+            buildFallbackDescription(type, row.opportunity.projectName),
+        projectName: row.opportunity.projectName,
+        projectUpid: row.opportunity.projectUpid || '',
+        developer: row.opportunity.developer || 'Unknown developer',
+        stage,
+        country: row.opportunity.country || '',
+        countryCode: toCountryCode(
+            row.opportunity.country,
+            row.opportunity.countryCode
+        ),
+        urgent: Boolean(row.opportunity.urgent),
+        isSaved: true,
+        isMine: row.opportunity.isMine,
+        savedAt: row.savedAt
+    };
+}
+
+function matchesSearch(opp: Opportunity, query: string) {
+    if (!query) return true;
+
+    const haystack = [
+        opp.type,
+        opp.description,
+        opp.projectName,
+        opp.projectUpid,
+        opp.developer,
+        opp.country,
+        opp.stage
+    ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+    return haystack.includes(query.toLowerCase());
+}
+
+function matchesFilters(
+    opp: Opportunity,
+    typeFilter: OpportunityType[],
+    stageFilter: ProjectStage[],
+    countryFilter: string[]
+) {
+    if (typeFilter.length && !typeFilter.includes(opp.type)) return false;
+    if (stageFilter.length && !stageFilter.includes(opp.stage)) return false;
+    if (countryFilter.length && !countryFilter.includes(opp.country)) return false;
+    return true;
+}
 
 export function OpportunitiesPage() {
-  const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState<OpportunityType[]>([]);
-  const [stageFilter, setStageFilter] = useState<ProjectStage[]>([]);
-  const [countryFilter, setCountryFilter] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<'all' | 'saved'>('all');
-  const [savedOpportunities, setSavedOpportunities] = useState<Set<string>>(
-    new Set(['1', '5'])
-  );
-  // Track items fading out (same pattern as BookmarksPage)
-  const [fadingItems, setFadingItems] = useState<Set<string>>(new Set());
-  const startFadeAndRemove = (
-  id: string,
-  remover: () => void,
-  e: React.MouseEvent) =>
-  {
-    e.stopPropagation();
-    // If already fading, cancel it (re-bookmark)
-    if (fadingItems.has(id)) {
-      setFadingItems((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-      return;
-    }
-    setFadingItems((prev) => new Set(prev).add(id));
-    setTimeout(() => {
-      setFadingItems((prev) => {
-        if (prev.has(id)) {
-          remover();
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        }
-        return prev;
-      });
-    }, 7000);
-  };
-  const toggleSave = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (activeTab === 'saved' && savedOpportunities.has(id)) {
-      startFadeAndRemove(
-        id,
-        () =>
-        setSavedOpportunities((prev) => {
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        }),
-        e
-      );
-      return;
-    }
-    setSavedOpportunities((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);else
-      next.add(id);
-      return next;
-    });
-  };
-  const handleFilterChange =
-  (setter: React.Dispatch<React.SetStateAction<any[]>>) => (event: any) => {
-    const {
-      target: { value }
-    } = event;
-    setter(typeof value === 'string' ? value.split(',') : value);
-  };
-  const filteredOpportunities = useMemo(() => {
-    return mockOpportunities.filter((opp) => {
-      if (
-      activeTab === 'saved' &&
-      !savedOpportunities.has(opp.id) &&
-      !fadingItems.has(opp.id))
+    const navigate = useNavigate();
 
-      return false;
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        if (
-        !opp.description.toLowerCase().includes(query) &&
-        !opp.projectName.toLowerCase().includes(query) &&
-        !opp.developer.toLowerCase().includes(query))
-        {
-          return false;
-        }
-      }
-      if (typeFilter.length > 0 && !typeFilter.includes(opp.type)) return false;
-      if (stageFilter.length > 0 && !stageFilter.includes(opp.stage))
-      return false;
-      if (countryFilter.length > 0 && !countryFilter.includes(opp.country))
-      return false;
-      return true;
-    });
-  }, [
-  searchQuery,
-  typeFilter,
-  stageFilter,
-  countryFilter,
-  activeTab,
-  savedOpportunities,
-  fadingItems]
-  );
-  const activeFiltersCount =
-  typeFilter.length + stageFilter.length + countryFilter.length;
-  return (
-    <Box
-      minHeight="100vh"
-      bgcolor="white"
-      color="text.secondary"
-      display="flex"
-      flexDirection="column">
+    const [searchQuery, setSearchQuery] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+    const [typeFilter, setTypeFilter] = useState<OpportunityType[]>([]);
+    const [stageFilter, setStageFilter] = useState<ProjectStage[]>([]);
+    const [countryFilter, setCountryFilter] = useState<string[]>([]);
+    const [activeTab, setActiveTab] = useState<'all' | 'saved'>('all');
 
-      {/* Header */}
-      <Box
-        bgcolor="white"
-        borderBottom={1}
-        borderColor="grey.200"
-        flexShrink={0}>
+    const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
 
-        <Box px={3} pt={2} pb={1} display="flex" alignItems="center" gap={1.5}>
-          <Typography variant="h5" fontWeight="bold" color="text.primary">
-            Opportunities
-          </Typography>
-          <Chip
-            label="Experimental"
-            size="small"
-            color="warning"
-            sx={{
-              height: 20,
-              fontSize: '0.625rem',
-              fontWeight: 600
-            }} />
+    const [loading, setLoading] = useState(true);
+    const [loadingSaved, setLoadingSaved] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-        </Box>
+    const [allOpportunities, setAllOpportunities] = useState<Opportunity[]>([]);
+    const [savedOpportunities, setSavedOpportunities] = useState<Opportunity[]>([]);
+    const [savedOpportunityIds, setSavedOpportunityIds] = useState<Set<string>>(new Set());
 
-        <Box px={3}>
-          <Tabs
-            value={activeTab}
-            onChange={(_, v) => setActiveTab(v)}
-            textColor="primary"
-            indicatorColor="primary"
-            sx={{
-              minHeight: 48
-            }}>
+    const [availableTypes, setAvailableTypes] = useState<OpportunityType[]>(FALLBACK_OPPORTUNITY_TYPES);
+    const [availableStages, setAvailableStages] = useState<ProjectStage[]>(FALLBACK_STAGES);
+    const [availableCountries, setAvailableCountries] = useState<string[]>([]);
 
-            <Tab
-              value="all"
-              label={
-              <Box display="flex" alignItems="center" gap={1}>
-                  All opportunities
-                  <Chip
-                  label={mockOpportunities.length}
-                  size="small"
-                  sx={{
-                    height: 20,
-                    fontSize: '0.75rem',
-                    bgcolor: 'grey.100'
-                  }} />
+    useEffect(() => {
+        const timer = window.setTimeout(() => {
+            setDebouncedSearch(searchQuery.trim());
+        }, 250);
 
-                </Box>
-              }
-              sx={{
-                textTransform: 'none',
-                fontWeight: 500,
-                minHeight: 48
-              }} />
+        return () => window.clearTimeout(timer);
+    }, [searchQuery]);
 
-            <Tab
-              value="saved"
-              label={
-              <Box display="flex" alignItems="center" gap={1}>
-                  Saved
-                  {savedOpportunities.size > 0 &&
-                <Chip
-                  label={savedOpportunities.size}
-                  size="small"
-                  sx={{
-                    height: 20,
-                    fontSize: '0.75rem',
-                    bgcolor: 'grey.100'
-                  }} />
+    useEffect(() => {
+        let cancelled = false;
 
-                }
-                </Box>
-              }
-              sx={{
-                textTransform: 'none',
-                fontWeight: 500,
-                minHeight: 48
-              }} />
+        async function loadSavedOpportunities() {
+            setLoadingSaved(true);
 
-          </Tabs>
-        </Box>
-      </Box>
+            try {
+                const saved = await apiGet<SavedItemsResponse>(
+                    '/saved-items?entityType=opportunity'
+                );
 
-      {/* Content */}
-      <Box p={3} flexGrow={1}>
-        <Paper
-          variant="outlined"
-          sx={{
-            borderRadius: 2,
-            overflow: 'hidden',
-            mb: 3
-          }}>
+                const mapped = (saved.opportunities ?? [])
+                    .map(mapSavedOpportunityToOpportunity)
+                    .filter(isOpportunity);
 
-          {/* Filter Bar */}
-          <Box
-            display="flex"
-            alignItems="center"
-            gap={2}
-            p={2}
-            borderBottom={1}
-            borderColor="grey.100"
-            flexWrap="wrap">
+                if (cancelled) return;
 
-            {/* Search */}
-            <Paper
-              component="form"
-              sx={{
-                p: '2px 4px',
-                display: 'flex',
-                alignItems: 'center',
-                width: 280,
-                border: 1,
-                borderColor: 'grey.200',
-                boxShadow: 'none'
-              }}>
-
-              <SearchRounded
-                sx={{
-                  ml: 1,
-                  color: 'grey.400',
-                  fontSize: 20
-                }} />
-
-              <InputBase
-                sx={{
-                  ml: 1,
-                  flex: 1,
-                  fontSize: '0.875rem'
-                }}
-                placeholder="Search opportunities..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)} />
-
-              {searchQuery &&
-              <IconButton size="small" onClick={() => setSearchQuery('')}>
-                  <CloseRounded
-                  sx={{
-                    fontSize: 16
-                  }} />
-
-                </IconButton>
-              }
-            </Paper>
-
-            {/* Filters */}
-            {/* Mobile: bottom sheet trigger */}
-            <Box
-              sx={{
-                display: {
-                  xs: 'block',
-                  md: 'none'
-                }
-              }}>
-
-              <MobileFilterSheet
-                activeCount={activeFiltersCount}
-                onClear={() => {
-                  setSearchQuery('');
-                  setTypeFilter([]);
-                  setStageFilter([]);
-                  setCountryFilter([]);
-                }}>
-
-                <FormControl size="small" fullWidth>
-                  <InputLabel
-                    sx={{
-                      fontSize: '0.875rem'
-                    }}>
-
-                    Type
-                  </InputLabel>
-                  <Select
-                    multiple
-                    value={typeFilter}
-                    onChange={handleFilterChange(setTypeFilter)}
-                    label="Type"
-                    renderValue={(selected) =>
-                    (selected as string[]).join(', ')
-                    }
-                    sx={{
-                      fontSize: '0.875rem'
-                    }}>
-
-                    {opportunityTypes.map((type) =>
-                    <MenuItem key={type} value={type}>
-                        <Checkbox
-                        checked={typeFilter.indexOf(type) > -1}
-                        size="small" />
-
-                        <ListItemText primary={type} />
-                      </MenuItem>
-                    )}
-                  </Select>
-                </FormControl>
-                <FormControl size="small" fullWidth>
-                  <InputLabel
-                    sx={{
-                      fontSize: '0.875rem'
-                    }}>
-
-                    Stage
-                  </InputLabel>
-                  <Select
-                    multiple
-                    value={stageFilter}
-                    onChange={handleFilterChange(setStageFilter)}
-                    label="Stage"
-                    renderValue={(selected) =>
-                    (selected as string[]).join(', ')
-                    }
-                    sx={{
-                      fontSize: '0.875rem'
-                    }}>
-
-                    {stages.map((stage) =>
-                    <MenuItem key={stage} value={stage}>
-                        <Checkbox
-                        checked={stageFilter.indexOf(stage) > -1}
-                        size="small" />
-
-                        <ListItemText primary={stage} />
-                      </MenuItem>
-                    )}
-                  </Select>
-                </FormControl>
-                <FormControl size="small" fullWidth>
-                  <InputLabel
-                    sx={{
-                      fontSize: '0.875rem'
-                    }}>
-
-                    Country
-                  </InputLabel>
-                  <Select
-                    multiple
-                    value={countryFilter}
-                    onChange={handleFilterChange(setCountryFilter)}
-                    label="Country"
-                    renderValue={(selected) =>
-                    (selected as string[]).join(', ')
-                    }
-                    sx={{
-                      fontSize: '0.875rem'
-                    }}>
-
-                    {countries.map((country) =>
-                    <MenuItem key={country} value={country}>
-                        <Checkbox
-                        checked={countryFilter.indexOf(country) > -1}
-                        size="small" />
-
-                        <ListItemText primary={country} />
-                      </MenuItem>
-                    )}
-                  </Select>
-                </FormControl>
-              </MobileFilterSheet>
-            </Box>
-
-            {/* Desktop: inline filters */}
-            <Box
-              sx={{
-                display: {
-                  xs: 'none',
-                  md: 'flex'
-                },
-                alignItems: 'center',
-                gap: 2,
-                flexWrap: 'wrap'
-              }}>
-
-              <FormControl
-                size="small"
-                sx={{
-                  minWidth: 160
-                }}>
-
-                <InputLabel
-                  sx={{
-                    fontSize: '0.875rem'
-                  }}>
-
-                  Type
-                </InputLabel>
-                <Select
-                  multiple
-                  value={typeFilter}
-                  onChange={handleFilterChange(setTypeFilter)}
-                  label="Type"
-                  renderValue={(selected) => (selected as string[]).join(', ')}
-                  sx={{
-                    fontSize: '0.875rem'
-                  }}>
-
-                  {opportunityTypes.map((type) =>
-                  <MenuItem key={type} value={type}>
-                      <Checkbox
-                      checked={typeFilter.indexOf(type) > -1}
-                      size="small" />
-
-                      <ListItemText primary={type} />
-                    </MenuItem>
-                  )}
-                </Select>
-              </FormControl>
-
-              <FormControl
-                size="small"
-                sx={{
-                  minWidth: 140
-                }}>
-
-                <InputLabel
-                  sx={{
-                    fontSize: '0.875rem'
-                  }}>
-
-                  Stage
-                </InputLabel>
-                <Select
-                  multiple
-                  value={stageFilter}
-                  onChange={handleFilterChange(setStageFilter)}
-                  label="Stage"
-                  renderValue={(selected) => (selected as string[]).join(', ')}
-                  sx={{
-                    fontSize: '0.875rem'
-                  }}>
-
-                  {stages.map((stage) =>
-                  <MenuItem key={stage} value={stage}>
-                      <Checkbox
-                      checked={stageFilter.indexOf(stage) > -1}
-                      size="small" />
-
-                      <ListItemText primary={stage} />
-                    </MenuItem>
-                  )}
-                </Select>
-              </FormControl>
-
-              <FormControl
-                size="small"
-                sx={{
-                  minWidth: 140
-                }}>
-
-                <InputLabel
-                  sx={{
-                    fontSize: '0.875rem'
-                  }}>
-
-                  Country
-                </InputLabel>
-                <Select
-                  multiple
-                  value={countryFilter}
-                  onChange={handleFilterChange(setCountryFilter)}
-                  label="Country"
-                  renderValue={(selected) => (selected as string[]).join(', ')}
-                  sx={{
-                    fontSize: '0.875rem'
-                  }}>
-
-                  {countries.map((country) =>
-                  <MenuItem key={country} value={country}>
-                      <Checkbox
-                      checked={countryFilter.indexOf(country) > -1}
-                      size="small" />
-
-                      <ListItemText primary={country} />
-                    </MenuItem>
-                  )}
-                </Select>
-              </FormControl>
-
-              {(activeFiltersCount > 0 || searchQuery) &&
-              <Button
-                size="small"
-                onClick={() => {
-                  setSearchQuery('');
-                  setTypeFilter([]);
-                  setStageFilter([]);
-                  setCountryFilter([]);
-                }}
-                sx={{
-                  textTransform: 'none',
-                  color: 'text.secondary'
-                }}>
-
-                  Clear
-                </Button>
-              }
-            </Box>
-          </Box>
-
-          {/* Results Grid */}
-          <Box p={2} bgcolor="grey.50">
-            {filteredOpportunities.length === 0 ?
-            <Box py={8} textAlign="center" color="text.disabled">
-                No opportunities found matching your criteria
-              </Box> :
-
-            <Box
-              display="grid"
-              gridTemplateColumns={{
-                xs: '1fr',
-                md: 'repeat(2, 1fr)',
-                lg: 'repeat(3, 1fr)'
-              }}
-              gap={2}>
-
-                {filteredOpportunities.map((opp) =>
-              <Box
-                key={opp.id}
-                sx={{
-                  opacity: fadingItems.has(opp.id) ? 0 : 1,
-                  transition: fadingItems.has(opp.id) ?
-                  'opacity 7s ease' :
-                  'none'
-                }}>
-
-                    <OpportunityCard
-                  id={opp.id}
-                  type={opp.type}
-                  description={opp.description}
-                  projectName={opp.projectName}
-                  projectUpid={opp.projectUpid}
-                  developer={opp.developer}
-                  stage={opp.stage}
-                  country={opp.country}
-                  countryCode={opp.countryCode}
-                  urgent={opp.urgent}
-                  isSaved={
-                  savedOpportunities.has(opp.id) &&
-                  !fadingItems.has(opp.id)
-                  }
-                  onToggleSave={(e) => toggleSave(opp.id, e)}
-                  onProjectClick={(e) => {
-                    e.stopPropagation();
-                    navigate(`/projects/${opp.projectUpid}`);
-                  }}
-                  onContactClick={(e) => {
-                    e.stopPropagation();
-                    // Handle contact click
-                  }} />
-
-                  </Box>
-              )}
-              </Box>
+                setSavedOpportunities(mapped);
+                setSavedOpportunityIds(new Set(mapped.map((item) => item.id)));
+            } catch {
+                if (cancelled) return;
+                setSavedOpportunities([]);
+                setSavedOpportunityIds(new Set());
+            } finally {
+                if (!cancelled) setLoadingSaved(false);
             }
-          </Box>
+        }
 
-          {/* Footer */}
-          {filteredOpportunities.length > 0 &&
-          <Box px={2} py={1.5} borderTop={1} borderColor="grey.100">
-              <Typography variant="caption" color="text.secondary">
-                Showing {filteredOpportunities.length} opportunities
-              </Typography>
+        loadSavedOpportunities();
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        async function loadAllOpportunities() {
+            setLoading(true);
+            setError(null);
+
+            try {
+                const result = await apiGet<BackendListProjectOpportunitiesResponse>(
+                    '/projects/opportunities?limit=20'
+                );
+
+                const flattened: Opportunity[] = (result.items ?? [])
+                    .map((item): Opportunity | null => {
+                        const type = asOpportunityType(item.type);
+                        if (!type) return null;
+
+                        return {
+                            id: item.id,
+                            projectId: item.projectId,
+                            type,
+                            description:
+                                item.description?.trim() ||
+                                buildFallbackDescription(type, item.projectName),
+                            projectName: item.projectName,
+                            projectUpid: '',
+                            developer: '',
+                            stage: 'Exploration' as ProjectStage,
+                            country: '',
+                            countryCode: '',
+                            urgent: Boolean(item.urgent),
+                            isSaved: savedOpportunityIds.has(item.id),
+                            isMine: false
+                        };
+                    })
+                    .filter(isOpportunity);
+
+                if (!cancelled) {
+                    setAllOpportunities(flattened);
+                }
+
+            } catch (err) {
+                if (!cancelled) {
+                    setError(err instanceof Error ? err.message : 'Failed to load opportunities');
+                    setAllOpportunities([]);
+                }
+            } finally {
+                if (!cancelled) {
+                    setLoading(false);
+                }
+            }
+        }
+
+        loadAllOpportunities();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [debouncedSearch, typeFilter, stageFilter, countryFilter, savedOpportunityIds]);
+
+    const handleToggleSave = async (opportunity: Opportunity, e: React.MouseEvent) => {
+        e.stopPropagation();
+
+        if (savingIds.has(opportunity.id)) return;
+
+        setSavingIds((prev) => new Set(prev).add(opportunity.id));
+
+        const wasSaved = savedOpportunityIds.has(opportunity.id);
+
+        try {
+            if (wasSaved) {
+                await apiDelete(`/saved-items/opportunity/${opportunity.id}`);
+
+                setSavedOpportunityIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(opportunity.id);
+                    return next;
+                });
+
+                setSavedOpportunities((prev) =>
+                    prev.filter((item) => item.id !== opportunity.id)
+                );
+
+                setAllOpportunities((prev) =>
+                    prev.map((item) =>
+                        item.id === opportunity.id ? { ...item, isSaved: false } : item
+                    )
+                );
+            } else {
+                await apiPost('/saved-items', {
+                    entityType: 'opportunity',
+                    entityId: opportunity.id
+                });
+
+                const savedVersion: Opportunity = {
+                    ...opportunity,
+                    isSaved: true,
+                    savedAt: new Date().toISOString()
+                };
+
+                setSavedOpportunityIds((prev) => new Set(prev).add(opportunity.id));
+
+                setSavedOpportunities((prev) => {
+                    const exists = prev.some((item) => item.id === opportunity.id);
+                    if (exists) {
+                        return prev.map((item) =>
+                            item.id === opportunity.id ? { ...item, isSaved: true } : item
+                        );
+                    }
+                    return [savedVersion, ...prev];
+                });
+
+                setAllOpportunities((prev) =>
+                    prev.map((item) =>
+                        item.id === opportunity.id ? { ...item, isSaved: true } : item
+                    )
+                );
+            }
+        } catch (err) {
+            console.error('Failed to toggle save for opportunity', err);
+        } finally {
+            setSavingIds((prev) => {
+                const next = new Set(prev);
+                next.delete(opportunity.id);
+                return next;
+            });
+        }
+    };
+
+    const handleFilterChange =
+        <T,>(setter: React.Dispatch<React.SetStateAction<T[]>>) =>
+            (event: any) => {
+                const {
+                    target: { value }
+                } = event;
+                setter(typeof value === 'string' ? value.split(',') : value);
+            };
+
+    const visibleOpportunities = useMemo(() => {
+        const base = activeTab === 'saved' ? savedOpportunities : allOpportunities;
+
+        return base.filter(
+            (opp) =>
+                matchesSearch(opp, debouncedSearch) &&
+                matchesFilters(opp, typeFilter, stageFilter, countryFilter)
+        );
+    }, [
+        activeTab,
+        allOpportunities,
+        savedOpportunities,
+        debouncedSearch,
+        typeFilter,
+        stageFilter,
+        countryFilter
+    ]);
+
+    const activeFiltersCount =
+        typeFilter.length + stageFilter.length + countryFilter.length;
+
+    const isPageLoading = loading || loadingSaved;
+
+    return (
+        <Box
+            minHeight="100vh"
+            bgcolor="white"
+            color="text.secondary"
+            display="flex"
+            flexDirection="column"
+        >
+            <Box
+                bgcolor="white"
+                borderBottom={1}
+                borderColor="grey.200"
+                flexShrink={0}
+            >
+                <Box px={3} pt={2} pb={1} display="flex" alignItems="center" gap={1.5}>
+                    <Typography variant="h5" fontWeight="bold" color="text.primary">
+                        Opportunities
+                    </Typography>
+                </Box>
+
+                <Box px={3}>
+                    <Tabs
+                        value={activeTab}
+                        onChange={(_, v) => setActiveTab(v)}
+                        textColor="primary"
+                        indicatorColor="primary"
+                        sx={{ minHeight: 48 }}
+                    >
+                        <Tab
+                            value="all"
+                            label={
+                                <Box display="flex" alignItems="center" gap={1}>
+                                    All opportunities
+                                    <Chip
+                                        label={allOpportunities.length}
+                                        size="small"
+                                        sx={{
+                                            height: 20,
+                                            fontSize: '0.75rem',
+                                            bgcolor: 'grey.100'
+                                        }}
+                                    />
+                                </Box>
+                            }
+                            sx={{
+                                textTransform: 'none',
+                                fontWeight: 500,
+                                minHeight: 48
+                            }}
+                        />
+
+                        <Tab
+                            value="saved"
+                            label={
+                                <Box display="flex" alignItems="center" gap={1}>
+                                    Saved
+                                    <Chip
+                                        label={savedOpportunities.length}
+                                        size="small"
+                                        sx={{
+                                            height: 20,
+                                            fontSize: '0.75rem',
+                                            bgcolor: 'grey.100'
+                                        }}
+                                    />
+                                </Box>
+                            }
+                            sx={{
+                                textTransform: 'none',
+                                fontWeight: 500,
+                                minHeight: 48
+                            }}
+                        />
+                    </Tabs>
+                </Box>
             </Box>
-          }
-        </Paper>
-      </Box>
-    </Box>);
 
+            <Box p={3} flexGrow={1}>
+                <Paper
+                    variant="outlined"
+                    sx={{
+                        borderRadius: 2,
+                        overflow: 'hidden',
+                        mb: 3
+                    }}
+                >
+                    <Box
+                        display="flex"
+                        alignItems="center"
+                        gap={2}
+                        p={2}
+                        borderBottom={1}
+                        borderColor="grey.100"
+                        flexWrap="wrap"
+                    >
+                        <Paper
+                            component="form"
+                            onSubmit={(e) => e.preventDefault()}
+                            sx={{
+                                p: '2px 4px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                width: 280,
+                                border: 1,
+                                borderColor: 'grey.200',
+                                boxShadow: 'none'
+                            }}
+                        >
+                            <SearchRounded
+                                sx={{
+                                    ml: 1,
+                                    color: 'grey.400',
+                                    fontSize: 20
+                                }}
+                            />
+
+                            <InputBase
+                                sx={{
+                                    ml: 1,
+                                    flex: 1,
+                                    fontSize: '0.875rem'
+                                }}
+                                placeholder="Search opportunities..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+
+                            {searchQuery && (
+                                <IconButton size="small" onClick={() => setSearchQuery('')}>
+                                    <CloseRounded sx={{ fontSize: 16 }} />
+                                </IconButton>
+                            )}
+                        </Paper>
+
+                        <Box
+                            sx={{
+                                display: {
+                                    xs: 'block',
+                                    md: 'none'
+                                }
+                            }}
+                        >
+                            <MobileFilterSheet
+                                activeCount={activeFiltersCount}
+                                onClear={() => {
+                                    setSearchQuery('');
+                                    setTypeFilter([]);
+                                    setStageFilter([]);
+                                    setCountryFilter([]);
+                                }}
+                            >
+                                <FormControl size="small" fullWidth>
+                                    <InputLabel sx={{ fontSize: '0.875rem' }}>Type</InputLabel>
+                                    <Select
+                                        multiple
+                                        value={typeFilter}
+                                        onChange={handleFilterChange(setTypeFilter)}
+                                        label="Type"
+                                        renderValue={(selected) => (selected as string[]).join(', ')}
+                                        sx={{ fontSize: '0.875rem' }}
+                                    >
+                                        {availableTypes.map((type) => (
+                                            <MenuItem key={type} value={type}>
+                                                <Checkbox
+                                                    checked={typeFilter.indexOf(type) > -1}
+                                                    size="small"
+                                                />
+                                                <ListItemText primary={type} />
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+
+                                <FormControl size="small" fullWidth>
+                                    <InputLabel sx={{ fontSize: '0.875rem' }}>Stage</InputLabel>
+                                    <Select
+                                        multiple
+                                        value={stageFilter}
+                                        onChange={handleFilterChange(setStageFilter)}
+                                        label="Stage"
+                                        renderValue={(selected) => (selected as string[]).join(', ')}
+                                        sx={{ fontSize: '0.875rem' }}
+                                    >
+                                        {availableStages.map((stage) => (
+                                            <MenuItem key={stage} value={stage}>
+                                                <Checkbox
+                                                    checked={stageFilter.indexOf(stage) > -1}
+                                                    size="small"
+                                                />
+                                                <ListItemText primary={stage} />
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+
+                                <FormControl size="small" fullWidth>
+                                    <InputLabel sx={{ fontSize: '0.875rem' }}>Country</InputLabel>
+                                    <Select
+                                        multiple
+                                        value={countryFilter}
+                                        onChange={handleFilterChange(setCountryFilter)}
+                                        label="Country"
+                                        renderValue={(selected) => (selected as string[]).join(', ')}
+                                        sx={{ fontSize: '0.875rem' }}
+                                    >
+                                        {availableCountries.map((country) => (
+                                            <MenuItem key={country} value={country}>
+                                                <Checkbox
+                                                    checked={countryFilter.indexOf(country) > -1}
+                                                    size="small"
+                                                />
+                                                <ListItemText primary={country} />
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                            </MobileFilterSheet>
+                        </Box>
+
+                        <Box
+                            sx={{
+                                display: {
+                                    xs: 'none',
+                                    md: 'flex'
+                                },
+                                alignItems: 'center',
+                                gap: 2,
+                                flexWrap: 'wrap'
+                            }}
+                        >
+                            <FormControl size="small" sx={{ minWidth: 160 }}>
+                                <InputLabel sx={{ fontSize: '0.875rem' }}>Type</InputLabel>
+                                <Select
+                                    multiple
+                                    value={typeFilter}
+                                    onChange={handleFilterChange(setTypeFilter)}
+                                    label="Type"
+                                    renderValue={(selected) => (selected as string[]).join(', ')}
+                                    sx={{ fontSize: '0.875rem' }}
+                                >
+                                    {availableTypes.map((type) => (
+                                        <MenuItem key={type} value={type}>
+                                            <Checkbox
+                                                checked={typeFilter.indexOf(type) > -1}
+                                                size="small"
+                                            />
+                                            <ListItemText primary={type} />
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+
+                            <FormControl size="small" sx={{ minWidth: 140 }}>
+                                <InputLabel sx={{ fontSize: '0.875rem' }}>Stage</InputLabel>
+                                <Select
+                                    multiple
+                                    value={stageFilter}
+                                    onChange={handleFilterChange(setStageFilter)}
+                                    label="Stage"
+                                    renderValue={(selected) => (selected as string[]).join(', ')}
+                                    sx={{ fontSize: '0.875rem' }}
+                                >
+                                    {availableStages.map((stage) => (
+                                        <MenuItem key={stage} value={stage}>
+                                            <Checkbox
+                                                checked={stageFilter.indexOf(stage) > -1}
+                                                size="small"
+                                            />
+                                            <ListItemText primary={stage} />
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+
+                            <FormControl size="small" sx={{ minWidth: 140 }}>
+                                <InputLabel sx={{ fontSize: '0.875rem' }}>Country</InputLabel>
+                                <Select
+                                    multiple
+                                    value={countryFilter}
+                                    onChange={handleFilterChange(setCountryFilter)}
+                                    label="Country"
+                                    renderValue={(selected) => (selected as string[]).join(', ')}
+                                    sx={{ fontSize: '0.875rem' }}
+                                >
+                                    {availableCountries.map((country) => (
+                                        <MenuItem key={country} value={country}>
+                                            <Checkbox
+                                                checked={countryFilter.indexOf(country) > -1}
+                                                size="small"
+                                            />
+                                            <ListItemText primary={country} />
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+
+                            {(activeFiltersCount > 0 || searchQuery) && (
+                                <Button
+                                    size="small"
+                                    onClick={() => {
+                                        setSearchQuery('');
+                                        setTypeFilter([]);
+                                        setStageFilter([]);
+                                        setCountryFilter([]);
+                                    }}
+                                    sx={{
+                                        textTransform: 'none',
+                                        color: 'text.secondary'
+                                    }}
+                                >
+                                    Clear
+                                </Button>
+                            )}
+                        </Box>
+                    </Box>
+
+                    <Box p={2} bgcolor="grey.50">
+                        {isPageLoading ? (
+                            <Box py={8} textAlign="center" color="text.secondary">
+                                <CircularProgress size={24} sx={{ mb: 2 }} />
+                                <Typography variant="body2">Loading opportunities...</Typography>
+                            </Box>
+                        ) : error ? (
+                            <Box py={8} textAlign="center" color="error.main">
+                                <Typography variant="body2">
+                                    Failed to load opportunities.
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    {error}
+                                </Typography>
+                            </Box>
+                        ) : visibleOpportunities.length === 0 ? (
+                            <Box py={8} textAlign="center" color="text.disabled">
+                                No opportunities found matching your criteria
+                            </Box>
+                        ) : (
+                            <Box
+                                display="grid"
+                                gridTemplateColumns={{
+                                    xs: '1fr',
+                                    md: 'repeat(2, 1fr)',
+                                    lg: 'repeat(3, 1fr)'
+                                }}
+                                gap={2}
+                            >
+                                {visibleOpportunities.map((opp) => (
+                                    <Box key={opp.id}>
+                                        <OpportunityCard
+                                            id={opp.id}
+                                            type={opp.type}
+                                            description={opp.description}
+                                            projectName={opp.projectName}
+                                            projectUpid={opp.projectUpid}
+                                            developer={opp.developer}
+                                            stage={opp.stage}
+                                            country={opp.country}
+                                            countryCode={opp.countryCode}
+                                            urgent={opp.urgent}
+                                            isSaved={savedOpportunityIds.has(opp.id)}
+                                            onToggleSave={(e) => handleToggleSave(opp, e)}
+                                            onProjectClick={(e) => {
+                                                e.stopPropagation();
+                                                navigate(`/projects/${opp.projectId}`);
+                                            }}
+                                            onContactClick={(e) => {
+                                                e.stopPropagation();
+                                            }}
+                                        />
+                                    </Box>
+                                ))}
+                            </Box>
+                        )}
+                    </Box>
+
+                    {!isPageLoading && !error && visibleOpportunities.length > 0 && (
+                        <Box px={2} py={1.5} borderTop={1} borderColor="grey.100">
+                            <Typography variant="caption" color="text.secondary">
+                                Showing {visibleOpportunities.length} opportunities
+                            </Typography>
+                        </Box>
+                    )}
+                </Paper>
+            </Box>
+        </Box>
+    );
 }

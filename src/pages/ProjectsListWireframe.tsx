@@ -483,7 +483,7 @@ export function ProjectsListWireframe() {
 
     const handleProjectClick = (projectId: string) => {
         if (activeTab === 'my') {
-            navigate(`/projects/${projectId}?from=my&edit=true`);
+            navigate(`/my-projects/${projectId}`);
             return;
         }
 

@@ -13,14 +13,23 @@ import {
     Tooltip,
     Divider,
     Alert,
+    Dialog,
+    DialogTitle,
+    IconButton,
+    DialogContent,
+    DialogActions,
 } from '@mui/material';
 import EmailRounded from '@mui/icons-material/EmailRounded';
 import PersonRounded from '@mui/icons-material/PersonRounded';
 import LinkRounded from '@mui/icons-material/LinkRounded';
 import { useAuth } from '../../context/AuthContext';
+import CloseRounded from '@mui/icons-material/CloseRounded';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? '';
+
+const TERMS_URL = '/legal/TermsConditions.html';
+const PRIVACY_URL = '/legal/PrivacyPolicy.html';
 
 declare global {
     interface Window {
@@ -83,6 +92,32 @@ export function SignUpPage() {
     const [inviteLoading, setInviteLoading] = useState(false);
     const [inviteError, setInviteError] = useState('');
     const [inviteCompany, setInviteCompany] = useState<InvitePreviewResponse['company'] | null>(null);
+
+    const [legalModal, setLegalModal] = useState<{
+        open: boolean;
+        title: string;
+        url: string;
+    }>({
+        open: false,
+        title: '',
+        url: '',
+    });
+
+    const openLegalModal = (title: string, url: string) => {
+        setLegalModal({
+            open: true,
+            title,
+            url,
+        });
+    };
+
+    const closeLegalModal = () => {
+        setLegalModal({
+            open: false,
+            title: '',
+            url: '',
+        });
+    };
 
     const getValidationErrors = () => {
         const errors: string[] = [];
@@ -158,7 +193,7 @@ export function SignUpPage() {
                 setInviteError('');
 
                 const resp = await fetch(
-                    `${API_BASE_URL}/company-invite-links/preview?token=${encodeURIComponent(companyInviteToken)}`,
+                    `${API_BASE_URL}/auth/company-invite-links/preview?token=${encodeURIComponent(companyInviteToken)}`,
                     {
                         method: 'GET',
                         credentials: 'include',
@@ -197,6 +232,12 @@ export function SignUpPage() {
 
         const handleGoogleCredential = async (response: { credential?: string }) => {
             try {
+                if (!formData.agreed) {
+                    setShowValidation(true);
+                    setFormError('Please agree to the Terms & Conditions before continuing with Google.');
+                    return;
+                }
+
                 if (!response.credential) {
                     throw new Error('Missing Google credential');
                 }
@@ -213,6 +254,7 @@ export function SignUpPage() {
                     body: JSON.stringify({
                         credential: response.credential,
                         intent: 'signup',
+                        agreedToTerms: formData.agreed,
                         companyInviteToken: companyInviteToken || undefined,
                     }),
                 });
@@ -437,8 +479,30 @@ export function SignUpPage() {
                                     </Typography>
                                 )}
 
-                                <Box>
-                                    <div ref={googleButtonRef} />
+                                <Box sx={{ position: 'relative' }}>
+                                    <div
+                                        ref={googleButtonRef}
+                                        style={{
+                                            opacity: formData.agreed ? 1 : 0.55,
+                                            filter: formData.agreed ? 'none' : 'grayscale(0.2)',
+                                        }}
+                                    />
+
+                                    {!formData.agreed && (
+                                        <Box
+                                            onClick={() => {
+                                                setShowValidation(true);
+                                                setFormError('Please agree to the Terms & Conditions before continuing with Google.');
+                                            }}
+                                            sx={{
+                                                position: 'absolute',
+                                                inset: 0,
+                                                cursor: 'not-allowed',
+                                                backgroundColor: 'transparent',
+                                                zIndex: 2,
+                                            }}
+                                        />
+                                    )}
                                 </Box>
 
                                 <Divider>
@@ -507,6 +571,7 @@ export function SignUpPage() {
                                 />
 
                                 <FormControlLabel
+                                    sx={{ m: 0 }}
                                     control={
                                         <Checkbox
                                             checked={formData.agreed}
@@ -516,17 +581,44 @@ export function SignUpPage() {
                                                     agreed: e.target.checked,
                                                 }));
                                                 setShowValidation(false);
+                                                setFormError('');
                                             }}
                                         />
                                     }
                                     label={
-                                        <Typography variant="body2" color="text.secondary">
+                                        <Typography
+                                            variant="body2"
+                                            color="text.secondary"
+                                            component="span"
+                                        >
                                             I agree to the{' '}
-                                            <Link href="/terms" color="primary" underline="hover">
-                                                Terms of Service
+                                            <Link
+                                                component="button"
+                                                type="button"
+                                                onClick={() => openLegalModal('Terms & Conditions', TERMS_URL)}
+                                                underline="hover"
+                                                sx={{
+                                                    fontSize: 'inherit',
+                                                    fontWeight: 'inherit',
+                                                    lineHeight: 'inherit',
+                                                    verticalAlign: 'baseline',
+                                                }}
+                                            >
+                                                Terms & Conditions
                                             </Link>{' '}
                                             and{' '}
-                                            <Link href="/privacy" color="primary" underline="hover">
+                                            <Link
+                                                component="button"
+                                                type="button"
+                                                onClick={() => openLegalModal('Privacy Policy', PRIVACY_URL)}
+                                                underline="hover"
+                                                sx={{
+                                                    fontSize: 'inherit',
+                                                    fontWeight: 'inherit',
+                                                    lineHeight: 'inherit',
+                                                    verticalAlign: 'baseline',
+                                                }}
+                                            >
                                                 Privacy Policy
                                             </Link>
                                         </Typography>
@@ -635,6 +727,53 @@ export function SignUpPage() {
                     </Typography>
                 </Box>
             </Box>
+            <Dialog
+                open={legalModal.open}
+                onClose={closeLegalModal}
+                fullWidth
+                maxWidth="md"
+            >
+                <DialogTitle
+                    sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        pr: 1,
+                    }}
+                >
+                    {legalModal.title}
+                    <IconButton onClick={closeLegalModal} aria-label="Close">
+                        <CloseRounded />
+                    </IconButton>
+                </DialogTitle>
+
+                <DialogContent dividers sx={{ p: 0, height: { xs: '70vh', md: '75vh' } }}>
+                    <Box
+                        component="iframe"
+                        src={legalModal.url}
+                        title={legalModal.title}
+                        sx={{
+                            width: '100%',
+                            height: '100%',
+                            border: 0,
+                        }}
+                    />
+                </DialogContent>
+
+                <DialogActions sx={{ px: 3, py: 2 }}>
+                    <Button
+                        component="a"
+                        href={legalModal.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        Open in new tab
+                    </Button>
+                    <Button onClick={closeLegalModal} variant="contained">
+                        Close
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 }

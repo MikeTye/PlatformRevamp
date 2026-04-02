@@ -10,23 +10,27 @@ import {
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { AppLayout } from './components/layout/AppLayout';
 import { ProjectsListWireframe } from './pages/ProjectsListWireframe';
-import { ProjectWireframe } from './pages/ProjectWireframe';
 import { CompaniesListWireframe } from './pages/CompaniesListWireframe';
 import { CompanyDetailWireframe } from './pages/CompanyDetailWireframe';
 import { CompanyDetail } from './pages/company/CompanyDetail';
 import { OpportunitiesPage } from './pages/OpportunitiesPage';
 import { MyCompanyPage } from './pages/MyCompanyPage';
 import { MyCompany } from './pages/company/MyCompany';
+import { MyProject } from './pages/project/MyProject';
+import { ProjectDetail } from './pages/project/ProjectDetail';
 import { DashboardPage } from './pages/DashboardPage';
 import { AccountPage } from './pages/AccountPage';
 import { BookmarksPage } from './pages/BookmarksPage';
 import { UserProfilePage } from './pages/UserProfilePage';
+import { ProjectStagesGuidePage } from './pages/ProjectStagesGuidePage';
 // Auth Pages
 import { LoginPage } from './pages/auth/LoginPage';
 import { SignUpPage } from './pages/auth/SignUpPage';
 import { VerifyCodePage } from './pages/auth/VerifyCodePage';
 import { OnboardingPage } from './pages/auth/OnboardingPage';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { registerGlobalErrorHandlers } from './lib/registerGlobalErrorHandlers';
+import { AppErrorBoundary } from './components/errors/AppErrorBoundary';
 // Create a default MUI theme
 const theme = createTheme({
     palette: {
@@ -309,138 +313,163 @@ function ProtectedRoute({
 function LayoutWrapper({ children }: { children: React.ReactNode; }) {
     return <AppLayout>{children}</AppLayout>;
 }
+
 export function App() {
+    useEffect(() => {
+        registerGlobalErrorHandlers();
+    }, []);
     return (
-        <ThemeProvider theme={theme}>
-            <CssBaseline />
-            <AuthProvider>
-                <BrowserRouter>
-                    <Routes>
-                        {/* Public Auth Routes */}
-                        <Route path="/login" element={<LoginPage />} />
-                        <Route path="/signup" element={<SignUpPage />} />
-                        <Route path="/verify" element={<VerifyCodePage />} />
-                        <Route
-                            path="/onboarding"
-                            element={
-                                <ProtectedRoute requireOnboardingComplete={false}>
-                                    <OnboardingPage />
-                                </ProtectedRoute>
-                            } />
+        <AppErrorBoundary>
+            <ThemeProvider theme={theme}>
+                <CssBaseline />
+                <AuthProvider>
+                    <BrowserRouter>
+                        <Routes>
+                            {/* Public Auth Routes */}
+                            <Route path="/login" element={<LoginPage />} />
+                            <Route path="/signup" element={<SignUpPage />} />
+                            <Route path="/verify" element={<VerifyCodePage />} />
+                            <Route
+                                path="/onboarding"
+                                element={
+                                    <ProtectedRoute requireOnboardingComplete={false}>
+                                        <OnboardingPage />
+                                    </ProtectedRoute>
+                                } />
 
 
-                        {/* Protected App Routes */}
-                        <Route
-                            path="/"
-                            element={
-                                <ProtectedRoute>
-                                    <Navigate to="/dashboard" replace />
-                                </ProtectedRoute>
-                            } />
+                            {/* Protected App Routes */}
+                            <Route
+                                path="/"
+                                element={
+                                    <ProtectedRoute>
+                                        <Navigate to="/dashboard" replace />
+                                    </ProtectedRoute>
+                                } />
 
-                        <Route
-                            path="/dashboard"
-                            element={
-                                <ProtectedRoute>
-                                    <LayoutWrapper>
-                                        <DashboardPage />
-                                    </LayoutWrapper>
-                                </ProtectedRoute>
-                            } />
+                            <Route
+                                path="/dashboard"
+                                element={
+                                    <ProtectedRoute>
+                                        <LayoutWrapper>
+                                            <DashboardPage />
+                                        </LayoutWrapper>
+                                    </ProtectedRoute>
+                                } />
 
-                        <Route
-                            path="/projects"
-                            element={
-                                <ProtectedRoute>
-                                    <LayoutWrapper>
-                                        <ProjectsListWireframe />
-                                    </LayoutWrapper>
-                                </ProtectedRoute>
-                            } />
+                            <Route
+                                path="/projects"
+                                element={
+                                    <ProtectedRoute>
+                                        <LayoutWrapper>
+                                            <ProjectsListWireframe />
+                                        </LayoutWrapper>
+                                    </ProtectedRoute>
+                                } />
 
-                        {/* <Route
-                            path="/projects/:id"
-                            element={
-                                <ProtectedRoute>
-                                    <LayoutWrapper>
-                                        <ProjectDetailPage />
-                                    </LayoutWrapper>
-                                </ProtectedRoute>
-                            } /> */}
+                            <Route
+                                path="/projects/:id"
+                                element={
+                                    <ProtectedRoute>
+                                        <LayoutWrapper>
+                                            <ProjectDetail />
+                                        </LayoutWrapper>
+                                    </ProtectedRoute>
+                                } />
 
-                        <Route
-                            path="/companies"
-                            element={
-                                <ProtectedRoute>
-                                    <LayoutWrapper>
-                                        <CompaniesListWireframe />
-                                    </LayoutWrapper>
-                                </ProtectedRoute>
-                            } />
+                            <Route
+                                path="/project-stages-guide"
+                                element={
+                                    <ProtectedRoute>
+                                        <LayoutWrapper>
+                                            <ProjectStagesGuidePage />
+                                        </LayoutWrapper>
+                                    </ProtectedRoute>
+                                } />
 
-                        <Route
-                            path="/companies/:id"
-                            element={
-                                <ProtectedRoute>
-                                    <LayoutWrapper>
-                                        <CompanyDetail />
-                                    </LayoutWrapper>
-                                </ProtectedRoute>
-                            } />
+                            <Route
+                                path="/my-projects/:id"
+                                element={
+                                    <ProtectedRoute>
+                                        <LayoutWrapper>
+                                            <MyProject />
+                                        </LayoutWrapper>
+                                    </ProtectedRoute>
+                                } />
 
-                        <Route
-                            path="/opportunities"
-                            element={
-                                <ProtectedRoute>
-                                    <LayoutWrapper>
-                                        <OpportunitiesPage />
-                                    </LayoutWrapper>
-                                </ProtectedRoute>
-                            } />
+                            <Route
+                                path="/companies"
+                                element={
+                                    <ProtectedRoute>
+                                        <LayoutWrapper>
+                                            <CompaniesListWireframe />
+                                        </LayoutWrapper>
+                                    </ProtectedRoute>
+                                } />
 
-                        <Route
-                            path="/my-company/:id"
-                            element={
-                                <ProtectedRoute>
-                                    <LayoutWrapper>
-                                        <MyCompany />
-                                    </LayoutWrapper>
-                                </ProtectedRoute>
-                            } />
+                            <Route
+                                path="/companies/:id"
+                                element={
+                                    <ProtectedRoute>
+                                        <LayoutWrapper>
+                                            <CompanyDetail />
+                                        </LayoutWrapper>
+                                    </ProtectedRoute>
+                                } />
 
-                        <Route
-                            path="/account"
-                            element={
-                                <ProtectedRoute>
-                                    <LayoutWrapper>
-                                        <AccountPage />
-                                    </LayoutWrapper>
-                                </ProtectedRoute>
-                            } />
+                            <Route
+                                path="/opportunities"
+                                element={
+                                    <ProtectedRoute>
+                                        <LayoutWrapper>
+                                            <OpportunitiesPage />
+                                        </LayoutWrapper>
+                                    </ProtectedRoute>
+                                } />
 
-                        <Route
-                            path="/bookmarks"
-                            element={
-                                <ProtectedRoute>
-                                    <LayoutWrapper>
-                                        <BookmarksPage />
-                                    </LayoutWrapper>
-                                </ProtectedRoute>
-                            } />
+                            <Route
+                                path="/my-company/:id"
+                                element={
+                                    <ProtectedRoute>
+                                        <LayoutWrapper>
+                                            <MyCompany />
+                                        </LayoutWrapper>
+                                    </ProtectedRoute>
+                                } />
 
-                        <Route
-                            path="/users/:id"
-                            element={
-                                <ProtectedRoute>
-                                    <LayoutWrapper>
-                                        <UserProfilePage />
-                                    </LayoutWrapper>
-                                </ProtectedRoute>
-                            } />
+                            <Route
+                                path="/account"
+                                element={
+                                    <ProtectedRoute>
+                                        <LayoutWrapper>
+                                            <AccountPage />
+                                        </LayoutWrapper>
+                                    </ProtectedRoute>
+                                } />
 
-                    </Routes>
-                </BrowserRouter>
-            </AuthProvider>
-        </ThemeProvider>);
+                            <Route
+                                path="/bookmarks"
+                                element={
+                                    <ProtectedRoute>
+                                        <LayoutWrapper>
+                                            <BookmarksPage />
+                                        </LayoutWrapper>
+                                    </ProtectedRoute>
+                                } />
 
+                            <Route
+                                path="/users/:id"
+                                element={
+                                    <ProtectedRoute>
+                                        <LayoutWrapper>
+                                            <UserProfilePage />
+                                        </LayoutWrapper>
+                                    </ProtectedRoute>
+                                } />
+
+                        </Routes>
+                    </BrowserRouter>
+                </AuthProvider>
+            </ThemeProvider>
+        </AppErrorBoundary>);
 }

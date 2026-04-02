@@ -106,8 +106,13 @@ export type SidebarSavePayload =
     | {
         section: 'documents';
         values: {
+            id?: string;
             name: string;
             type: string;
+            file?: File | null;
+            assetUrl?: string;
+            s3Key?: string;
+            contentType?: string;
             index?: number;
             visibility: 'public' | 'hidden';
         };
@@ -115,7 +120,13 @@ export type SidebarSavePayload =
     | {
         section: 'media';
         values: {
+            id?: string;
             caption: string;
+            file?: File | null;
+            assetUrl?: string;
+            s3Key?: string;
+            contentType?: string;
+            isCover?: boolean;
             index?: number;
             visibility: 'public' | 'hidden';
         };
@@ -165,6 +176,19 @@ interface CompanySidebarEditorProps {
     existingUsers: ExistingUserOption[];
     editingItem?: any;
     onSave: (payload: SidebarSavePayload) => void;
+    onUploadMedia?: (input: {
+        file?: File | null;
+        caption: string;
+        visibility: 'public' | 'hidden';
+        editingItem?: any;
+    }) => Promise<void>;
+    onUploadDocument?: (input: {
+        file: File | null;
+        name: string;
+        type: string;
+        visibility: 'public' | 'hidden';
+        editingItem?: any;
+    }) => Promise<void>;
 }
 
 const teamRoles = [
@@ -209,6 +233,8 @@ export function CompanySidebarEditor({
     existingUsers,
     editingItem,
     onSave,
+    onUploadMedia,
+    onUploadDocument,
 }: CompanySidebarEditorProps) {
     const [sectionVisibility, setSectionVisibility] = useState(true);
 
@@ -244,6 +270,11 @@ export function CompanySidebarEditor({
 
     const [copiedInvite, setCopiedInvite] = useState(false);
 
+    const [mediaFile, setMediaFile] = useState<File | null>(null);
+    const [documentFile, setDocumentFile] = useState<File | null>(null);
+    const [isUploading, setIsUploading] = useState(false);
+    const [uploadError, setUploadError] = useState('');
+
     const getSectionVisibilityValue = (
         company: CompanyProfile | null,
         section: CompanyEditorSection
@@ -256,6 +287,11 @@ export function CompanySidebarEditor({
         if (!open) return;
 
         setSectionVisibility(getSectionVisibilityValue(company, section));
+
+        setMediaFile(null);
+        setDocumentFile(null);
+        setUploadError('');
+        setIsUploading(false);
 
         if (section === 'header') {
             setDisplayName(company?.displayName || '');
@@ -392,7 +428,7 @@ export function CompanySidebarEditor({
 
     const visibilityValue: 'public' | 'hidden' = sectionVisibility ? 'public' : 'hidden';
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (section === 'header') {
             onSave({
                 section: 'header',
@@ -493,29 +529,72 @@ export function CompanySidebarEditor({
         }
 
         if (section === 'documents') {
-            onSave({
-                section: 'documents',
-                values: {
-                    name: docName.trim(),
-                    type: docType.trim(),
-                    index: typeof editingItem?.index === 'number' ? editingItem.index : undefined,
-                    visibility: visibilityValue,
-                },
-            });
-            onClose();
+            try {
+                setUploadError('');
+                setIsUploading(true);
+
+                if (onUploadDocument) {
+                    await onUploadDocument({
+                        file: documentFile ?? undefined as any,
+                        name: docName.trim(),
+                        type: docType.trim(),
+                        visibility: visibilityValue,
+                        editingItem,
+                    });
+                } else {
+                    onSave({
+                        section: 'documents',
+                        values: {
+                            id: editingItem?.id,
+                            name: docName.trim(),
+                            type: docType.trim(),
+                            file: documentFile,
+                            index: typeof editingItem?.index === 'number' ? editingItem.index : undefined,
+                            visibility: visibilityValue,
+                        },
+                    });
+                }
+
+                onClose();
+            } catch (err: any) {
+                setUploadError(err?.message || 'Failed to save document');
+            } finally {
+                setIsUploading(false);
+            }
             return;
         }
 
         if (section === 'media') {
-            onSave({
-                section: 'media',
-                values: {
-                    caption: mediaCaption.trim(),
-                    index: typeof editingItem?.index === 'number' ? editingItem.index : undefined,
-                    visibility: visibilityValue,
-                },
-            });
-            onClose();
+            try {
+                setUploadError('');
+                setIsUploading(true);
+
+                if (onUploadMedia) {
+                    await onUploadMedia({
+                        file: mediaFile ?? undefined as any,
+                        caption: mediaCaption.trim(),
+                        visibility: visibilityValue,
+                        editingItem,
+                    });
+                } else {
+                    onSave({
+                        section: 'media',
+                        values: {
+                            id: editingItem?.id,
+                            caption: mediaCaption.trim(),
+                            file: mediaFile,
+                            index: typeof editingItem?.index === 'number' ? editingItem.index : undefined,
+                            visibility: visibilityValue,
+                        },
+                    });
+                }
+
+                onClose();
+            } catch (err: any) {
+                setUploadError(err?.message || 'Failed to save media');
+            } finally {
+                setIsUploading(false);
+            }
             return;
         }
 
@@ -590,9 +669,11 @@ export function CompanySidebarEditor({
                 return !selectedUser;
 
             case 'documents':
+                if (!editingItem && !documentFile) return true;
                 return !docName.trim() || !docType.trim();
 
             case 'media':
+                if (!editingItem && !mediaFile) return true;
                 return !mediaCaption.trim() && !editingItem;
 
             case 'services':
@@ -638,6 +719,23 @@ export function CompanySidebarEditor({
             setCopiedInvite(false);
         }
     };
+
+    const renderUploadError = () =>
+        uploadError ? (
+            <Paper
+                variant="outlined"
+                sx={{
+                    p: 1.5,
+                    borderRadius: 1.5,
+                    borderColor: 'error.light',
+                    bgcolor: 'error.50',
+                }}
+            >
+                <Typography variant="body2" color="error.main">
+                    {uploadError}
+                </Typography>
+            </Paper>
+        ) : null;
 
     const renderContent = () => {
         switch (section) {
@@ -803,19 +901,30 @@ export function CompanySidebarEditor({
                             </Typography>
                         </Box>
                         {renderVisibilityToggle()}
+                        {renderUploadError()}
                         {!editingItem && (
                             <Paper
                                 variant="outlined"
                                 sx={{ p: 3, borderStyle: 'dashed', textAlign: 'center', cursor: 'pointer' }}
                                 component="label"
                             >
-                                <input type="file" hidden accept="image/*,video/*" />
+                                <input
+                                    type="file"
+                                    hidden
+                                    accept="image/*"
+                                    onChange={(e) => setMediaFile(e.target.files?.[0] ?? null)}
+                                />
+                                {mediaFile && (
+                                    <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+                                        Selected: {mediaFile.name}
+                                    </Typography>
+                                )}
                                 <ImageRounded sx={{ fontSize: 32, color: 'grey.400', mb: 1 }} />
                                 <Typography variant="body2" color="text.secondary">
-                                    Click to upload or drag and drop
+                                    {editingItem ? 'Click to replace file' : 'Click to upload or drag and drop'}
                                 </Typography>
                                 <Typography variant="caption" color="text.disabled">
-                                    PNG, JPG, MP4 up to 50MB
+                                    PNG, JPG, JPEG, WEBP, MP4
                                 </Typography>
                             </Paper>
                         )}
@@ -841,19 +950,36 @@ export function CompanySidebarEditor({
                             </Typography>
                         </Box>
                         {renderVisibilityToggle()}
+                        {renderUploadError()}
                         {!editingItem && (
                             <Paper
                                 variant="outlined"
                                 sx={{ p: 3, borderStyle: 'dashed', textAlign: 'center', cursor: 'pointer' }}
                                 component="label"
                             >
-                                <input type="file" hidden />
+                                <input
+                                    type="file"
+                                    hidden
+                                    onChange={(e) => {
+                                        const file = e.target.files?.[0] ?? null;
+                                        setDocumentFile(file);
+                                        if (file && !docName.trim()) {
+                                            const inferredName = file.name.replace(/\.[^/.]+$/, '');
+                                            setDocName(inferredName);
+                                        }
+                                    }}
+                                />
+                                {documentFile && (
+                                    <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+                                        Selected: {documentFile.name}
+                                    </Typography>
+                                )}
                                 <DescriptionRounded sx={{ fontSize: 32, color: 'grey.400', mb: 1 }} />
                                 <Typography variant="body2" color="text.secondary">
-                                    Click to upload or drag and drop
+                                    {editingItem ? 'Click to replace file' : 'Click to upload or drag and drop'}
                                 </Typography>
                                 <Typography variant="caption" color="text.disabled">
-                                    PDF, DOCX, XLSX up to 25MB
+                                    PDF, DOCX, XLSX
                                 </Typography>
                             </Paper>
                         )}
@@ -1592,8 +1718,8 @@ export function CompanySidebarEditor({
             onClose={onClose}
             title={getTitle()}
             onSave={handleSave}
-            saveLabel={getSaveLabel()}
-            saveDisabled={isSaveDisabled()}
+            saveLabel={isUploading ? 'Saving...' : getSaveLabel()}
+            saveDisabled={isSaveDisabled() || isUploading}
             width={420}
             showBackdrop
         >

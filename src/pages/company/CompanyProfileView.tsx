@@ -26,6 +26,7 @@ import SecurityRounded from '@mui/icons-material/Security';
 import PhotoCameraRounded from '@mui/icons-material/PhotoCameraRounded';
 import { ProfileCompleteness, CompletenessItem } from '../../components/ProfileCompleteness';
 import MoreVertRounded from '@mui/icons-material/MoreVertRounded';
+import DownloadRounded from '@mui/icons-material/DownloadRounded';
 
 import { ProjectCard } from '../../components/cards/ProjectCard';
 import { MediaGallery } from '../../components/MediaGallery';
@@ -199,7 +200,20 @@ export function CompanyProfileView({
         (company as any).name?.trim() ||
         'Untitled Company';
 
-    const logoUrl = undefined;
+    const logoMedia =
+        Array.isArray(company.media)
+            ? company.media.find((item: any) =>
+                item?.isLogo === true ||
+                item?.kind === 'logo' ||
+                item?.kind === 'company-logo' ||
+                item?.isCover === true
+            )
+            : null;
+
+    const logoUrl =
+        (company as any).logoUrl ||
+        logoMedia?.url ||
+        null;
 
     const companyType = company.type;
     const shortDescription = company.description?.trim();
@@ -840,37 +854,85 @@ export function CompanyProfileView({
                                     <Box p={3}>
                                         {company.documents?.length ? (
                                             <Stack spacing={1.5}>
-                                                {company.documents.map((doc, index) => (
-                                                    <Box
-                                                        key={`${doc.name}-${index}`}
-                                                        display="flex"
-                                                        alignItems="center"
-                                                        gap={1.5}
-                                                    >
-                                                        <Avatar
-                                                            variant="rounded"
-                                                            sx={{
-                                                                width: 40,
-                                                                height: 40,
-                                                                bgcolor: 'grey.100',
-                                                                color: 'text.secondary',
-                                                            }}
+                                                {company.documents.map((doc, index) => {
+                                                    const docUrl =
+                                                        (doc as any).url ||
+                                                        (doc as any).assetUrl ||
+                                                        null;
+
+                                                    const isPdf =
+                                                        ((doc as any).contentType || '').includes('pdf') ||
+                                                        String(doc.type || '').toLowerCase().includes('pdf');
+
+                                                    return (
+                                                        <Box
+                                                            key={`${doc.name}-${index}`}
+                                                            display="flex"
+                                                            alignItems="center"
+                                                            gap={1.5}
                                                         >
-                                                            <FolderRounded sx={{ fontSize: 18 }} />
-                                                        </Avatar>
+                                                            <Avatar
+                                                                variant="rounded"
+                                                                sx={{
+                                                                    width: 40,
+                                                                    height: 40,
+                                                                    bgcolor: 'grey.100',
+                                                                    color: 'text.secondary',
+                                                                }}
+                                                            >
+                                                                <FolderRounded sx={{ fontSize: 18 }} />
+                                                            </Avatar>
 
-                                                        <Box flex={1} minWidth={0}>
-                                                            <Typography variant="body2" fontWeight={500} noWrap>
-                                                                {doc.name}
-                                                            </Typography>
-                                                            <Typography variant="caption" color="text.secondary" noWrap>
-                                                                {[doc.type, (doc as any).date].filter(Boolean).join(' • ')}
-                                                            </Typography>
+                                                            <Box flex={1} minWidth={0}>
+                                                                {docUrl ? (
+                                                                    <Typography
+                                                                        variant="body2"
+                                                                        fontWeight={500}
+                                                                        noWrap
+                                                                        component="a"
+                                                                        href={docUrl}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        sx={{
+                                                                            color: 'primary.main',
+                                                                            textDecoration: 'none',
+                                                                            '&:hover': {
+                                                                                textDecoration: 'underline',
+                                                                            },
+                                                                        }}
+                                                                    >
+                                                                        {doc.name}
+                                                                    </Typography>
+                                                                ) : (
+                                                                    <Typography variant="body2" fontWeight={500} noWrap>
+                                                                        {doc.name}
+                                                                    </Typography>
+                                                                )}
+
+                                                                <Typography variant="caption" color="text.secondary" noWrap>
+                                                                    {[doc.type, (doc as any).date].filter(Boolean).join(' • ')}
+                                                                </Typography>
+                                                            </Box>
+
+                                                            {docUrl && (
+                                                                <Button
+                                                                    size="small"
+                                                                    variant="outlined"
+                                                                    startIcon={<DownloadRounded sx={{ fontSize: 16 }} />}
+                                                                    component="a"
+                                                                    href={docUrl}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
+                                                                >
+                                                                    {isPdf ? 'View' : 'Open'}
+                                                                </Button>
+                                                            )}
+
+                                                            {renderDocumentActions?.(doc, index)}
                                                         </Box>
-
-                                                        {renderDocumentActions?.(doc, index)}
-                                                    </Box>
-                                                ))}
+                                                    );
+                                                })}
                                             </Stack>
                                         ) : (
                                             <EmptyState

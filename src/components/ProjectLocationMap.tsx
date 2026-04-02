@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useLayoutEffect, useMemo } from 'react';
 import { Box } from '@mui/material';
 import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L, { LatLngLiteral } from 'leaflet';
@@ -11,8 +11,8 @@ type ProjectLocationMapProps = {
     height?: number;
 };
 
-const DEFAULT_CENTER: LatLngLiteral = { lat: 4.2105, lng: 101.9758 }; // Malaysia-ish default
-const DEFAULT_ZOOM = 5;
+const DEFAULT_CENTER: LatLngLiteral = { lat: 20, lng: 0 };
+const DEFAULT_ZOOM = 2;
 const PIN_ZOOM = 10;
 
 const markerIcon = L.icon({
@@ -45,6 +45,20 @@ function MapClickHandler({
             });
         },
     });
+
+    return null;
+}
+
+function RefreshMapSize() {
+    const map = useMap();
+
+    useLayoutEffect(() => {
+        const id = window.setTimeout(() => {
+            map.invalidateSize();
+        }, 0);
+
+        return () => window.clearTimeout(id);
+    }, [map]);
 
     return null;
 }
@@ -103,6 +117,7 @@ export default function ProjectLocationMap({
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
 
+                <RefreshMapSize />
                 <MapClickHandler onPick={onChange} />
                 <RecenterMap position={markerPosition} />
 

@@ -15,6 +15,8 @@ import MoreVertRounded from '@mui/icons-material/MoreVertRounded';
 import { IconButton, Menu, MenuItem } from '@mui/material';
 import { ProjectWizard, type ProjectFormData, type WizardCloseResult } from '../../components/ProjectWizard';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
+
 export function MyCompany() {
     const { id = '' } = useParams<{ id: string }>();
     const navigate = useNavigate();
@@ -417,6 +419,217 @@ export function MyCompany() {
         }
     }
 
+    const getAuthJsonHeaders = () => ({
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+    });
+
+    async function readJsonSafe(res: Response) {
+        const text = await res.text();
+        try {
+            return text ? JSON.parse(text) : null;
+        } catch {
+            return null;
+        }
+    }
+
+    async function requestPresignedUpload(params: {
+        companyId: string;
+        kind: 'media' | 'documents';
+        file: File;
+    }) {
+        const query = new URLSearchParams({
+            fileName: params.file.name,
+            contentType: params.file.type || 'application/octet-stream',
+        });
+
+        const res = await fetch(
+            `${API_BASE_URL}/companies/${params.companyId}/${params.kind}/upload-url?${query.toString()}`,
+            {
+                method: 'GET',
+                credentials: 'include',
+                headers: {
+                    Accept: 'application/json',
+                },
+            }
+        );
+
+        const data = await readJsonSafe(res);
+
+        if (!res.ok || !data?.data?.uploadUrl || !data?.data?.key || !data?.data?.assetUrl) {
+            throw new Error(data?.error || data?.message || 'Failed to get upload URL');
+        }
+
+        return data.data as {
+            uploadUrl: string;
+            key: string;
+            assetUrl: string;
+        };
+    }
+
+    async function putFileToSignedUrl(uploadUrl: string, file: File) {
+        const putRes = await fetch(uploadUrl, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': file.type || 'application/octet-stream',
+            },
+            body: file,
+        });
+
+        if (!putRes.ok) {
+            throw new Error('Failed to upload file to storage');
+        }
+    }
+
+    const uploadCompanyMedia = async (input: {
+        file?: File | null;
+        caption: string;
+        visibility: 'public' | 'hidden';
+        editingItem?: any;
+    }) => {
+        if (!company) return;
+
+        const isEdit = Boolean(input.editingItem?.id);
+        const mediaId = input.editingItem?.id;
+
+        if (isEdit) {
+            if (input.file) {
+                throw new Error('Replacing an existing media file is not supported yet. Update caption only, or delete and add a new file.');
+            }
+
+            const res = await fetch(`${API_BASE_URL}/companies/${company.id}/media/${mediaId}`, {
+                method: 'PATCH',
+                credentials: 'include',
+                headers: getAuthJsonHeaders(),
+                body: JSON.stringify({
+                    caption: input.caption,
+                }),
+            });
+
+            const data = await readJsonSafe(res);
+
+            if (!res.ok) {
+                throw new Error(data?.error || data?.message || 'Failed to update media');
+            }
+
+            await loadCompany();
+            return;
+        }
+
+        if (!input.file) {
+            throw new Error('Please choose a media file');
+        }
+
+        const upload = await requestPresignedUpload({
+            companyId: company.id,
+            kind: 'media',
+            file: input.file,
+        });
+
+        await putFileToSignedUrl(upload.uploadUrl, input.file);
+
+        const createRes = await fetch(`${API_BASE_URL}/companies/${company.id}/media`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: getAuthJsonHeaders(),
+            body: JSON.stringify({
+                kind: 'gallery',
+                caption: input.caption,
+                assetUrl: upload.assetUrl,
+                s3Key: upload.key,
+                contentType: input.file.type || 'application/octet-stream',
+                metadata: {
+                    originalName: input.file.name,
+                    size: input.file.size,
+                },
+            }),
+        });
+
+        const createData = await readJsonSafe(createRes);
+
+        if (!createRes.ok) {
+            throw new Error(createData?.error || createData?.message || 'Failed to create media record');
+        }
+
+        await loadCompany();
+    };
+
+    const uploadCompanyDocument = async (input: {
+        file?: File | null;
+        name: string;
+        type: string;
+        visibility: 'public' | 'hidden';
+        editingItem?: any;
+    }) => {
+        if (!company) return;
+
+        const isEdit = Boolean(input.editingItem?.id);
+        const documentId = input.editingItem?.id;
+
+        if (isEdit) {
+            if (input.file) {
+                throw new Error('Replacing an existing document file is not supported yet. Update document metadata only, or delete and add a new file.');
+            }
+
+            const res = await fetch(`${API_BASE_URL}/companies/${company.id}/documents/${documentId}`, {
+                method: 'PATCH',
+                credentials: 'include',
+                headers: getAuthJsonHeaders(),
+                body: JSON.stringify({
+                    name: input.name,
+                    type: input.type,
+                }),
+            });
+
+            const data = await readJsonSafe(res);
+
+            if (!res.ok) {
+                throw new Error(data?.error || data?.message || 'Failed to update document');
+            }
+
+            await loadCompany();
+            return;
+        }
+
+        if (!input.file) {
+            throw new Error('Please choose a document file');
+        }
+
+        const upload = await requestPresignedUpload({
+            companyId: company.id,
+            kind: 'documents',
+            file: input.file,
+        });
+
+        await putFileToSignedUrl(upload.uploadUrl, input.file);
+
+        const createRes = await fetch(`${API_BASE_URL}/companies/${company.id}/documents`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: getAuthJsonHeaders(),
+            body: JSON.stringify({
+                kind: 'general',
+                name: input.name,
+                type: input.type,
+                assetUrl: upload.assetUrl,
+                s3Key: upload.key,
+                contentType: input.file.type || 'application/octet-stream',
+                metadata: {
+                    originalName: input.file.name,
+                    size: input.file.size,
+                },
+            }),
+        });
+
+        const createData = await readJsonSafe(createRes);
+
+        if (!createRes.ok) {
+            throw new Error(createData?.error || createData?.message || 'Failed to create document record');
+        }
+
+        await loadCompany();
+    };
+
     const handleSidebarSave = async (payload: SidebarSavePayload) => {
         if (!company) return;
 
@@ -602,6 +815,8 @@ export function MyCompany() {
                 existingUsers={sidebarSection === 'permissions' ? permissionUserOptions : directoryUsers}
                 editingItem={editingItem}
                 onSave={handleSidebarSave}
+                onUploadMedia={uploadCompanyMedia}
+                onUploadDocument={uploadCompanyDocument}
             />
 
             <ProjectWizard
