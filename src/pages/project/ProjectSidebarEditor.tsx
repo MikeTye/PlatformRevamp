@@ -5,7 +5,6 @@ import {
     Box,
     Button,
     Divider,
-    Drawer,
     FormControl,
     InputAdornment,
     InputLabel,
@@ -22,6 +21,9 @@ import {
     ToggleButton,
     Chip,
 } from '@mui/material';
+import { SidebarPanel } from '../../components/layout/SidebarPanel';
+import ProjectLocationMap from '../../components/ProjectLocationMap';
+
 import ImageRounded from '@mui/icons-material/ImageRounded';
 import PublicRounded from '@mui/icons-material/PublicRounded';
 import LockRounded from '@mui/icons-material/LockRounded';
@@ -36,6 +38,8 @@ import CloudUploadRounded from '@mui/icons-material/CloudUploadRounded';
 import InsertDriveFileRounded from '@mui/icons-material/InsertDriveFileRounded';
 import StarRounded from '@mui/icons-material/StarRounded';
 
+import { PROJECT_TYPE_OPTIONS } from '../../constants/projectTypes';
+
 import type {
     ProjectDocument,
     ProjectEditorTarget,
@@ -48,8 +52,13 @@ import type {
     ProjectUpdate,
     SectionVisibility,
 } from './ProjectProfileView';
+import { PROJECT_STAGE_OPTIONS } from '../../constants/projectStages';
+import DescriptionRounded from '@mui/icons-material/DescriptionRounded';
 
-type EditableProjectPatch = Partial<ProjectProfileData>;
+type EditableProjectPatch = Omit<
+    Partial<ProjectProfileData>,
+    'team' | 'sectionVisibility' | 'opportunities' | 'updates'
+>;
 
 type MeResponse = {
     ok?: boolean;
@@ -75,7 +84,7 @@ type TeamEditorMember =
     | {
         id: string;
         memberType: 'user';
-        memberId: string;
+        memberId?: string | null;
         userId?: string | null;
         companyId?: null;
         name: string;
@@ -83,11 +92,14 @@ type TeamEditorMember =
         companyName?: string;
         avatarUrl?: string | null;
         permission?: 'creator' | 'viewer' | null;
+        isPlatformMember: boolean;
+        manualName?: string | null;
+        manualOrganization?: string | null;
     }
     | {
         id: string;
         memberType: 'company';
-        memberId: string;
+        memberId?: string | null;
         companyId?: string | null;
         userId?: null;
         name: string;
@@ -95,6 +107,9 @@ type TeamEditorMember =
         companyName?: string;
         avatarUrl?: string | null;
         permission?: null;
+        isPlatformMember: boolean;
+        manualName?: string | null;
+        manualOrganization?: string | null;
     };
 
 const API_BASE_URL =
@@ -102,11 +117,40 @@ const API_BASE_URL =
     (window as any).__API_BASE_URL__ ??
     '';
 
-export type SaveProjectPatch = Omit<EditableProjectPatch, 'team' | 'sectionVisibility'> & {
+const TEAM_PROJECT_ROLE_OPTIONS = [
+    'Developer',
+    'MRV Provider',
+    'Validator',
+    'Verifier',
+    'Consultancy',
+    'Financing',
+    'Insurance',
+    'Legal',
+    'Community Liaison',
+    'Registry',
+    'Buyer',
+    'Other',
+] as const;
+
+const DOCUMENT_TYPE_OPTIONS = [
+    'Concept Note',
+    'Feasibility Study',
+    'PDD',
+    'Baseline Report',
+    'Monitoring Report',
+    'Validation Report',
+    'Verification Report',
+    'Other',
+] as const;
+
+type ProjectDocumentStatus = 'Draft' | 'Final';
+
+export type SaveProjectPatch = EditableProjectPatch & {
+    projectVisibility?: SectionVisibility;
     team?: Array<
         | {
             memberType: 'user';
-            memberId: string;
+            memberId?: string | null;
             userId?: string | null;
             companyId?: null;
             name?: string;
@@ -114,10 +158,13 @@ export type SaveProjectPatch = Omit<EditableProjectPatch, 'team' | 'sectionVisib
             avatarUrl?: string | null;
             role?: string | null;
             permission?: 'creator' | 'viewer';
+            isPlatformMember?: boolean;
+            manualName?: string | null;
+            manualOrganization?: string | null;
         }
         | {
             memberType: 'company';
-            memberId: string;
+            memberId?: string | null;
             companyId?: string | null;
             userId?: null;
             name?: string;
@@ -125,6 +172,9 @@ export type SaveProjectPatch = Omit<EditableProjectPatch, 'team' | 'sectionVisib
             avatarUrl?: string | null;
             role?: string | null;
             permission?: null;
+            isPlatformMember?: boolean;
+            manualName?: string | null;
+            manualOrganization?: string | null;
         }
     >;
     sectionVisibility?: Partial<Record<ProjectSectionKey, SectionVisibility>>;
@@ -134,13 +184,18 @@ export interface ProjectSidebarEditorProps {
     open: boolean;
     section: ProjectEditorTarget | null;
     project: ProjectProfileData | null;
+    initialMediaId?: string | null;
+    initialOpportunityId?: string | null;
+    initialUpdateId?: string | null;
+    initialDocumentId?: string | null;
     onClose: () => void;
     onSave: (patch: SaveProjectPatch) => Promise<void> | void;
-    onProjectChange?: (nextProject: ProjectProfileData) => void;
+    onProjectChange?: React.Dispatch<React.SetStateAction<ProjectProfileData | null>>;
 }
 
 const SECTION_LABELS: Record<ProjectEditorTarget, string> = {
     overview: 'Overview',
+    cover: 'Project Cover',
     story: 'Project Story',
     location: 'Location',
     readiness: 'Readiness',
@@ -162,44 +217,13 @@ function toApiVisibility(value: SectionVisibility | null | undefined): 'public' 
     return value === 'private' ? 'private' : 'public';
 }
 
-const STAGES: ProjectStage[] = [
-    'Exploration',
-    'Concept',
-    'Design',
-    'Listed',
-    'Validation',
-    'Registered',
-    'Issued',
-    'Closed',
-];
-
-function permissionLabel(value: 'creator' | 'viewer' | null | undefined) {
-    return value === 'creator' ? 'Owner' : 'Viewer';
-}
-
-const OPPORTUNITY_TYPES = [
-    'Financing',
-    'MRV Provider',
-    'Buyer',
-    'Insurance',
-    'Legal',
-    'Technical Advisor',
-    'Community Partner',
-    'Other',
-];
-
 function emptyOpportunity(): ProjectOpportunity {
     return {
-        id: crypto.randomUUID(),
+        id: `temp-${crypto.randomUUID()}`,
         type: '',
         description: '',
         urgent: false,
     };
-}
-
-function ensureOpportunityDraft(items?: ProjectOpportunity[] | null): ProjectOpportunity[] {
-    const normalized = Array.isArray(items) ? items : [];
-    return normalized.length > 0 ? normalized : [emptyOpportunity()];
 }
 
 function emptyUpdate(authorName = ''): ProjectUpdate {
@@ -213,56 +237,7 @@ function emptyUpdate(authorName = ''): ProjectUpdate {
     };
 }
 
-function ensureUpdateDraft(
-    items?: ProjectUpdate[] | null,
-    authorName = ''
-): ProjectUpdate[] {
-    const normalized = Array.isArray(items) ? items : [];
-    return normalized.length > 0
-        ? normalized.map((item) => ({
-            ...item,
-            authorName: item.authorName ?? authorName,
-        }))
-        : [emptyUpdate(authorName)];
-}
-
-function normalizeTeamMember(member: ProjectTeamMember): TeamEditorMember | null {
-    if (member.memberType === 'company') {
-        const companyId = member.companyId ?? member.memberId ?? member.id;
-        if (!companyId) return null;
-
-        return {
-            id: member.id ?? crypto.randomUUID(),
-            memberType: 'company',
-            memberId: companyId,
-            companyId,
-            userId: null,
-            name: member.name ?? member.companyName ?? '',
-            role: member.role ?? '',
-            companyName: member.companyName ?? member.name ?? '',
-            avatarUrl: member.avatarUrl ?? null,
-            permission: null,
-        };
-    }
-
-    const userId = member.userId ?? member.memberId ?? member.id;
-    if (!userId) return null;
-
-    return {
-        id: member.id ?? crypto.randomUUID(),
-        memberType: 'user',
-        memberId: userId,
-        userId,
-        companyId: null,
-        name: member.name ?? '',
-        role: member.role ?? '',
-        companyName: member.companyName ?? '',
-        avatarUrl: member.avatarUrl ?? null,
-        permission: member.permission ?? 'viewer',
-    };
-}
-
-function VisibilityField({
+function ProjectVisibilityField({
     value,
     onChange,
 }: {
@@ -271,10 +246,10 @@ function VisibilityField({
 }) {
     return (
         <FormControl fullWidth size="small">
-            <InputLabel>Section visibility</InputLabel>
+            <InputLabel>Project visibility</InputLabel>
             <Select
                 value={value}
-                label="Section visibility"
+                label="Project visibility"
                 onChange={(e) => onChange(e.target.value as SectionVisibility)}
             >
                 <MenuItem value="public">
@@ -292,6 +267,108 @@ function VisibilityField({
             </Select>
         </FormControl>
     );
+}
+
+function normalizeTeamMember(member: ProjectTeamMember): TeamEditorMember | null {
+    const isPlatformMember =
+        typeof member.isPlatformMember === 'boolean'
+            ? member.isPlatformMember
+            : Boolean(member.userId ?? member.companyId ?? member.memberId);
+
+    if (member.memberType === 'company') {
+        const companyId = member.companyId ?? member.memberId ?? null;
+
+        if (isPlatformMember && !companyId) return null;
+
+        return {
+            id: member.id ?? crypto.randomUUID(),
+            memberType: 'company',
+            memberId: companyId,
+            companyId,
+            userId: null,
+            name:
+                member.name ??
+                member.companyName ??
+                member.manualName ??
+                member.manualOrganization ??
+                '',
+            role: member.role ?? '',
+            companyName:
+                member.companyName ??
+                member.manualOrganization ??
+                member.name ??
+                '',
+            avatarUrl: member.avatarUrl ?? null,
+            permission: null,
+            isPlatformMember,
+            manualName: member.manualName ?? null,
+            manualOrganization: member.manualOrganization ?? null,
+        };
+    }
+
+    const userId = member.userId ?? member.memberId ?? null;
+
+    if (isPlatformMember && !userId) return null;
+
+    return {
+        id: member.id ?? crypto.randomUUID(),
+        memberType: 'user',
+        memberId: userId,
+        userId,
+        companyId: null,
+        name: member.name ?? member.manualName ?? '',
+        role: member.role ?? '',
+        companyName:
+            member.companyName ??
+            member.manualOrganization ??
+            '',
+        avatarUrl: member.avatarUrl ?? null,
+        permission: member.permission ?? 'viewer',
+        isPlatformMember,
+        manualName: member.manualName ?? null,
+        manualOrganization: member.manualOrganization ?? null,
+    };
+}
+
+function getEditorMemberDisplayName(member: TeamEditorMember): string {
+    if (!member.isPlatformMember) {
+        if (member.memberType === 'company') {
+            return (
+                member.manualOrganization?.trim() ||
+                member.companyName?.trim() ||
+                member.manualName?.trim() ||
+                member.name?.trim() ||
+                ''
+            );
+        }
+
+        return (
+            member.manualName?.trim() ||
+            member.name?.trim() ||
+            ''
+        );
+    }
+
+    if (member.memberType === 'company') {
+        return member.companyName?.trim() || member.name?.trim() || '';
+    }
+
+    return member.name?.trim() || '';
+}
+
+function getEditorMemberSecondary(member: TeamEditorMember): string {
+    const roleLabel = member.role?.trim();
+
+    if (!member.isPlatformMember) {
+        if (member.memberType === 'company') {
+            return roleLabel || 'External company';
+        }
+
+        const org = member.manualOrganization?.trim() || member.companyName?.trim();
+        return roleLabel ? (org ? `${roleLabel} · ${org}` : roleLabel) : org || 'External collaborator';
+    }
+
+    return roleLabel || member.companyName?.trim() || (member.memberType === 'company' ? 'Company' : 'Platform user');
 }
 
 type ProjectEditorForm = Omit<Partial<ProjectProfileData>, 'team' | 'sectionVisibility'> & {
@@ -336,6 +413,10 @@ export default function ProjectSidebarEditor({
     open,
     section,
     project,
+    initialMediaId = null,
+    initialOpportunityId = null,
+    initialUpdateId = null,
+    initialDocumentId = null,
     onClose,
     onSave,
     onProjectChange,
@@ -352,15 +433,182 @@ export default function ProjectSidebarEditor({
     const [currentUserName, setCurrentUserName] = useState('');
     const [meLoading, setMeLoading] = useState(false);
 
-    const visibilityValue = useMemo<SectionVisibility>(() => {
-        if (!section || section === 'settings') return 'public';
+    const [teamManualMode, setTeamManualMode] = useState(false);
+    const [teamName, setTeamName] = useState('');
+    const [teamProjectRole, setTeamProjectRole] = useState('');
+    const [teamSelectedPlatform, setTeamSelectedPlatform] = useState<PlatformCollaboratorOption | null>(null);
+    const [editingMediaId, setEditingMediaId] = useState<string | null>(null);
+    const [mediaCaption, setMediaCaption] = useState('');
 
+    const [pendingMediaFile, setPendingMediaFile] = useState<File | null>(null);
+    const [pendingMediaPreviewUrl, setPendingMediaPreviewUrl] = useState<string | null>(null);
+    const [pendingDocumentFile, setPendingDocumentFile] = useState<File | null>(null);
+    const [editingDocumentId, setEditingDocumentId] = useState<string | null>(null);
+    const [documentName, setDocumentName] = useState('');
+    const [documentType, setDocumentType] = useState('');
+
+    const [editingOpportunityId, setEditingOpportunityId] = useState<string | null>(null);
+    const [opportunityType, setOpportunityType] = useState('');
+    const [opportunityDescription, setOpportunityDescription] = useState('');
+    const [opportunityUrgent, setOpportunityUrgent] = useState(false);
+
+    const [editingUpdateId, setEditingUpdateId] = useState<string | null>(null);
+    const [updateTitle, setUpdateTitle] = useState('');
+    const [updateDescription, setUpdateDescription] = useState('');
+    const [updateDateLabel, setUpdateDateLabel] = useState('');
+    const [updateAuthorName, setUpdateAuthorName] = useState('');
+    const [updateType, setUpdateType] = useState<'progress' | 'stage'>('progress');
+
+    const [documentStatus, setDocumentStatus] = useState<ProjectDocumentStatus>('Draft');
+
+    const commitProjectPatch = React.useCallback(
+        (patch: Partial<ProjectProfileData>) => {
+            if (!onProjectChange) return;
+
+            onProjectChange((prev) => {
+                if (!prev) return prev;
+
+                return {
+                    ...prev,
+                    ...patch,
+                    documents: patch.documents ?? prev.documents ?? [],
+                    media: patch.media ?? prev.media ?? [],
+                    opportunities: patch.opportunities ?? prev.opportunities ?? [],
+                    updates: patch.updates ?? prev.updates ?? [],
+                    team: patch.team ?? prev.team ?? [],
+                    readiness: patch.readiness ?? prev.readiness ?? [],
+                    serviceProviders: patch.serviceProviders ?? prev.serviceProviders ?? [],
+                    sectionVisibility: patch.sectionVisibility ?? prev.sectionVisibility ?? {},
+                    coverImageUrl:
+                        patch.coverImageUrl !== undefined
+                            ? patch.coverImageUrl
+                            : (prev.coverImageUrl ?? null),
+                };
+            });
+        },
+        [onProjectChange]
+    );
+
+    const pushProjectMediaState = React.useCallback(
+        (nextMedia: ProjectMediaItem[], nextCoverImageUrl?: string | null) => {
+            commitProjectPatch({
+                media: nextMedia,
+                ...(nextCoverImageUrl !== undefined
+                    ? { coverImageUrl: nextCoverImageUrl }
+                    : {}),
+            });
+        },
+        [commitProjectPatch]
+    );
+
+    const projectVisibilityValue = useMemo<SectionVisibility>(() => {
         return toUiVisibility(
-            form.sectionVisibility?.[section] ??
-            project?.sectionVisibility?.[section] ??
-            'public'
+            (form as any).projectVisibility ??
+            (project as any)?.projectVisibility ??
+            'private'
         );
-    }, [form.sectionVisibility, project, section]);
+    }, [form, project]);
+
+    const getCurrentCoverMedia = React.useCallback(() => {
+        const items: ProjectMediaItem[] = (form.media ?? project?.media ?? []) as ProjectMediaItem[];
+        const explicitCover = items.find((item) => item.isCover);
+        if (explicitCover) return explicitCover;
+
+        if (project?.coverImageUrl) {
+            return items.find((item) => item.assetUrl === project.coverImageUrl) ?? null;
+        }
+
+        return null;
+    }, [form.media, project?.media, project?.coverImageUrl]);
+
+    const handleCoverFilePicked = async (file: File) => {
+        try {
+            setMediaUpload({ busy: true, error: null });
+
+            const currentItems = ((form.media ?? project?.media ?? []) as ProjectMediaItem[]);
+            const existingCover = getCurrentCoverMedia();
+
+            const upload = await getMediaUploadUrl(file);
+            await uploadBinaryToSignedUrl(upload.uploadUrl, file);
+
+            let nextMedia = currentItems.map((item) => ({
+                ...item,
+                isCover: false,
+            }));
+
+            if (existingCover?.id) {
+                const updatedOldCover = await updateMediaRecord(existingCover.id, { isCover: false });
+                nextMedia = nextMedia.map((item) =>
+                    item.id === existingCover.id ? { ...item, ...updatedOldCover, isCover: false } : item
+                );
+            }
+
+            const trimmedCaption = mediaCaption.trim();
+
+            const created = await createMediaRecord({
+                assetUrl: upload.assetUrl,
+                s3Key: upload.s3Key ?? upload.key ?? null,
+                contentType: file.type || 'application/octet-stream',
+                caption: trimmedCaption || file.name,
+                isCover: true,
+            });
+
+            nextMedia = [...nextMedia, { ...created, isCover: true }];
+            const nextCoverImageUrl = created.assetUrl ?? upload.assetUrl;
+
+            setForm((prev) => ({
+                ...prev,
+                media: nextMedia,
+                coverImageUrl: nextCoverImageUrl,
+            }));
+
+            pushProjectMediaState(nextMedia, nextCoverImageUrl);
+        } catch (error: any) {
+            setMediaUpload({
+                busy: false,
+                error: error?.message ?? 'Failed to upload cover image',
+            });
+            return;
+        }
+
+        setMediaUpload({ busy: false, error: null });
+    };
+
+    const handleRemoveCover = async () => {
+        const currentCover = getCurrentCoverMedia();
+        if (!currentCover?.id) return;
+
+        try {
+            setMediaUpload({ busy: true, error: null });
+
+            const updated = await updateMediaRecord(currentCover.id, {
+                isCover: false,
+            });
+
+            const currentItems = ((form.media ?? project?.media ?? []) as ProjectMediaItem[]);
+            const nextMedia = currentItems.map((item) =>
+                item.id === currentCover.id
+                    ? { ...item, ...updated, isCover: false }
+                    : { ...item, isCover: false }
+            );
+
+            setForm((prev) => ({
+                ...prev,
+                media: nextMedia,
+                coverImageUrl: '',
+            }));
+
+            pushProjectMediaState(nextMedia, null);
+        } catch (error: any) {
+            setMediaUpload({
+                busy: false,
+                error: error?.message ?? 'Failed to remove cover image',
+            });
+            return;
+        }
+
+        setMediaUpload({ busy: false, error: null });
+    };
 
     const loadCollaboratorOptions = async (q = '', mode: 'user' | 'company' = 'user') => {
         try {
@@ -419,27 +667,47 @@ export default function ProjectSidebarEditor({
     };
 
     const syncProjectState = (nextProject: Partial<ProjectProfileData> | null | undefined) => {
-        if (!project || !nextProject) return;
-
-        const merged: ProjectProfileData = {
-            ...project,
-            ...nextProject,
-            documents: nextProject.documents ?? project.documents ?? [],
-            media: nextProject.media ?? project.media ?? [],
-            team: nextProject.team ?? project.team ?? [],
-            opportunities: nextProject.opportunities ?? project.opportunities ?? [],
-            updates: nextProject.updates ?? project.updates ?? [],
-            readiness: nextProject.readiness ?? project.readiness ?? [],
-            serviceProviders: nextProject.serviceProviders ?? project.serviceProviders ?? [],
-            sectionVisibility: nextProject.sectionVisibility ?? project.sectionVisibility ?? {},
-            coverImageUrl:
-                nextProject.coverImageUrl ??
-                project.coverImageUrl ??
-                null,
-        };
-
-        onProjectChange?.(merged);
+        if (!nextProject) return;
+        commitProjectPatch(nextProject);
     };
+
+    useEffect(() => {
+        return () => {
+            if (pendingMediaPreviewUrl) {
+                URL.revokeObjectURL(pendingMediaPreviewUrl);
+            }
+        };
+    }, [pendingMediaPreviewUrl]);
+
+    const clearPendingMedia = React.useCallback(() => {
+        if (pendingMediaPreviewUrl) {
+            URL.revokeObjectURL(pendingMediaPreviewUrl);
+        }
+        setPendingMediaFile(null);
+        setPendingMediaPreviewUrl(null);
+    }, [pendingMediaPreviewUrl]);
+
+    const beginAddMedia = () => {
+        setEditingMediaId(null);
+        setMediaCaption('');
+        clearPendingMedia();
+    };
+
+    const clearPendingDocument = React.useCallback(() => {
+        setPendingDocumentFile(null);
+        setEditingDocumentId(null);
+        setDocumentName('');
+        setDocumentType('');
+        setDocumentStatus('Draft');
+    }, []);
+
+    const beginAddDocument = React.useCallback(() => {
+        setEditingDocumentId(null);
+        setDocumentName('');
+        setDocumentType('');
+        setDocumentStatus('Draft');
+        setPendingDocumentFile(null);
+    }, []);
 
     useEffect(() => {
         if (!open || section !== 'updates') return;
@@ -506,6 +774,13 @@ export default function ProjectSidebarEditor({
         if (!open || !project || !section) return;
 
         switch (section) {
+            case 'cover':
+                setForm({
+                    coverImageUrl: project.coverImageUrl ?? '',
+                    media: [...(project.media ?? [])],
+                });
+                break;
+
             case 'overview':
                 setForm({
                     name: project.name ?? '',
@@ -514,11 +789,9 @@ export default function ProjectSidebarEditor({
                     description: project.description ?? '',
                     coverImageUrl: project.coverImageUrl ?? '',
                     estimatedAnnualRemoval: project.estimatedAnnualRemoval ?? '',
-                    totalAreaHa: project.totalAreaHa ?? null,
-                    sectionVisibility: {
-                        ...project.sectionVisibility,
-                        overview: project.sectionVisibility?.overview ?? 'public',
-                    },
+                    projectVisibility: toUiVisibility(
+                        (project as any).projectVisibility ?? 'private'
+                    ),
                 });
                 break;
 
@@ -580,46 +853,92 @@ export default function ProjectSidebarEditor({
                 });
                 break;
 
-            case 'opportunities':
+            case 'opportunities': {
+                const opportunityItems = [...(project.opportunities ?? [])];
+                const selectedItem =
+                    initialOpportunityId != null
+                        ? opportunityItems.find((item) => item.id === initialOpportunityId) ?? null
+                        : null;
+
                 setForm({
-                    opportunities: ensureOpportunityDraft(project.opportunities),
                     sectionVisibility: {
                         ...project.sectionVisibility,
                         opportunities: project.sectionVisibility?.opportunities ?? 'public',
                     },
                 });
-                break;
 
-            case 'updates':
+                setEditingOpportunityId(selectedItem?.id ?? null);
+                setOpportunityType(selectedItem?.type ?? '');
+                setOpportunityDescription(selectedItem?.description ?? '');
+                setOpportunityUrgent(Boolean(selectedItem?.urgent));
+                break;
+            }
+
+            case 'updates': {
+                const updateItems = [...(project.updates ?? [])];
+                const selectedItem =
+                    initialUpdateId != null
+                        ? updateItems.find((item) => item.id === initialUpdateId) ?? null
+                        : null;
+
                 setForm({
-                    updates: ensureUpdateDraft(project.updates, currentUserName),
                     sectionVisibility: {
                         ...project.sectionVisibility,
                         updates: project.sectionVisibility?.updates ?? 'public',
                     },
                 });
-                break;
 
-            case 'documents':
+                setEditingUpdateId(selectedItem?.id ?? null);
+                setUpdateTitle(selectedItem?.title ?? '');
+                setUpdateDescription(selectedItem?.description ?? '');
+                setUpdateDateLabel(selectedItem?.dateLabel ?? '');
+                setUpdateAuthorName(selectedItem?.authorName ?? currentUserName);
+                setUpdateType(selectedItem?.type === 'stage' ? 'stage' : 'progress');
+                break;
+            }
+
+            case 'documents': {
+                const documentItems = [...(project.documents ?? [])];
+                const selectedItem =
+                    initialDocumentId != null
+                        ? documentItems.find((item) => item.id === initialDocumentId) ?? null
+                        : null;
+
                 setForm({
-                    documents: [...(project.documents ?? [])],
+                    documents: documentItems,
                     sectionVisibility: {
                         ...project.sectionVisibility,
                         documents: project.sectionVisibility?.documents ?? 'public',
                     },
                 });
-                break;
 
-            case 'media':
+                setEditingDocumentId(selectedItem?.id ?? null);
+                setDocumentName(selectedItem?.name ?? '');
+                setDocumentType(selectedItem?.kind ?? selectedItem?.type ?? '');
+                setDocumentStatus((selectedItem?.status as ProjectDocumentStatus) ?? 'Draft');
+                setPendingDocumentFile(null);
+                break;
+            }
+
+            case 'media': {
+                const mediaItems = [...(project.media ?? [])];
+                const selectedItem =
+                    initialMediaId
+                        ? mediaItems.find((item) => item.id === initialMediaId) ?? null
+                        : null;
+
                 setForm({
-                    coverImageUrl: project.coverImageUrl ?? '',
-                    media: [...(project.media ?? [])],
+                    media: mediaItems,
                     sectionVisibility: {
                         ...project.sectionVisibility,
                         media: project.sectionVisibility?.media ?? 'public',
                     },
                 });
+
+                setEditingMediaId(selectedItem?.id ?? null);
+                setMediaCaption(selectedItem?.caption ?? '');
                 break;
+            }
 
             case 'team': {
                 const existingTeam = (project.team ?? [])
@@ -655,47 +974,103 @@ export default function ProjectSidebarEditor({
             setTeamSearch('');
             setCollaboratorOptions([]);
             setTeamRole('user');
+            setTeamManualMode(false);
+            setTeamName('');
+            setTeamProjectRole('');
+            setTeamSelectedPlatform(null);
         }
 
         if (section !== 'team') {
             setBaseTeam([]);
         }
 
-    }, [open, project, section]);
+        if (section !== 'media') {
+            setEditingMediaId(null);
+            setMediaCaption('');
+            clearPendingMedia();
+        }
+
+        if (section !== 'documents') {
+            clearPendingDocument();
+        }
+
+        if (section !== 'opportunities') {
+            setEditingOpportunityId(null);
+            setOpportunityType('');
+            setOpportunityDescription('');
+            setOpportunityUrgent(false);
+        }
+
+        if (section !== 'updates') {
+            setEditingUpdateId(null);
+            setUpdateTitle('');
+            setUpdateDescription('');
+            setUpdateDateLabel('');
+            setUpdateAuthorName('');
+            setUpdateType('progress');
+        }
+
+    }, [open, project, section, initialMediaId, clearPendingMedia, clearPendingDocument, editingDocumentId]);
 
     useEffect(() => {
         if (!open || section !== 'updates' || !currentUserName) return;
 
-        setForm((prev) => {
-            const existing = Array.isArray(prev.updates) ? prev.updates : [];
-            if (existing.length === 0) {
-                return {
-                    ...prev,
-                    updates: [emptyUpdate(currentUserName)],
-                };
-            }
+        if (!editingUpdateId && !updateAuthorName.trim()) {
+            setUpdateAuthorName(currentUserName);
+        }
+    }, [open, section, currentUserName, editingUpdateId, updateAuthorName]);
 
-            return {
-                ...prev,
-                updates: existing.map((item) => ({
-                    ...item,
-                    authorName: item.authorName?.trim() ? item.authorName : currentUserName,
-                })),
-            };
+    const reloadProjectSnapshot = async (): Promise<ProjectProfileData> => {
+        const projectId = requireProjectId();
+
+        const response = await fetch(`${API_BASE_URL}/projects/${projectId}/edit`, {
+            method: 'GET',
+            credentials: 'include',
+            headers: { Accept: 'application/json' },
         });
-    }, [open, section, currentUserName]);
 
-    const updateVisibility = (value: SectionVisibility) => {
-        if (!section || section === 'settings') return;
+        const payload = await parseJsonSafe(response);
 
-        setForm((prev) => ({
-            ...prev,
-            sectionVisibility: {
-                ...(project?.sectionVisibility ?? {}),
-                ...(prev.sectionVisibility ?? {}),
-                [section]: value,
-            },
-        }));
+        if (!response.ok) {
+            throw new Error(getErrorMessage(payload, `Failed to reload project (${response.status})`));
+        }
+
+        const json = payload?.data ?? payload;
+
+        const nextProject: ProjectProfileData = {
+            id: json.id,
+            upid: json.upid ?? null,
+            name: json.name,
+            stage: json.stage,
+            type: json.type ?? null,
+            description: json.description ?? null,
+            companyName: json.companyName ?? null,
+            country: json.country ?? null,
+            region: json.region ?? null,
+            latitude: json.latitude ?? null,
+            longitude: json.longitude ?? null,
+            coverImageUrl: json.coverImageUrl ?? null,
+            projectVisibility: json.projectVisibility ?? null,
+            storyProblem: json.storyProblem ?? null,
+            storyApproach: json.storyApproach ?? null,
+            methodology: json.methodology ?? null,
+            registryName: json.registryName ?? null,
+            registryStatus: json.registryStatus ?? null,
+            registryProjectId: json.registryProjectId ?? null,
+            totalAreaHa: json.totalAreaHa ?? null,
+            estimatedAnnualRemoval: json.estimatedAnnualRemoval ?? null,
+            readiness: json.readiness ?? [],
+            serviceProviders: json.serviceProviders ?? [],
+            opportunities: json.opportunities ?? [],
+            updates: json.updates ?? [],
+            documents: json.documents ?? [],
+            media: json.media ?? [],
+            team: json.team ?? [],
+            sectionVisibility: json.sectionVisibility ?? {},
+        };
+
+        commitProjectPatch(nextProject);
+        return nextProject;
     };
 
     const requireProjectId = () => {
@@ -713,6 +1088,66 @@ export default function ProjectSidebarEditor({
         }
 
         return payload?.data ?? payload;
+    };
+
+    const handleMediaSave = async () => {
+        try {
+            setMediaUpload({ busy: true, error: null });
+
+            if (editingMediaId) {
+                await updateMediaRecord(editingMediaId, {
+                    caption: mediaCaption.trim() || null,
+                });
+
+                const nextProject = await reloadProjectSnapshot();
+
+                setForm((prev) => ({
+                    ...prev,
+                    media: [...(nextProject.media ?? [])],
+                    coverImageUrl: nextProject.coverImageUrl ?? '',
+                }));
+
+                setEditingMediaId(null);
+                setMediaCaption('');
+                setMediaUpload({ busy: false, error: null });
+                return;
+            }
+
+            if (!pendingMediaFile) {
+                setMediaUpload({ busy: false, error: null });
+                return;
+            }
+
+            const file = pendingMediaFile;
+            const upload = await getMediaUploadUrl(file);
+            await uploadBinaryToSignedUrl(upload.uploadUrl, file);
+
+            await createMediaRecord({
+                assetUrl: upload.assetUrl,
+                s3Key: upload.s3Key ?? upload.key ?? null,
+                contentType: file.type || 'application/octet-stream',
+                caption: mediaCaption.trim() || file.name,
+                isCover: false,
+            });
+
+            const nextProject = await reloadProjectSnapshot();
+
+            setForm((prev) => ({
+                ...prev,
+                media: [...(nextProject.media ?? [])],
+                coverImageUrl: nextProject.coverImageUrl ?? '',
+            }));
+
+            clearPendingMedia();
+            setMediaCaption('');
+            setEditingMediaId(null);
+            setMediaUpload({ busy: false, error: null });
+        } catch (error: any) {
+            setMediaUpload({
+                busy: false,
+                error: error?.message ?? 'Failed to save media',
+            });
+        }
     };
 
     const getMediaUploadUrl = async (file: File) => {
@@ -739,6 +1174,13 @@ export default function ProjectSidebarEditor({
     const getDocumentUploadUrl = async (file: File) => {
         const projectId = requireProjectId();
 
+        console.log('document upload projectId', {
+            projectId,
+            project,
+            projectIdType: typeof projectId,
+        });
+
+
         const response = await fetch(
             `${API_BASE_URL}/projects/${projectId}/documents/upload-url?fileName=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type || 'application/octet-stream')}`,
             {
@@ -757,6 +1199,71 @@ export default function ProjectSidebarEditor({
         return payload.data;
     };
 
+    const handleDocumentSave = async () => {
+        try {
+            setDocumentUpload({ busy: true, error: null });
+
+            if (!documentName.trim()) {
+                throw new Error('Document name is required');
+            }
+
+            if (!documentType.trim()) {
+                throw new Error('Document type is required');
+            }
+
+            if (editingDocumentId) {
+                await updateDocumentRecord(editingDocumentId, {
+                    name: documentName.trim(),
+                    kind: documentType.trim(),
+                    status: documentStatus,
+                });
+
+                const nextProject = await reloadProjectSnapshot();
+
+                setForm((prev) => ({
+                    ...prev,
+                    documents: [...(nextProject.documents ?? [])],
+                }));
+
+                clearPendingDocument();
+                setDocumentUpload({ busy: false, error: null });
+                return;
+            }
+
+            if (!pendingDocumentFile) {
+                throw new Error('Please select a file to upload');
+            }
+
+            const file = pendingDocumentFile;
+            const upload = await getDocumentUploadUrl(file);
+            await uploadBinaryToSignedUrl(upload.uploadUrl, file);
+
+            await createDocumentRecord({
+                assetUrl: upload.assetUrl,
+                s3Key: upload.s3Key ?? upload.key ?? null,
+                contentType: file.type || 'application/octet-stream',
+                name: documentName.trim(),
+                kind: documentType.trim(),
+                status: documentStatus,
+            });
+
+            const nextProject = await reloadProjectSnapshot();
+
+            setForm((prev) => ({
+                ...prev,
+                documents: [...(nextProject.documents ?? [])],
+            }));
+
+            clearPendingDocument();
+            setDocumentUpload({ busy: false, error: null });
+        } catch (error: any) {
+            setDocumentUpload({
+                busy: false,
+                error: error?.message ?? 'Failed to save document',
+            });
+        }
+    };
+
     const uploadBinaryToSignedUrl = async (uploadUrl: string, file: File) => {
         const uploadResponse = await fetch(uploadUrl, {
             method: 'PUT',
@@ -769,6 +1276,113 @@ export default function ProjectSidebarEditor({
         if (!uploadResponse.ok) {
             throw new Error(`Binary upload failed (${uploadResponse.status})`);
         }
+    };
+
+    function isTempOpportunityId(id?: string | null) {
+        return !id || id.startsWith('temp-');
+    }
+
+    function normalizeOpportunityInput(items?: ProjectOpportunity[] | null) {
+        return (items ?? [])
+            .map((item) => ({
+                id: item.id,
+                type: item.type?.trim() ?? '',
+                description: item.description?.trim() || null,
+                urgent: Boolean(item.urgent),
+            }))
+            .filter((item) => item.type);
+    }
+
+    const handleOpportunitySave = async () => {
+        const input = {
+            type: opportunityType.trim(),
+            description: opportunityDescription.trim() || null,
+            urgent: Boolean(opportunityUrgent),
+        };
+
+        if (!input.type) {
+            throw new Error('Opportunity type is required');
+        }
+
+        let nextProject: Partial<ProjectProfileData>;
+
+        if (editingOpportunityId) {
+            nextProject = await updateOpportunityRecord(editingOpportunityId, input);
+        } else {
+            nextProject = await createOpportunityRecord(input);
+        }
+
+        syncProjectState(nextProject);
+
+        const latestItems = nextProject.opportunities ?? project?.opportunities ?? [];
+        const saved =
+            latestItems.find((item) =>
+                editingOpportunityId ? item.id === editingOpportunityId : (
+                    item.type === input.type &&
+                    (item.description ?? null) === input.description &&
+                    Boolean(item.urgent) === input.urgent
+                )
+            ) ?? null;
+
+        setEditingOpportunityId(saved?.id ?? null);
+        setOpportunityType(saved?.type ?? '');
+        setOpportunityDescription(saved?.description ?? '');
+        setOpportunityUrgent(Boolean(saved?.urgent));
+    };
+
+    const createOpportunityRecord = async (
+        input: Pick<ProjectOpportunity, 'type' | 'description' | 'urgent'>
+    ) => {
+        const projectId = requireProjectId();
+
+        const response = await fetch(`${API_BASE_URL}/projects/${projectId}/opportunities`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                type: input.type?.trim() ?? '',
+                description: input.description?.trim() || null,
+                urgent: Boolean(input.urgent),
+            }),
+        });
+
+        return refreshProjectFromResponse(response);
+    };
+
+    const updateOpportunityRecord = async (
+        opportunityId: string,
+        input: Pick<ProjectOpportunity, 'type' | 'description' | 'urgent'>
+    ) => {
+        const response = await fetch(`${API_BASE_URL}/projects/opportunities/${opportunityId}`, {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                type: input.type?.trim() ?? '',
+                description: input.description?.trim() || null,
+                urgent: Boolean(input.urgent),
+            }),
+        });
+
+        return refreshProjectFromResponse(response);
+    };
+
+    const deleteOpportunityRecord = async (opportunityId: string) => {
+        const response = await fetch(`${API_BASE_URL}/projects/opportunities/${opportunityId}`, {
+            method: 'DELETE',
+            credentials: 'include',
+            headers: {
+                Accept: 'application/json',
+            },
+        });
+
+        return refreshProjectFromResponse(response);
     };
 
     const createMediaRecord = async (input: {
@@ -837,7 +1451,8 @@ export default function ProjectSidebarEditor({
         s3Key?: string | null;
         contentType?: string | null;
         name?: string | null;
-        type?: string | null;
+        kind?: string | null;
+        status?: ProjectDocumentStatus | null;
     }) => {
         const projectId = requireProjectId();
 
@@ -849,12 +1464,12 @@ export default function ProjectSidebarEditor({
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                kind: 'general',
+                kind: input.kind ?? 'Other',
                 assetUrl: input.assetUrl,
                 s3Key: input.s3Key ?? null,
                 contentType: input.contentType ?? null,
                 name: input.name ?? null,
-                type: input.type ?? null,
+                status: input.status ?? 'Draft',
                 metadata: {},
             }),
         });
@@ -864,7 +1479,11 @@ export default function ProjectSidebarEditor({
 
     const updateDocumentRecord = async (
         documentId: string,
-        input: { name?: string | null; type?: string | null }
+        input: {
+            name?: string | null;
+            kind?: string | null;
+            status?: ProjectDocumentStatus | null;
+        }
     ) => {
         const projectId = requireProjectId();
 
@@ -893,158 +1512,220 @@ export default function ProjectSidebarEditor({
         return refreshProjectFromResponse(response);
     };
 
-    const handleMediaFilePicked = async (file: File, isCover = false) => {
+    const handleMediaFilePicked = async (file: File) => {
         try {
-            setMediaUpload({ busy: true, error: null });
+            setMediaUpload({ busy: false, error: null });
 
-            const upload = await getMediaUploadUrl(file);
-            await uploadBinaryToSignedUrl(upload.uploadUrl, file);
+            if (pendingMediaPreviewUrl) {
+                URL.revokeObjectURL(pendingMediaPreviewUrl);
+            }
 
-            const nextProject = await createMediaRecord({
-                assetUrl: upload.assetUrl,
-                s3Key: upload.s3Key ?? upload.key ?? null,
-                contentType: file.type || 'application/octet-stream',
-                caption: file.name,
-                isCover,
-            });
+            const previewUrl = URL.createObjectURL(file);
 
-            setForm((prev) => ({
-                ...prev,
-                media: [...(nextProject?.media ?? [])],
-                coverImageUrl: nextProject?.coverImageUrl ?? '',
-            }));
+            setPendingMediaFile(file);
+            setPendingMediaPreviewUrl(previewUrl);
+            setEditingMediaId(null);
 
-            syncProjectState(nextProject);
+            if (!mediaCaption.trim()) {
+                setMediaCaption('');
+            }
         } catch (error: any) {
             setMediaUpload({
                 busy: false,
-                error: error?.message ?? 'Failed to upload media',
+                error: error?.message ?? 'Failed to prepare media preview',
             });
-            return;
         }
+    };
 
-        setMediaUpload({ busy: false, error: null });
+    const handleMediaDelete = async (mediaId: string) => {
+        await deleteMediaRecord(mediaId);
+
+        const nextProject = await reloadProjectSnapshot();
+
+        setForm((prev) => ({
+            ...prev,
+            media: [...(nextProject.media ?? [])],
+            coverImageUrl: nextProject.coverImageUrl ?? '',
+        }));
     };
 
     const handleDocumentFilePicked = async (file: File) => {
         try {
-            setDocumentUpload({ busy: true, error: null });
+            setDocumentUpload({ busy: false, error: null });
 
-            const upload = await getDocumentUploadUrl(file);
-            await uploadBinaryToSignedUrl(upload.uploadUrl, file);
+            setPendingDocumentFile(file);
+            setEditingDocumentId(null);
 
-            const nextProject = await createDocumentRecord({
-                assetUrl: upload.assetUrl,
-                s3Key: upload.s3Key ?? upload.key ?? null,
-                contentType: file.type || 'application/octet-stream',
-                name: file.name,
-                type: file.type || null,
-            });
+            if (!documentName.trim()) {
+                setDocumentName(file.name);
+            }
 
-            setForm((prev) => ({
-                ...prev,
-                documents: [...(nextProject?.documents ?? [])],
-            }));
-
-            syncProjectState(nextProject);
+            if (!documentType.trim()) {
+                setDocumentType('');
+            }
         } catch (error: any) {
             setDocumentUpload({
                 busy: false,
-                error: error?.message ?? 'Failed to upload document',
+                error: error?.message ?? 'Failed to prepare document',
             });
-            return;
         }
-
-        setDocumentUpload({ busy: false, error: null });
-    };
-
-    const handleMediaMetaSave = async (item: ProjectMediaItem) => {
-        if (!item.id) return;
-
-        const nextProject = await updateMediaRecord(item.id, {
-            caption: item.caption ?? null,
-            isCover: Boolean((item as any).isCover),
-        });
-
-        setForm((prev) => ({
-            ...prev,
-            media: [...(nextProject?.media ?? [])],
-            coverImageUrl: nextProject?.coverImageUrl ?? '',
-        }));
-
-        syncProjectState(nextProject);
-    };
-
-    const handleMediaDelete = async (mediaId: string) => {
-        const nextProject = await deleteMediaRecord(mediaId);
-
-        setForm((prev) => ({
-            ...prev,
-            media: [...(nextProject?.media ?? [])],
-            coverImageUrl: nextProject?.coverImageUrl ?? '',
-        }));
-
-        syncProjectState(nextProject);
-    };
-
-    const handleDocumentMetaSave = async (item: ProjectDocument) => {
-        if (!item.id) return;
-
-        const nextProject = await updateDocumentRecord(item.id, {
-            name: item.name ?? null,
-            type: item.type ?? null,
-        });
-
-        setForm((prev) => ({
-            ...prev,
-            documents: [...(nextProject?.documents ?? [])],
-        }));
-
-        syncProjectState(nextProject);
     };
 
     const handleDocumentDelete = async (documentId: string) => {
-        const nextProject = await deleteDocumentRecord(documentId);
+        await deleteDocumentRecord(documentId);
+
+        const nextProject = await reloadProjectSnapshot();
 
         setForm((prev) => ({
             ...prev,
-            documents: [...(nextProject?.documents ?? [])],
+            documents: [...(nextProject.documents ?? [])],
         }));
+    };
+
+    const handleUpdateSave = async () => {
+        const input = {
+            title: updateTitle.trim(),
+            description: updateDescription.trim() || null,
+            dateLabel: updateDateLabel.trim() || null,
+            authorName: updateAuthorName.trim() || null,
+            type: updateType,
+        };
+
+        if (!input.title) {
+            throw new Error('Update title is required');
+        }
+
+        let nextProject: Partial<ProjectProfileData>;
+
+        if (editingUpdateId) {
+            nextProject = await updateUpdateRecord(editingUpdateId, input);
+        } else {
+            nextProject = await createUpdateRecord(input);
+        }
 
         syncProjectState(nextProject);
+
+        const latestItems = nextProject.updates ?? project?.updates ?? [];
+        const saved =
+            latestItems.find((item) =>
+                editingUpdateId ? item.id === editingUpdateId : (
+                    item.title === input.title &&
+                    (item.description ?? null) === input.description &&
+                    (item.dateLabel ?? null) === input.dateLabel
+                )
+            ) ?? null;
+
+        setEditingUpdateId(saved?.id ?? null);
+        setUpdateTitle(saved?.title ?? input.title);
+        setUpdateDescription(saved?.description ?? input.description ?? '');
+        setUpdateDateLabel(saved?.dateLabel ?? input.dateLabel ?? '');
+        setUpdateAuthorName(saved?.authorName ?? input.authorName ?? '');
+        setUpdateType(saved?.type === 'stage' ? 'stage' : 'progress');
+    };
+
+    const createUpdateRecord = async (input: {
+        title: string;
+        description?: string | null;
+        dateLabel?: string | null;
+        authorName?: string | null;
+        type?: 'progress' | 'stage' | null;
+    }) => {
+        const projectId = requireProjectId();
+
+        const response = await fetch(`${API_BASE_URL}/projects/${projectId}/updates`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                title: input.title.trim(),
+                description: input.description?.trim() || null,
+                dateLabel: input.dateLabel?.trim() || null,
+                authorName: input.authorName?.trim() || null,
+                type: input.type ?? 'progress',
+            }),
+        });
+
+        return refreshProjectFromResponse(response);
+    };
+
+    const updateUpdateRecord = async (
+        updateId: string,
+        input: {
+            title: string;
+            description?: string | null;
+            dateLabel?: string | null;
+            authorName?: string | null;
+            type?: 'progress' | 'stage' | null;
+        }
+    ) => {
+        const response = await fetch(`${API_BASE_URL}/projects/updates/${updateId}`, {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                title: input.title.trim(),
+                description: input.description?.trim() || null,
+                dateLabel: input.dateLabel?.trim() || null,
+                authorName: input.authorName?.trim() || null,
+                type: input.type ?? 'progress',
+            }),
+        });
+
+        return refreshProjectFromResponse(response);
     };
 
     const handleSave = async () => {
-        if (!section) return;
-
-        setSaving(true);
-
         try {
-            let payload: SaveProjectPatch;
+            setSaving(true);
 
-            const normalizedSectionVisibility = form.sectionVisibility
-                ? Object.fromEntries(
-                    Object.entries(form.sectionVisibility).map(([key, value]) => [
-                        key,
-                        toApiVisibility(value as SectionVisibility),
-                    ])
-                ) as SaveProjectPatch['sectionVisibility']
-                : undefined;
+            const normalizedSectionVisibility = form.sectionVisibility ?? undefined;
+
+            if (section === 'media') {
+                await handleMediaSave();
+                onClose();
+                return;
+            }
+
+            if (section === 'documents') {
+                await handleDocumentSave();
+                onClose();
+                return;
+            }
+
+            if (section === 'opportunities') {
+                await handleOpportunitySave();
+                onClose();
+                return;
+            }
+
+            if (section === 'updates') {
+                await handleUpdateSave();
+                onClose();
+                return;
+            }
+
+            let payload: SaveProjectPatch;
 
             if (section === 'team') {
                 const combinedTeam = [...baseTeam, ...(form.team ?? [])];
 
                 const dedupedTeam = Array.from(
                     new Map(
-                        combinedTeam
-                            .filter((member) => Boolean(member.memberId))
-                            .map((member) => {
-                                const key =
-                                    member.memberType === 'company'
-                                        ? `company:${member.companyId ?? member.memberId}`
-                                        : `user:${member.userId ?? member.memberId}`;
-                                return [key, member];
-                            })
+                        combinedTeam.map((member) => {
+                            const key = member.isPlatformMember
+                                ? member.memberType === 'company'
+                                    ? `company:${member.companyId ?? member.memberId}`
+                                    : `user:${member.userId ?? member.memberId}`
+                                : `manual:${member.memberType}:${member.name.trim().toLowerCase()}:${member.role ?? ''}`;
+
+                            return [key, member];
+                        })
                     ).values()
                 );
 
@@ -1053,64 +1734,58 @@ export default function ProjectSidebarEditor({
                         if (member.memberType === 'company') {
                             return {
                                 memberType: 'company' as const,
-                                memberId: member.companyId ?? member.memberId,
-                                companyId: member.companyId ?? member.memberId,
+                                memberId: member.companyId ?? member.memberId ?? null,
+                                companyId: member.companyId ?? member.memberId ?? null,
                                 userId: null,
                                 name: member.name,
                                 companyName: member.companyName ?? member.name,
                                 avatarUrl: member.avatarUrl ?? null,
                                 role: member.role ?? null,
                                 permission: null,
+                                isPlatformMember: member.isPlatformMember,
+                                manualName: member.isPlatformMember ? null : (member.manualName ?? member.name ?? null),
+                                manualOrganization: member.isPlatformMember
+                                    ? null
+                                    : (member.manualOrganization ?? member.companyName ?? member.name ?? null),
                             };
                         }
 
                         return {
                             memberType: 'user' as const,
-                            memberId: member.userId ?? member.memberId,
-                            userId: member.userId ?? member.memberId,
+                            memberId: member.userId ?? member.memberId ?? null,
+                            userId: member.userId ?? member.memberId ?? null,
                             companyId: null,
                             name: member.name,
                             companyName: member.companyName ?? '',
                             avatarUrl: member.avatarUrl ?? null,
                             role: member.role ?? null,
                             permission: member.permission === 'creator' ? 'creator' : 'viewer',
+                            isPlatformMember: member.isPlatformMember,
+                            manualName: member.isPlatformMember ? null : (member.manualName ?? member.name ?? null),
+                            manualOrganization: member.isPlatformMember
+                                ? null
+                                : (member.manualOrganization ?? member.companyName ?? null),
                         };
                     }),
                 };
             } else {
-                const { team, sectionVisibility, opportunities, updates, documents, media, coverImageUrl, ...rest } = form;
+                const {
+                    team,
+                    sectionVisibility,
+                    projectVisibility,
+                    documents,
+                    media,
+                    coverImageUrl,
+                    ...rest
+                } = form as ProjectEditorForm & { projectVisibility?: SectionVisibility };
 
                 payload = {
                     ...rest,
+                    projectVisibility:
+                        section === 'overview' && projectVisibility
+                            ? toApiVisibility(projectVisibility)
+                            : undefined,
                     sectionVisibility: normalizedSectionVisibility,
-
-                    ...(section === 'opportunities'
-                        ? {
-                            opportunities: (opportunities ?? [])
-                                .map((item) => ({
-                                    id: item.id,
-                                    type: item.type?.trim() ?? '',
-                                    description: item.description?.trim() || null,
-                                    urgent: Boolean(item.urgent),
-                                }))
-                                .filter((item) => item.type),
-                        }
-                        : {}),
-
-                    ...(section === 'updates'
-                        ? {
-                            updates: (updates ?? [])
-                                .map((item) => ({
-                                    id: item.id,
-                                    title: item.title?.trim() ?? '',
-                                    description: item.description?.trim() || null,
-                                    dateLabel: item.dateLabel?.trim() || null,
-                                    authorName: item.authorName?.trim() || null,
-                                    type: item.type ?? 'progress',
-                                }))
-                                .filter((item) => item.title),
-                        }
-                        : {}),
                 };
             }
 
@@ -1121,18 +1796,57 @@ export default function ProjectSidebarEditor({
         }
     };
 
-    if (!project || !section) {
-        return (
-            <Drawer anchor="right" open={open} onClose={onClose}>
-                <Box sx={{ width: { xs: '100vw', sm: 460 }, p: 3 }}>
-                    <Typography variant="h6" fontWeight={700}>
-                        Project editor
-                    </Typography>
-                    <Alert severity="info" sx={{ mt: 2 }}>
+    const renderSectionContent = () => {
+        switch (section) {
+            case 'settings':
+                return renderSettings();
+            case 'cover':
+                return renderCover();
+            case 'overview':
+                return renderOverview();
+            case 'story':
+                return renderStory();
+            case 'location':
+                return renderLocation();
+            case 'readiness':
+                return renderReadiness();
+            case 'registry':
+                return renderRegistry();
+            case 'impact':
+                return renderImpact();
+            case 'opportunities':
+                return renderOpportunities();
+            case 'updates':
+                return renderUpdates();
+            case 'documents':
+                return renderDocuments();
+            case 'media':
+                return renderMedia();
+            case 'team':
+                return renderTeam();
+            default:
+                return (
+                    <Alert severity="info">
                         Select a section to edit.
                     </Alert>
-                </Box>
-            </Drawer>
+                );
+        }
+    };
+
+    if (!project || !section) {
+        return (
+            <SidebarPanel
+                open={open}
+                onClose={onClose}
+                title="Project editor"
+                width={460}
+                showBackdrop
+                cancelLabel="Close"
+            >
+                <Alert severity="info">
+                    Select a section to edit.
+                </Alert>
+            </SidebarPanel>
         );
     }
 
@@ -1158,11 +1872,15 @@ export default function ProjectSidebarEditor({
                 memberType: 'user',
                 memberId: entry.id,
                 userId: entry.id,
+                companyId: null,
                 name: entry.name,
                 role: '',
                 companyName: entry.companyName ?? '',
                 avatarUrl: entry.avatarUrl ?? null,
                 permission: 'viewer',
+                isPlatformMember: true,
+                manualName: null,
+                manualOrganization: null,
             };
 
             setField('team', [...items, nextMember]);
@@ -1228,7 +1946,7 @@ export default function ProjectSidebarEditor({
                                                 flexShrink: 0,
                                             }}
                                         >
-                                            {member.name
+                                            {getEditorMemberDisplayName(member)
                                                 .split(' ')
                                                 .map((n) => n[0])
                                                 .join('')
@@ -1249,7 +1967,7 @@ export default function ProjectSidebarEditor({
                                                     lineHeight: 1.4,
                                                 }}
                                             >
-                                                {member.name}
+                                                {getEditorMemberDisplayName(member)}
                                             </Typography>
 
                                             <Typography
@@ -1262,9 +1980,7 @@ export default function ProjectSidebarEditor({
                                                     whiteSpace: 'nowrap',
                                                 }}
                                             >
-                                                {member.companyName
-                                                    ? `${member.companyName}${member.role ? ` · ${member.role}` : ''}`
-                                                    : member.role || 'Platform user'}
+                                                {getEditorMemberSecondary(member)}
                                             </Typography>
                                         </Box>
 
@@ -1486,6 +2202,114 @@ export default function ProjectSidebarEditor({
         );
     };
 
+    const renderCover = () => (
+        <Stack spacing={3}>
+            <Box>
+                <Typography variant="subtitle1" fontWeight={700} gutterBottom>
+                    Project Cover
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                    Add a cover photo to make your project stand out in listings and search results.
+                </Typography>
+            </Box>
+
+            {mediaUpload.error ? (
+                <Alert severity="error">{mediaUpload.error}</Alert>
+            ) : null}
+
+            <Paper
+                variant="outlined"
+                sx={{
+                    p: 3,
+                    borderStyle: 'dashed',
+                    textAlign: 'center',
+                    cursor: mediaUpload.busy ? 'default' : 'pointer',
+                    aspectRatio: '16/9',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: 2,
+                    overflow: 'hidden',
+                    position: 'relative',
+                    '&:hover': mediaUpload.busy
+                        ? undefined
+                        : {
+                            bgcolor: 'grey.50',
+                            borderColor: 'grey.400',
+                        },
+                }}
+                component="label"
+            >
+                <input
+                    type="file"
+                    hidden
+                    accept="image/*"
+                    disabled={mediaUpload.busy}
+                    onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        e.currentTarget.value = '';
+                        if (!file) return;
+                        await handleCoverFilePicked(file);
+                    }}
+                />
+
+                {project.coverImageUrl || form.coverImageUrl ? (
+                    <>
+                        <Box
+                            component="img"
+                            src={String(form.coverImageUrl || project.coverImageUrl)}
+                            alt="Project cover"
+                            sx={{
+                                position: 'absolute',
+                                inset: 0,
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'cover',
+                            }}
+                        />
+                        <Box
+                            sx={{
+                                position: 'absolute',
+                                inset: 0,
+                                bgcolor: 'rgba(0,0,0,0.35)',
+                            }}
+                        />
+                    </>
+                ) : null}
+
+                <Box sx={{ position: 'relative', zIndex: 1, px: 2 }}>
+                    <PhotoCameraRounded
+                        sx={{
+                            fontSize: 40,
+                            color: project.coverImageUrl || form.coverImageUrl ? 'common.white' : 'grey.400',
+                            mb: 1,
+                        }}
+                    />
+
+                    <Typography
+                        variant="body2"
+                        color={project.coverImageUrl || form.coverImageUrl ? 'common.white' : 'text.secondary'}
+                    >
+                        {mediaUpload.busy ? 'Uploading…' : 'Click to upload or drag and drop'}
+                    </Typography>
+
+                    <Typography
+                        variant="caption"
+                        color={project.coverImageUrl || form.coverImageUrl ? 'common.white' : 'text.disabled'}
+                        sx={{ opacity: project.coverImageUrl || form.coverImageUrl ? 0.9 : 1 }}
+                    >
+                        Recommended: 1200×675px (16:9). PNG, JPG up to 10MB
+                    </Typography>
+                </Box>
+            </Paper>
+
+            <Typography variant="caption" color="text.secondary">
+                This image will appear at the top of your project page and as a thumbnail in project listings.
+            </Typography>
+        </Stack>
+    );
+
     const renderOverview = () => (
         <Stack spacing={3}>
             <Box>
@@ -1502,52 +2326,146 @@ export default function ProjectSidebarEditor({
                     Cover image
                 </Typography>
 
+                {mediaUpload.error ? <Alert severity="error" sx={{ mb: 1.5 }}>{mediaUpload.error}</Alert> : null}
+
                 <Paper
                     variant="outlined"
                     sx={{
-                        p: 2.5,
+                        p: 3,
                         borderStyle: 'dashed',
                         borderRadius: 2,
+                        textAlign: 'center',
+                        cursor: mediaUpload.busy ? 'default' : 'pointer',
+                        aspectRatio: '16/9',
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: 1,
-                        textAlign: 'center',
+                        gap: 1.25,
                         bgcolor: 'grey.50',
+                        borderColor: 'grey.300',
+                        overflow: 'hidden',
+                        position: 'relative',
+                        '&:hover': mediaUpload.busy
+                            ? undefined
+                            : {
+                                bgcolor: 'grey.100',
+                                borderColor: 'grey.400',
+                            },
                     }}
+                    component="label"
                 >
-                    {form.coverImageUrl ? (
-                        <Box
-                            component="img"
-                            src={String(form.coverImageUrl)}
-                            alt="Project cover preview"
-                            sx={{
-                                width: '100%',
-                                maxHeight: 180,
-                                objectFit: 'cover',
-                                borderRadius: 1.5,
-                                border: '1px solid',
-                                borderColor: 'grey.200',
-                            }}
-                        />
-                    ) : (
-                        <PhotoCameraRounded sx={{ fontSize: 32, color: 'grey.400' }} />
-                    )}
-
-                    <TextField
-                        label="Cover image URL"
-                        size="small"
-                        fullWidth
-                        value={(form.coverImageUrl as string) ?? ''}
-                        onChange={(e) => setField('coverImageUrl', e.target.value)}
-                        placeholder="Paste image URL for now"
+                    <input
+                        hidden
+                        type="file"
+                        accept="image/*"
+                        disabled={mediaUpload.busy}
+                        onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            e.currentTarget.value = '';
+                            if (!file) return;
+                            await handleCoverFilePicked(file);
+                        }}
                     />
 
-                    <Typography variant="caption" color="text.secondary">
-                        This keeps the current backend-compatible flow. You can swap this for an upload flow later.
-                    </Typography>
+                    {(form.coverImageUrl || project.coverImageUrl) ? (
+                        <>
+                            <Box
+                                component="img"
+                                src={String(form.coverImageUrl || project.coverImageUrl)}
+                                alt="Project cover preview"
+                                sx={{
+                                    position: 'absolute',
+                                    inset: 0,
+                                    width: '100%',
+                                    height: '100%',
+                                    objectFit: 'cover',
+                                }}
+                            />
+                            <Box
+                                sx={{
+                                    position: 'absolute',
+                                    inset: 0,
+                                    bgcolor: 'rgba(0,0,0,0.35)',
+                                }}
+                            />
+                            <Box
+                                sx={{
+                                    position: 'relative',
+                                    zIndex: 1,
+                                    color: 'common.white',
+                                    px: 2,
+                                }}
+                            >
+                                <PhotoCameraRounded sx={{ fontSize: 40, mb: 1 }} />
+                                <Typography variant="body2" fontWeight={600}>
+                                    {mediaUpload.busy ? 'Uploading…' : 'Click to replace or drag and drop'}
+                                </Typography>
+                                <Typography variant="caption" sx={{ opacity: 0.9 }}>
+                                    Recommended: 1200×675px (16:9). PNG, JPG up to 10MB
+                                </Typography>
+                            </Box>
+                        </>
+                    ) : (
+                        <>
+                            <PhotoCameraRounded
+                                sx={{
+                                    fontSize: 40,
+                                    color: 'grey.400',
+                                }}
+                            />
+                            <Typography variant="body2" color="text.secondary">
+                                {mediaUpload.busy ? 'Uploading…' : 'Click to upload or drag and drop'}
+                            </Typography>
+                            <Typography variant="caption" color="text.disabled">
+                                Recommended: 1200×675px (16:9). PNG, JPG up to 10MB
+                            </Typography>
+                        </>
+                    )}
                 </Paper>
+
+                <Stack
+                    direction="row"
+                    spacing={1}
+                    sx={{ mt: 1.5 }}
+                    flexWrap="wrap"
+                    useFlexGap
+                >
+                    <Button
+                        variant="outlined"
+                        component="label"
+                        disabled={mediaUpload.busy}
+                        startIcon={<CloudUploadRounded />}
+                    >
+                        {form.coverImageUrl || project.coverImageUrl ? 'Replace cover' : 'Upload cover'}
+                        <input
+                            hidden
+                            type="file"
+                            accept="image/*"
+                            onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                e.currentTarget.value = '';
+                                if (!file) return;
+                                await handleCoverFilePicked(file);
+                            }}
+                        />
+                    </Button>
+
+                    {(form.coverImageUrl || project.coverImageUrl) ? (
+                        <Button
+                            color="error"
+                            variant="text"
+                            disabled={mediaUpload.busy}
+                            onClick={handleRemoveCover}
+                        >
+                            Remove cover
+                        </Button>
+                    ) : null}
+                </Stack>
+
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                    This image will appear at the top of your project page and as a thumbnail in project listings.
+                </Typography>
             </Box>
 
             <TextField
@@ -1561,61 +2479,51 @@ export default function ProjectSidebarEditor({
             <TextField
                 label="Short description"
                 size="small"
-                multiline
-                minRows={4}
                 fullWidth
                 value={(form.description as string) ?? ''}
                 onChange={(e) => setField('description', e.target.value)}
                 placeholder="A short, listing-friendly summary of the project"
             />
 
-            <FormControl fullWidth size="small">
-                <InputLabel>Stage</InputLabel>
-                <Select
-                    value={(form.stage as ProjectStage) ?? project.stage}
-                    label="Stage"
-                    onChange={(e) => setField('stage', e.target.value as ProjectStage)}
-                >
-                    {STAGES.map((stage) => (
-                        <MenuItem key={stage} value={stage}>
-                            {stage}
-                        </MenuItem>
-                    ))}
-                </Select>
-            </FormControl>
+            <Stack spacing={0.5}>
+                <FormControl fullWidth size="small">
+                    <InputLabel>Project type</InputLabel>
+                    <Select
+                        value={(form.type as string) ?? ''}
+                        label="Project type"
+                        onChange={(e) => setField('type', e.target.value)}
+                    >
+                        {PROJECT_TYPE_OPTIONS.map((option) => (
+                            <MenuItem key={option.id} value={option.id}>
+                                {option.label}
+                            </MenuItem>
+                        ))}
+                    </Select>
+                </FormControl>
 
-            <TextField
-                label="Project type"
-                size="small"
-                fullWidth
-                value={(form.type as string) ?? ''}
-                onChange={(e) => setField('type', e.target.value)}
-            />
+                {form.type ? (
+                    <Typography variant="caption" color="text.secondary">
+                        {
+                            PROJECT_TYPE_OPTIONS.find((option) => option.id === form.type)
+                                ?.description ?? ''
+                        }
+                    </Typography>
+                ) : null}
+            </Stack>
 
-            <TextField
-                label="Project area (ha)"
-                size="small"
-                fullWidth
-                type="number"
-                value={form.totalAreaHa ?? ''}
-                onChange={(e) =>
-                    setField('totalAreaHa', e.target.value === '' ? null : Number(e.target.value))
-                }
-                InputProps={{
-                    endAdornment: <InputAdornment position="end">ha</InputAdornment>,
-                }}
-            />
-
-            <TextField
+            {/* <TextField
                 label="Estimated annual removal"
                 size="small"
                 fullWidth
                 value={(form.estimatedAnnualRemoval as string) ?? ''}
                 onChange={(e) => setField('estimatedAnnualRemoval', e.target.value)}
                 placeholder="e.g. 60,000 tCO₂e/year"
-            />
+            /> */}
 
-            <VisibilityField value={visibilityValue} onChange={updateVisibility} />
+            <ProjectVisibilityField
+                value={projectVisibilityValue}
+                onChange={(value) => setField('projectVisibility' as any, value)}
+            />
         </Stack>
     );
 
@@ -1652,8 +2560,6 @@ export default function ProjectSidebarEditor({
                 onChange={(e) => setField('storyApproach', e.target.value)}
                 placeholder="How does the project work? What is the intervention or pathway?"
             />
-
-            <VisibilityField value={visibilityValue} onChange={updateVisibility} />
         </Stack>
     );
 
@@ -1744,104 +2650,17 @@ export default function ProjectSidebarEditor({
                         Approximate map preview
                     </Typography>
 
-                    <Box
-                        sx={{
-                            width: '100%',
-                            height: 200,
-                            borderRadius: 2,
-                            overflow: 'hidden',
-                            border: '1px solid',
-                            borderColor: 'grey.300',
-                            position: 'relative',
-                            bgcolor: '#e8f5e9',
-                            cursor: 'crosshair',
+                    <ProjectLocationMap
+                        lat={form.latitude == null ? '' : String(form.latitude)}
+                        lng={form.longitude == null ? '' : String(form.longitude)}
+                        height={260}
+                        onChange={({ lat, lng }) => {
+                            setField('latitude', lat === '' ? null : Number(lat));
+                            setField('longitude', lng === '' ? null : Number(lng));
                         }}
-                        onClick={(e) => {
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            const x = (e.clientX - rect.left) / rect.width;
-                            const y = (e.clientY - rect.top) / rect.height;
-
-                            const minLat = -5;
-                            const maxLat = 20;
-                            const minLng = 95;
-                            const maxLng = 125;
-
-                            const nextLat = Number((maxLat - y * (maxLat - minLat)).toFixed(4));
-                            const nextLng = Number((minLng + x * (maxLng - minLng)).toFixed(4));
-
-                            setField('latitude', nextLat);
-                            setField('longitude', nextLng);
-                        }}
-                    >
-                        <Box
-                            sx={{
-                                width: '100%',
-                                height: '100%',
-                                background:
-                                    'linear-gradient(135deg, #c8e6c9 0%, #a5d6a7 30%, #81c784 60%, #66bb6a 100%)',
-                                position: 'relative',
-                            }}
-                        >
-                            <Typography
-                                variant="caption"
-                                sx={{
-                                    position: 'absolute',
-                                    bottom: 8,
-                                    right: 10,
-                                    color: 'rgba(0,0,0,0.32)',
-                                    fontSize: '0.65rem',
-                                    fontWeight: 700,
-                                }}
-                            >
-                                Southeast Asia
-                            </Typography>
-
-                            {latitude == null || longitude == null ? (
-                                <Box
-                                    sx={{
-                                        position: 'absolute',
-                                        inset: 0,
-                                        display: 'grid',
-                                        placeItems: 'center',
-                                        textAlign: 'center',
-                                    }}
-                                >
-                                    <Box>
-                                        <LocationOnRounded sx={{ fontSize: 28, color: 'rgba(0,0,0,0.18)' }} />
-                                        <Typography variant="caption" color="text.disabled" display="block">
-                                            Click to drop pin
-                                        </Typography>
-                                    </Box>
-                                </Box>
-                            ) : (() => {
-                                const minLat = -5;
-                                const maxLat = 20;
-                                const minLng = 95;
-                                const maxLng = 125;
-                                const pinX = ((longitude - minLng) / (maxLng - minLng)) * 100;
-                                const pinY = ((maxLat - latitude) / (maxLat - minLat)) * 100;
-
-                                if (pinX < 0 || pinX > 100 || pinY < 0 || pinY > 100) return null;
-
-                                return (
-                                    <Box
-                                        sx={{
-                                            position: 'absolute',
-                                            left: `${pinX}%`,
-                                            top: `${pinY}%`,
-                                            transform: 'translate(-50%, -100%)',
-                                            filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))',
-                                        }}
-                                    >
-                                        <LocationOnRounded sx={{ fontSize: 32, color: '#d32f2f' }} />
-                                    </Box>
-                                );
-                            })()}
-                        </Box>
-                    </Box>
+                    />
                 </Box>
 
-                <VisibilityField value={visibilityValue} onChange={updateVisibility} />
             </Stack>
         );
     };
@@ -1852,8 +2671,6 @@ export default function ProjectSidebarEditor({
                 Project readiness is derived from the rest of the project data and is not directly editable here.
                 Update the project stage and the related sections instead.
             </Alert>
-
-            <VisibilityField value={visibilityValue} onChange={updateVisibility} />
         </Stack>
     );
 
@@ -1887,7 +2704,6 @@ export default function ProjectSidebarEditor({
                 value={(form.methodology as string) ?? ''}
                 onChange={(e) => setField('methodology', e.target.value)}
             />
-            <VisibilityField value={visibilityValue} onChange={updateVisibility} />
         </Stack>
     );
 
@@ -1910,637 +2726,565 @@ export default function ProjectSidebarEditor({
                 value={(form.estimatedAnnualRemoval as string) ?? ''}
                 onChange={(e) => setField('estimatedAnnualRemoval', e.target.value)}
             />
-            <VisibilityField value={visibilityValue} onChange={updateVisibility} />
         </Stack>
     );
 
+    const OPPORTUNITY_TYPE_OPTIONS = [
+        'Financing',
+        'Technical Advisor',
+        'Buyers',
+        'MRV Provider',
+        'Insurance',
+        'Local Partners',
+    ] as const;
+
     const renderOpportunities = () => {
-        const items = ensureOpportunityDraft((form.opportunities ?? []) as ProjectOpportunity[]);
-
-        const updateOpportunity = (
-            index: number,
-            patch: Partial<ProjectOpportunity>
-        ) => {
-            const next = [...items];
-            next[index] = { ...next[index], ...patch };
-            setField('opportunities', next);
-        };
-
-        const removeOpportunity = (index: number) => {
-            const next = items.filter((_, i) => i !== index);
-            setField('opportunities', ensureOpportunityDraft(next));
-        };
+        const items = project?.opportunities ?? [];
+        const editingItem =
+            editingOpportunityId != null
+                ? items.find((item) => item.id === editingOpportunityId) ?? null
+                : null;
 
         return (
             <Stack spacing={3}>
                 <Box>
                     <Typography variant="subtitle1" fontWeight={700} gutterBottom>
-                        Opportunities
+                        {editingItem ? 'Edit Opportunity' : 'Add Opportunity'}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                         What does this project need?
                     </Typography>
                 </Box>
 
-                {items.map((item, index) => {
-                    const isFirstEmptyDraft =
-                        items.length === 1 &&
-                        !item.type &&
-                        !(item.description ?? '').trim() &&
-                        !item.urgent;
+                <FormControl fullWidth size="small">
+                    <InputLabel>Type</InputLabel>
+                    <Select
+                        value={opportunityType}
+                        label="Type"
+                        onChange={(e) => setOpportunityType(e.target.value)}
+                    >
+                        {OPPORTUNITY_TYPE_OPTIONS.map((type) => (
+                            <MenuItem key={type} value={type}>
+                                {type}
+                            </MenuItem>
+                        ))}
+                    </Select>
+                </FormControl>
 
-                    return (
-                        <Paper key={item.id || index} variant="outlined" sx={{ p: 2 }}>
-                            <Stack spacing={3}>
-                                {!isFirstEmptyDraft && (
-                                    <Box
-                                        display="flex"
-                                        alignItems="center"
-                                        justifyContent="space-between"
-                                    >
-                                        <Typography variant="subtitle2" fontWeight={600}>
-                                            Opportunity {index + 1}
-                                        </Typography>
+                <TextField
+                    label="Description"
+                    fullWidth
+                    size="small"
+                    multiline
+                    minRows={3}
+                    value={opportunityDescription}
+                    onChange={(e) => setOpportunityDescription(e.target.value)}
+                    placeholder="Describe what you're looking for..."
+                />
 
-                                        <Button
-                                            color="error"
-                                            size="small"
-                                            onClick={() => removeOpportunity(index)}
-                                        >
-                                            Remove
-                                        </Button>
-                                    </Box>
-                                )}
-
-                                <FormControl fullWidth>
-                                    <InputLabel>Type</InputLabel>
-                                    <Select
-                                        value={item.type || ''}
-                                        label="Type"
-                                        onChange={(e) =>
-                                            updateOpportunity(index, { type: e.target.value })
-                                        }
-                                    >
-                                        {[
-                                            'Financing',
-                                            'Technical Advisor',
-                                            'Buyers',
-                                            'MRV Provider',
-                                            'Insurance',
-                                            'Local Partners',
-                                        ].map((type) => (
-                                            <MenuItem key={type} value={type}>
-                                                {type}
-                                            </MenuItem>
-                                        ))}
-                                    </Select>
-                                </FormControl>
-
-                                <TextField
-                                    label="Description"
-                                    fullWidth
-                                    multiline
-                                    minRows={2}
-                                    value={item.description ?? ''}
-                                    onChange={(e) =>
-                                        updateOpportunity(index, { description: e.target.value })
-                                    }
-                                    placeholder="Describe what you're looking for..."
-                                />
-
-                                <FormControlLabel
-                                    control={
-                                        <Switch
-                                            checked={Boolean(item.urgent)}
-                                            onChange={(e) =>
-                                                updateOpportunity(index, { urgent: e.target.checked })
-                                            }
-                                        />
-                                    }
-                                    label={
-                                        <Typography variant="body2">
-                                            Mark as priority
-                                        </Typography>
-                                    }
-                                />
-
-                                {isFirstEmptyDraft ? null : (
-                                    <Button
-                                        color="error"
-                                        onClick={() => removeOpportunity(index)}
-                                        sx={{ alignSelf: 'flex-start' }}
-                                    >
-                                        Remove
-                                    </Button>
-                                )}
-                            </Stack>
-                        </Paper>
-                    );
-                })}
-
-                <Button
-                    variant="outlined"
-                    onClick={() =>
-                        setField('opportunities', [...items, emptyOpportunity()])
+                <FormControlLabel
+                    control={
+                        <Switch
+                            checked={opportunityUrgent}
+                            onChange={(e) => setOpportunityUrgent(e.target.checked)}
+                        />
                     }
-                >
-                    Add Another Opportunity
-                </Button>
-
-                <VisibilityField value={visibilityValue} onChange={updateVisibility} />
+                    label={<Typography variant="body2">Mark as priority</Typography>}
+                />
             </Stack>
         );
     };
 
     const renderUpdates = () => {
-        const items = ensureUpdateDraft((form.updates ?? []) as ProjectUpdate[]);
-
-        const updateItem = (index: number, patch: Partial<ProjectUpdate>) => {
-            const next = [...items];
-            next[index] = { ...next[index], ...patch };
-            setField('updates', next);
-        };
-
-        const removeItem = (index: number) => {
-            const next = items.filter((_, i) => i !== index);
-            setField('updates', ensureUpdateDraft(next));
-        };
+        const items = project?.updates ?? [];
+        const editingItem =
+            editingUpdateId != null
+                ? items.find((item) => item.id === editingUpdateId) ?? null
+                : null;
 
         return (
             <Stack spacing={3}>
                 <Box>
                     <Typography variant="subtitle1" fontWeight={700} gutterBottom>
-                        Post Update
+                        {editingItem ? 'Edit Update' : 'Post Update'}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                         Share progress with followers.
                     </Typography>
                 </Box>
 
-                {items.map((item, index) => {
-                    const isSingleBlankDraft =
-                        items.length === 1 &&
-                        !(item.title ?? '').trim() &&
-                        !(item.description ?? '').trim() &&
-                        !(item.dateLabel ?? '').trim() &&
-                        !(item.authorName ?? '').trim() &&
-                        (item.type ?? 'progress') === 'progress';
+                <Box>
+                    <Typography
+                        variant="caption"
+                        fontWeight={600}
+                        color="text.secondary"
+                        sx={{
+                            textTransform: 'uppercase',
+                            letterSpacing: 0.5,
+                            display: 'block',
+                            mb: 1,
+                        }}
+                    >
+                        Update Type
+                    </Typography>
 
-                    return (
-                        <Paper key={item.id || index} variant="outlined" sx={{ p: 2 }}>
-                            <Stack spacing={3}>
-                                {!isSingleBlankDraft && (
-                                    <Box display="flex" alignItems="center" justifyContent="space-between">
-                                        <Typography variant="subtitle2" fontWeight={600}>
-                                            Update {index + 1}
-                                        </Typography>
-
-                                        <Button
-                                            color="error"
-                                            size="small"
-                                            onClick={() => removeItem(index)}
-                                        >
-                                            Remove
-                                        </Button>
-                                    </Box>
-                                )}
-
-                                <Box>
-                                    <Typography
-                                        variant="caption"
-                                        fontWeight={600}
-                                        color="text.secondary"
-                                        sx={{
-                                            textTransform: 'uppercase',
-                                            letterSpacing: 0.5,
-                                            display: 'block',
-                                            mb: 1,
-                                        }}
-                                    >
-                                        Update Type
-                                    </Typography>
-
-                                    <Box display="flex" gap={1}>
-                                        <Paper
-                                            variant="outlined"
-                                            onClick={() => updateItem(index, { type: 'progress' })}
-                                            sx={{
-                                                flex: 1,
-                                                p: 1.5,
-                                                cursor: 'pointer',
-                                                borderColor:
-                                                    (item.type ?? 'progress') === 'progress'
-                                                        ? 'primary.main'
-                                                        : 'grey.200',
-                                                bgcolor:
-                                                    (item.type ?? 'progress') === 'progress'
-                                                        ? 'primary.50'
-                                                        : 'transparent',
-                                                '&:hover': {
-                                                    borderColor: 'primary.main',
-                                                },
-                                                transition: 'all 0.15s ease',
-                                            }}
-                                        >
-                                            <Typography
-                                                variant="caption"
-                                                fontWeight={
-                                                    (item.type ?? 'progress') === 'progress'
-                                                        ? 'bold'
-                                                        : 'medium'
-                                                }
-                                                color={
-                                                    (item.type ?? 'progress') === 'progress'
-                                                        ? 'primary.main'
-                                                        : 'text.primary'
-                                                }
-                                            >
-                                                Progress
-                                            </Typography>
-                                            <Typography
-                                                variant="caption"
-                                                color="text.secondary"
-                                                display="block"
-                                                sx={{ fontSize: '0.65rem' }}
-                                            >
-                                                Milestones & activities
-                                            </Typography>
-                                        </Paper>
-
-                                        <Paper
-                                            variant="outlined"
-                                            onClick={() => updateItem(index, { type: 'stage' })}
-                                            sx={{
-                                                flex: 1,
-                                                p: 1.5,
-                                                cursor: 'pointer',
-                                                borderColor:
-                                                    item.type === 'stage'
-                                                        ? 'primary.main'
-                                                        : 'grey.200',
-                                                bgcolor:
-                                                    item.type === 'stage'
-                                                        ? 'primary.50'
-                                                        : 'transparent',
-                                                '&:hover': {
-                                                    borderColor: 'primary.main',
-                                                },
-                                                transition: 'all 0.15s ease',
-                                            }}
-                                        >
-                                            <Typography
-                                                variant="caption"
-                                                fontWeight={item.type === 'stage' ? 'bold' : 'medium'}
-                                                color={
-                                                    item.type === 'stage'
-                                                        ? 'primary.main'
-                                                        : 'text.primary'
-                                                }
-                                            >
-                                                Stage Change
-                                            </Typography>
-                                            <Typography
-                                                variant="caption"
-                                                color="text.secondary"
-                                                display="block"
-                                                sx={{ fontSize: '0.65rem' }}
-                                            >
-                                                New project stage
-                                            </Typography>
-                                        </Paper>
-                                    </Box>
-                                </Box>
-
-                                <TextField
-                                    label="Title"
-                                    fullWidth
-                                    value={item.title ?? ''}
-                                    onChange={(e) => updateItem(index, { title: e.target.value })}
-                                    placeholder={
-                                        item.type === 'stage'
-                                            ? 'e.g., Project advanced to Validation'
-                                            : 'e.g., Baseline survey completed'
-                                    }
-                                />
-
-                                <TextField
-                                    label="Date"
-                                    type="date"
-                                    fullWidth
-                                    value={item.dateLabel ?? ''}
-                                    onChange={(e) => updateItem(index, { dateLabel: e.target.value })}
-                                    InputLabelProps={{ shrink: true }}
-                                />
-
-                                <TextField
-                                    label="Posted by"
-                                    fullWidth
-                                    value={item.authorName ?? currentUserName}
-                                    disabled
-                                    placeholder={meLoading ? 'Loading...' : 'Your name'}
-                                />
-
-                                <TextField
-                                    label="Description"
-                                    fullWidth
-                                    multiline
-                                    minRows={4}
-                                    value={item.description ?? ''}
-                                    onChange={(e) =>
-                                        updateItem(index, { description: e.target.value })
-                                    }
-                                    placeholder={
-                                        item.type === 'stage'
-                                            ? 'Describe what triggered this stage change...'
-                                            : "Share what's new..."
-                                    }
-                                />
-
-                                {isSingleBlankDraft ? null : (
-                                    <Button
-                                        color="error"
-                                        onClick={() => removeItem(index)}
-                                        sx={{ alignSelf: 'flex-start' }}
-                                    >
-                                        Remove
-                                    </Button>
-                                )}
-                            </Stack>
+                    <Box display="flex" gap={1}>
+                        <Paper
+                            variant="outlined"
+                            onClick={() => setUpdateType('progress')}
+                            sx={{
+                                flex: 1,
+                                p: 1.5,
+                                cursor: 'pointer',
+                                borderColor:
+                                    updateType === 'progress' ? 'primary.main' : 'grey.200',
+                                bgcolor:
+                                    updateType === 'progress' ? 'primary.50' : 'transparent',
+                                '&:hover': {
+                                    borderColor: 'primary.main',
+                                },
+                                transition: 'all 0.15s ease',
+                            }}
+                        >
+                            <Typography
+                                variant="caption"
+                                fontWeight={updateType === 'progress' ? 700 : 500}
+                                color={
+                                    updateType === 'progress'
+                                        ? 'primary.main'
+                                        : 'text.primary'
+                                }
+                            >
+                                Progress
+                            </Typography>
+                            <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                display="block"
+                                sx={{ fontSize: '0.65rem' }}
+                            >
+                                Milestones & activities
+                            </Typography>
                         </Paper>
-                    );
-                })}
 
-                <Button
-                    variant="outlined"
-                    onClick={() => setField('updates', [...items, emptyUpdate(currentUserName)])}
-                >
-                    Add Another Update
-                </Button>
+                        <Paper
+                            variant="outlined"
+                            onClick={() => setUpdateType('stage')}
+                            sx={{
+                                flex: 1,
+                                p: 1.5,
+                                cursor: 'pointer',
+                                borderColor:
+                                    updateType === 'stage' ? 'primary.main' : 'grey.200',
+                                bgcolor:
+                                    updateType === 'stage' ? 'primary.50' : 'transparent',
+                                '&:hover': {
+                                    borderColor: 'primary.main',
+                                },
+                                transition: 'all 0.15s ease',
+                            }}
+                        >
+                            <Typography
+                                variant="caption"
+                                fontWeight={updateType === 'stage' ? 700 : 500}
+                                color={
+                                    updateType === 'stage'
+                                        ? 'primary.main'
+                                        : 'text.primary'
+                                }
+                            >
+                                Stage Change
+                            </Typography>
+                            <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                display="block"
+                                sx={{ fontSize: '0.65rem' }}
+                            >
+                                New project stage
+                            </Typography>
+                        </Paper>
+                    </Box>
+                </Box>
 
-                <VisibilityField value={visibilityValue} onChange={updateVisibility} />
+                {updateType === 'stage' && (
+                    <FormControl fullWidth size="small">
+                        <InputLabel>New Stage</InputLabel>
+                        <Select
+                            value={(form.stage as ProjectStage) ?? project.stage ?? ''}
+                            label="New Stage"
+                            onChange={(e) => setField('stage', e.target.value as ProjectStage)}
+                        >
+                            {PROJECT_STAGE_OPTIONS.map((option) => (
+                                <MenuItem key={option.value} value={option.value}>
+                                    {option.label}
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                )}
+
+                <TextField
+                    label="Title"
+                    fullWidth
+                    size="small"
+                    value={updateTitle}
+                    onChange={(e) => setUpdateTitle(e.target.value)}
+                    placeholder={
+                        updateType === 'stage'
+                            ? 'e.g. Project advanced to Validation'
+                            : 'e.g. Baseline survey completed'
+                    }
+                />
+
+                <TextField
+                    label="Date"
+                    type="date"
+                    fullWidth
+                    size="small"
+                    value={updateDateLabel}
+                    onChange={(e) => setUpdateDateLabel(e.target.value)}
+                    InputLabelProps={{ shrink: true }}
+                />
+
+                <TextField
+                    label="Description"
+                    fullWidth
+                    size="small"
+                    multiline
+                    minRows={4}
+                    value={updateDescription}
+                    onChange={(e) => setUpdateDescription(e.target.value)}
+                    placeholder={
+                        updateType === 'stage'
+                            ? 'Describe what triggered this stage change...'
+                            : "Share what's new..."
+                    }
+                />
             </Stack>
         );
     };
 
     const renderDocuments = () => {
         const items = (form.documents ?? []) as ProjectDocument[];
+        const editingItem =
+            editingDocumentId != null
+                ? items.find((item) => item.id === editingDocumentId) ?? null
+                : null;
 
         return (
-            <Stack spacing={2}>
+            <Stack spacing={3}>
                 <Box>
-                    <Typography variant="subtitle1" fontWeight={700} gutterBottom>
-                        Project Documents
+                    <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                        {editingItem ? 'Edit Document' : 'Add Document'}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                        Upload and manage project documents through the dedicated backend endpoints.
+                        Upload project documents.
                     </Typography>
                 </Box>
 
-                {documentUpload.error ? <Alert severity="error">{documentUpload.error}</Alert> : null}
-
-                <Button
-                    variant="outlined"
-                    component="label"
-                    startIcon={<CloudUploadRounded />}
-                    disabled={documentUpload.busy}
-                >
-                    {documentUpload.busy ? 'Uploading…' : 'Upload Document'}
-                    <input
-                        hidden
-                        type="file"
-                        onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            e.currentTarget.value = '';
-                            if (!file) return;
-                            await handleDocumentFilePicked(file);
-                        }}
-                    />
-                </Button>
-
-                {items.length === 0 ? (
-                    <Alert severity="info">No documents uploaded yet.</Alert>
+                {documentUpload.error ? (
+                    <Alert severity="error">{documentUpload.error}</Alert>
                 ) : null}
 
-                {items.map((item, index) => (
-                    <Paper key={item.id || index} variant="outlined" sx={{ p: 2 }}>
-                        <Stack spacing={2}>
-                            <Stack direction="row" spacing={1.25} alignItems="center">
-                                <InsertDriveFileRounded fontSize="small" />
-                                <Typography variant="body2" fontWeight={600} sx={{ wordBreak: 'break-word' }}>
-                                    {item.name || 'Untitled document'}
-                                </Typography>
-                            </Stack>
+                {!editingItem && (
+                    <Paper
+                        variant="outlined"
+                        sx={{
+                            p: 3,
+                            borderStyle: 'dashed',
+                            textAlign: 'center',
+                            cursor: documentUpload.busy ? 'default' : 'pointer',
+                            opacity: documentUpload.busy ? 0.7 : 1,
+                        }}
+                        component="label"
+                    >
+                        <input
+                            type="file"
+                            hidden
+                            onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) void handleDocumentFilePicked(file);
+                                e.currentTarget.value = '';
+                            }}
+                        />
 
-                            <TextField
-                                label="Document name"
-                                size="small"
-                                fullWidth
-                                value={item.name ?? ''}
-                                onChange={(e) => {
-                                    const next = [...items];
-                                    next[index] = { ...next[index], name: e.target.value };
-                                    setField('documents', next);
-                                }}
-                            />
+                        <DescriptionRounded
+                            sx={{
+                                fontSize: 32,
+                                color: 'grey.400',
+                                mb: 1,
+                            }}
+                        />
 
-                            <TextField
-                                label="Type"
-                                size="small"
-                                fullWidth
-                                value={item.type ?? ''}
-                                onChange={(e) => {
-                                    const next = [...items];
-                                    next[index] = { ...next[index], type: e.target.value };
-                                    setField('documents', next);
-                                }}
-                            />
+                        <Typography variant="body2" color="text.secondary">
+                            {pendingDocumentFile
+                                ? pendingDocumentFile.name
+                                : 'Click to upload or drag and drop'}
+                        </Typography>
 
-                            {'assetUrl' in item && item.assetUrl ? (
-                                <Button
-                                    variant="text"
-                                    href={(item as any).assetUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    sx={{ alignSelf: 'flex-start' }}
-                                >
-                                    Open document
-                                </Button>
-                            ) : null}
-
-                            <Stack direction="row" spacing={1}>
-                                <Button
-                                    variant="outlined"
-                                    onClick={() => handleDocumentMetaSave(item)}
-                                >
-                                    Save metadata
-                                </Button>
-
-                                <Button
-                                    color="error"
-                                    startIcon={<DeleteOutlineRounded />}
-                                    onClick={() => handleDocumentDelete(item.id)}
-                                >
-                                    Remove
-                                </Button>
-                            </Stack>
-                        </Stack>
+                        <Typography variant="caption" color="text.disabled">
+                            PDF, DOCX, XLSX up to 25MB
+                        </Typography>
                     </Paper>
-                ))}
+                )}
 
-                <VisibilityField value={visibilityValue} onChange={updateVisibility} />
+                <TextField
+                    label="Document Name"
+                    fullWidth
+                    value={documentName}
+                    onChange={(e) => setDocumentName(e.target.value)}
+                />
+
+                <FormControl fullWidth>
+                    <InputLabel>Document Type</InputLabel>
+                    <Select
+                        value={documentType}
+                        label="Document Type"
+                        onChange={(e) => setDocumentType(e.target.value)}
+                    >
+                        {DOCUMENT_TYPE_OPTIONS.map((type) => (
+                            <MenuItem key={type} value={type}>
+                                {type}
+                            </MenuItem>
+                        ))}
+                    </Select>
+                </FormControl>
+
+                <FormControl fullWidth>
+                    <InputLabel>Status</InputLabel>
+                    <Select
+                        value={documentStatus}
+                        label="Status"
+                        onChange={(e) => setDocumentStatus(e.target.value as ProjectDocumentStatus)}
+                    >
+                        <MenuItem value="Draft">Draft</MenuItem>
+                        <MenuItem value="Final">Final</MenuItem>
+                    </Select>
+                </FormControl>
+
+                {editingItem?.assetUrl ? (
+                    <Stack direction="row" spacing={1}>
+                        <Button
+                            variant="text"
+                            href={editingItem.assetUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            sx={{ px: 0 }}
+                        >
+                            Open document
+                        </Button>
+                    </Stack>
+                ) : null}
             </Stack>
         );
     };
 
     const renderMedia = () => {
-        const items = (form.media ?? []) as ProjectMediaItem[];
+        const items = (form.media ?? project.media ?? []) as ProjectMediaItem[];
+        const editingItem =
+            editingMediaId != null
+                ? items.find((item) => item.id === editingMediaId) ?? null
+                : null;
+
+        const isAddingPendingMedia = !editingItem && !!pendingMediaFile;
 
         return (
-            <Stack spacing={2}>
-                <Box>
-                    <Typography variant="subtitle1" fontWeight={700} gutterBottom>
-                        Project Media
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                        Upload media assets and optionally mark one as the cover image.
-                    </Typography>
-                </Box>
-
+            <Stack spacing={3}>
                 {mediaUpload.error ? <Alert severity="error">{mediaUpload.error}</Alert> : null}
 
-                <Stack direction="row" spacing={1} flexWrap="wrap">
-                    <Button
-                        variant="outlined"
-                        component="label"
-                        startIcon={<CloudUploadRounded />}
-                        disabled={mediaUpload.busy}
-                    >
-                        {mediaUpload.busy ? 'Uploading…' : 'Upload Media'}
-                        <input
-                            hidden
-                            type="file"
-                            accept="image/*,video/*"
-                            onChange={async (e) => {
-                                const file = e.target.files?.[0];
-                                e.currentTarget.value = '';
-                                if (!file) return;
-                                await handleMediaFilePicked(file, false);
-                            }}
+                {editingItem ? (
+                    <>
+                        <Box>
+                            <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+                                Edit media
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                Update the caption for this media item.
+                            </Typography>
+                        </Box>
+
+                        <Paper variant="outlined" sx={{ p: 1.5 }}>
+                            {'assetUrl' in editingItem && editingItem.assetUrl ? (
+                                <Box
+                                    component="img"
+                                    src={editingItem.assetUrl}
+                                    alt={editingItem.caption || 'Project media'}
+                                    sx={{
+                                        width: '100%',
+                                        maxHeight: 280,
+                                        objectFit: 'cover',
+                                        borderRadius: 1.5,
+                                        display: 'block',
+                                    }}
+                                />
+                            ) : (
+                                <Box
+                                    sx={{
+                                        height: 220,
+                                        borderRadius: 1.5,
+                                        bgcolor: 'grey.100',
+                                        display: 'grid',
+                                        placeItems: 'center',
+                                    }}
+                                >
+                                    <ImageRounded sx={{ fontSize: 40, color: 'grey.500' }} />
+                                </Box>
+                            )}
+                        </Paper>
+
+                        <TextField
+                            label="Caption"
+                            fullWidth
+                            value={mediaCaption}
+                            onChange={(e) => setMediaCaption(e.target.value)}
+                            placeholder="Describe this media."
+                            disabled={mediaUpload.busy || saving}
                         />
-                    </Button>
+                    </>
+                ) : (
+                    <>
+                        <Box>
+                            <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+                                Add media
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                Upload a new media item to this project.
+                            </Typography>
+                        </Box>
 
-                    <Button
-                        variant="outlined"
-                        component="label"
-                        startIcon={<StarRounded />}
-                        disabled={mediaUpload.busy}
-                    >
-                        Upload as Cover
-                        <input
-                            hidden
-                            type="file"
-                            accept="image/*"
-                            onChange={async (e) => {
-                                const file = e.target.files?.[0];
-                                e.currentTarget.value = '';
-                                if (!file) return;
-                                await handleMediaFilePicked(file, true);
-                            }}
-                        />
-                    </Button>
-                </Stack>
-
-                {items.length === 0 ? (
-                    <Alert severity="info">No media uploaded yet.</Alert>
-                ) : null}
-
-                {items.map((item, index) => {
-                    const isCover = project?.coverImageUrl && 'assetUrl' in item
-                        ? project.coverImageUrl === (item as any).assetUrl
-                        : false;
-
-                    return (
-                        <Paper key={item.id || index} variant="outlined" sx={{ p: 2 }}>
-                            <Stack spacing={2}>
-                                {'assetUrl' in item && (item as any).assetUrl ? (
-                                    <Box
-                                        component="img"
-                                        src={(item as any).assetUrl}
-                                        alt={item.caption || 'Project media'}
-                                        sx={{
-                                            width: '100%',
-                                            maxHeight: 180,
-                                            objectFit: 'cover',
-                                            borderRadius: 1.5,
-                                            border: '1px solid',
-                                            borderColor: 'grey.200',
-                                        }}
-                                    />
-                                ) : null}
-
-                                <TextField
-                                    label="Caption"
-                                    size="small"
-                                    fullWidth
-                                    value={item.caption ?? ''}
-                                    onChange={(e) => {
-                                        const next = [...items];
-                                        next[index] = { ...next[index], caption: e.target.value };
-                                        setField('media', next);
+                        {!isAddingPendingMedia ? (
+                            <Paper
+                                variant="outlined"
+                                sx={{
+                                    p: 3,
+                                    borderStyle: 'dashed',
+                                    textAlign: 'center',
+                                    cursor: mediaUpload.busy ? 'default' : 'pointer',
+                                }}
+                                component="label"
+                            >
+                                <input
+                                    type="file"
+                                    hidden
+                                    accept="image/*,video/*"
+                                    disabled={mediaUpload.busy || saving}
+                                    onChange={async (e) => {
+                                        const file = e.target.files?.[0];
+                                        e.currentTarget.value = '';
+                                        if (!file) return;
+                                        await handleMediaFilePicked(file);
                                     }}
                                 />
 
-                                {'assetUrl' in item && (item as any).assetUrl ? (
-                                    <Button
-                                        variant="text"
-                                        href={(item as any).assetUrl}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        sx={{ alignSelf: 'flex-start' }}
-                                    >
-                                        Open media
-                                    </Button>
-                                ) : null}
+                                <ImageRounded
+                                    sx={{
+                                        fontSize: 32,
+                                        color: 'grey.400',
+                                        mb: 1,
+                                    }}
+                                />
 
-                                <FormControlLabel
-                                    control={
-                                        <Switch
-                                            checked={isCover}
-                                            onChange={(e) => {
-                                                const next = [...items];
-                                                next[index] = {
-                                                    ...next[index],
-                                                    isCover: e.target.checked,
-                                                } as any;
-                                                setField('media', next);
+                                <Typography variant="body2" color="text.secondary">
+                                    Click to upload or drag and drop
+                                </Typography>
+
+                                <Typography variant="caption" color="text.disabled">
+                                    PNG, JPG up to 10MB
+                                </Typography>
+                            </Paper>
+                        ) : (
+                            <Stack spacing={2}>
+                                <Paper variant="outlined" sx={{ p: 1.5 }}>
+                                    {pendingMediaFile?.type?.startsWith('image/') && pendingMediaPreviewUrl ? (
+                                        <Box
+                                            component="img"
+                                            src={pendingMediaPreviewUrl}
+                                            alt="Pending media preview"
+                                            sx={{
+                                                width: '100%',
+                                                maxHeight: 280,
+                                                objectFit: 'cover',
+                                                borderRadius: 1.5,
+                                                display: 'block',
                                             }}
                                         />
-                                    }
-                                    label="Use as cover image"
-                                />
+                                    ) : pendingMediaFile?.type?.startsWith('video/') && pendingMediaPreviewUrl ? (
+                                        <Box
+                                            component="video"
+                                            src={pendingMediaPreviewUrl}
+                                            controls
+                                            sx={{
+                                                width: '100%',
+                                                maxHeight: 280,
+                                                borderRadius: 1.5,
+                                                display: 'block',
+                                            }}
+                                        />
+                                    ) : (
+                                        <Box
+                                            sx={{
+                                                height: 220,
+                                                borderRadius: 1.5,
+                                                bgcolor: 'grey.100',
+                                                display: 'grid',
+                                                placeItems: 'center',
+                                            }}
+                                        >
+                                            <ImageRounded sx={{ fontSize: 40, color: 'grey.500' }} />
+                                        </Box>
+                                    )}
+                                </Paper>
+
+                                <Typography variant="caption" color="text.secondary">
+                                    {pendingMediaFile?.name}
+                                </Typography>
 
                                 <Stack direction="row" spacing={1}>
                                     <Button
                                         variant="outlined"
-                                        onClick={() => handleMediaMetaSave(item)}
+                                        component="label"
+                                        disabled={mediaUpload.busy || saving}
                                     >
-                                        Save metadata
+                                        Replace file
+                                        <input
+                                            type="file"
+                                            hidden
+                                            accept="image/*,video/*"
+                                            onChange={async (e) => {
+                                                const file = e.target.files?.[0];
+                                                e.currentTarget.value = '';
+                                                if (!file) return;
+                                                await handleMediaFilePicked(file);
+                                            }}
+                                        />
                                     </Button>
 
                                     <Button
-                                        color="error"
-                                        startIcon={<DeleteOutlineRounded />}
-                                        onClick={() => handleMediaDelete(item.id)}
+                                        color="inherit"
+                                        variant="text"
+                                        onClick={() => {
+                                            clearPendingMedia();
+                                            setMediaCaption('');
+                                        }}
+                                        disabled={mediaUpload.busy || saving}
                                     >
-                                        Remove
+                                        Cancel
                                     </Button>
                                 </Stack>
                             </Stack>
-                        </Paper>
-                    );
-                })}
+                        )}
 
-                <VisibilityField value={visibilityValue} onChange={updateVisibility} />
+                        <TextField
+                            label="Caption"
+                            fullWidth
+                            value={mediaCaption}
+                            onChange={(e) => setMediaCaption(e.target.value)}
+                            placeholder="Describe this media."
+                            disabled={mediaUpload.busy || saving}
+                        />
+                    </>
+                )}
             </Stack>
         );
     };
@@ -2549,43 +3293,97 @@ export default function ProjectSidebarEditor({
         const items = (form.team ?? []) as TeamEditorMember[];
 
         const selectedKeys = new Set(
-            items.map((item) => `${item.memberType}:${item.memberId}`),
+            items.map((item) =>
+                item.isPlatformMember
+                    ? `${item.memberType}:${item.memberId ?? item.userId ?? item.companyId}`
+                    : `manual:${item.id}`
+            ),
         );
 
         const searchResults = collaboratorOptions.filter(
             (entry) => !selectedKeys.has(`${entry.entityType}:${entry.id}`),
         );
 
-        const addCollaborator = (entry: PlatformCollaboratorOption) => {
+        const addSelectedTeamMember = () => {
+            if (teamManualMode) {
+                const trimmedName = teamName.trim();
+                if (!trimmedName) return;
+
+                const nextMember: TeamEditorMember =
+                    teamRole === 'company'
+                        ? {
+                            id: crypto.randomUUID(),
+                            memberType: 'company',
+                            memberId: null,
+                            companyId: null,
+                            userId: null,
+                            name: trimmedName,
+                            companyName: trimmedName,
+                            avatarUrl: null,
+                            role: teamProjectRole || '',
+                            permission: null,
+                            isPlatformMember: false,
+                            manualName: null,
+                            manualOrganization: trimmedName,
+                        }
+                        : {
+                            id: crypto.randomUUID(),
+                            memberType: 'user',
+                            memberId: null,
+                            userId: null,
+                            companyId: null,
+                            name: trimmedName,
+                            companyName: '',
+                            avatarUrl: null,
+                            role: teamProjectRole || '',
+                            permission: 'viewer',
+                            isPlatformMember: false,
+                            manualName: trimmedName,
+                            manualOrganization: '',
+                        };
+
+                setField('team', [...items, nextMember]);
+                setTeamName('');
+                setTeamProjectRole('');
+                setTeamManualMode(false);
+                return;
+            }
+
+            if (!teamSelectedPlatform) return;
+
             const nextMember: TeamEditorMember =
-                entry.entityType === 'company'
+                teamSelectedPlatform.entityType === 'company'
                     ? {
                         id: crypto.randomUUID(),
                         memberType: 'company',
-                        memberId: entry.id,
-                        companyId: entry.id,
+                        memberId: teamSelectedPlatform.id,
+                        companyId: teamSelectedPlatform.id,
                         userId: null,
-                        name: entry.name,
-                        role: '',
-                        companyName: entry.companyName ?? entry.name,
-                        avatarUrl: entry.avatarUrl ?? null,
+                        name: teamSelectedPlatform.name,
+                        companyName: teamSelectedPlatform.companyName ?? teamSelectedPlatform.name,
+                        avatarUrl: teamSelectedPlatform.avatarUrl ?? null,
+                        role: teamProjectRole || '',
                         permission: null,
+                        isPlatformMember: true,
                     }
                     : {
                         id: crypto.randomUUID(),
                         memberType: 'user',
-                        memberId: entry.id,
-                        userId: entry.id,
+                        memberId: teamSelectedPlatform.id,
+                        userId: teamSelectedPlatform.id,
                         companyId: null,
-                        name: entry.name,
-                        role: '',
-                        companyName: entry.companyName ?? '',
-                        avatarUrl: entry.avatarUrl ?? null,
+                        name: teamSelectedPlatform.name,
+                        companyName: teamSelectedPlatform.companyName ?? '',
+                        avatarUrl: teamSelectedPlatform.avatarUrl ?? null,
+                        role: teamProjectRole || '',
                         permission: 'viewer',
+                        isPlatformMember: true,
                     };
 
             setField('team', [...items, nextMember]);
+            setTeamSelectedPlatform(null);
             setTeamSearch('');
+            setTeamProjectRole('');
             setCollaboratorOptions([]);
         };
 
@@ -2596,7 +3394,7 @@ export default function ProjectSidebarEditor({
                         Project Team
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                        Add platform users as viewers and platform companies as collaborators.
+                        Add platform users/companies or manually add external collaborators.
                     </Typography>
                 </Box>
 
@@ -2610,6 +3408,10 @@ export default function ProjectSidebarEditor({
                         setTeamRole(value);
                         setTeamSearch('');
                         setCollaboratorOptions([]);
+                        setTeamManualMode(false);
+                        setTeamName('');
+                        setTeamProjectRole('');
+                        setTeamSelectedPlatform(null);
                     }}
                 >
                     <ToggleButton value="company" sx={{ textTransform: 'none', flex: 1 }}>
@@ -2620,69 +3422,222 @@ export default function ProjectSidebarEditor({
                     </ToggleButton>
                 </ToggleButtonGroup>
 
-                <Box>
-                    <TextField
-                        fullWidth
-                        size="small"
-                        label={teamRole === 'company' ? 'Search companies' : 'Search users'}
-                        placeholder={teamRole === 'company' ? 'Search companies...' : 'Search people...'}
-                        value={teamSearch}
-                        onChange={(e) => setTeamSearch(e.target.value)}
-                        InputProps={{
-                            startAdornment: (
-                                <InputAdornment position="start">
-                                    <SearchRounded sx={{ fontSize: 18, color: 'grey.500' }} />
-                                </InputAdornment>
-                            ),
-                            endAdornment: teamSearch ? (
-                                <InputAdornment position="end">
-                                    <IconButton size="small" onClick={() => setTeamSearch('')}>
-                                        <CloseRounded sx={{ fontSize: 16 }} />
-                                    </IconButton>
-                                </InputAdornment>
-                            ) : undefined,
-                        }}
-                    />
+                {!teamManualMode ? (
+                    <Box>
+                        <TextField
+                            fullWidth
+                            size="small"
+                            label={teamRole === 'company' ? 'Search companies' : 'Search users'}
+                            placeholder={teamRole === 'company' ? 'Search companies...' : 'Search people...'}
+                            value={teamSearch}
+                            onChange={(e) => {
+                                setTeamSearch(e.target.value);
+                                setTeamSelectedPlatform(null);
+                            }}
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <SearchRounded sx={{ fontSize: 18, color: 'grey.500' }} />
+                                    </InputAdornment>
+                                ),
+                                endAdornment: teamSearch ? (
+                                    <InputAdornment position="end">
+                                        <IconButton size="small" onClick={() => setTeamSearch('')}>
+                                            <CloseRounded sx={{ fontSize: 16 }} />
+                                        </IconButton>
+                                    </InputAdornment>
+                                ) : undefined,
+                            }}
+                        />
 
-                    {teamSearch.trim() ? (
-                        <Paper variant="outlined" sx={{ mt: 1, borderRadius: 2, overflow: 'hidden' }}>
-                            {optionsLoading ? (
-                                <Box px={1.5} py={1.5}>
-                                    <Typography variant="body2" color="text.secondary">
-                                        Loading {teamRole === 'company' ? 'companies' : 'users'}...
-                                    </Typography>
-                                </Box>
-                            ) : searchResults.length > 0 ? (
-                                searchResults.map((result, index) => (
-                                    <Box
-                                        key={`${result.entityType}:${result.id}`}
-                                        onClick={() => addCollaborator(result)}
-                                        sx={{
-                                            px: 1.5,
-                                            py: 1.25,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 1.25,
-                                            cursor: 'pointer',
-                                            borderBottom: index === searchResults.length - 1 ? 'none' : '1px solid',
-                                            borderColor: 'grey.100',
-                                            '&:hover': { bgcolor: 'grey.50' },
-                                        }}
-                                    >
-                                        <Avatar
-                                            src={result.avatarUrl ?? undefined}
+                        {teamSearch.trim() ? (
+                            <Paper variant="outlined" sx={{ mt: 1, borderRadius: 2, overflow: 'hidden' }}>
+                                {optionsLoading ? (
+                                    <Box px={1.5} py={1.5}>
+                                        <Typography variant="body2" color="text.secondary">
+                                            Loading {teamRole === 'company' ? 'companies' : 'users'}...
+                                        </Typography>
+                                    </Box>
+                                ) : searchResults.length > 0 ? (
+                                    searchResults.map((result, index) => (
+                                        <Box
+                                            key={`${result.entityType}:${result.id}`}
+                                            onClick={() => {
+                                                setTeamSelectedPlatform(result);
+                                                setTeamSearch('');
+                                            }}
                                             sx={{
-                                                width: 32,
-                                                height: 32,
-                                                bgcolor: 'grey.200',
-                                                color: 'text.primary',
-                                                borderRadius: result.entityType === 'company' ? 1 : '50%',
+                                                px: 1.5,
+                                                py: 1.25,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 1.25,
+                                                cursor: 'pointer',
+                                                borderBottom: index === searchResults.length - 1 ? 'none' : '1px solid',
+                                                borderColor: 'grey.100',
+                                                '&:hover': { bgcolor: 'grey.50' },
                                             }}
                                         >
-                                            {result.entityType === 'company' ? (
-                                                <BusinessRounded sx={{ fontSize: 16, color: 'grey.600' }} />
+                                            <Avatar
+                                                src={result.avatarUrl ?? undefined}
+                                                sx={{
+                                                    width: 32,
+                                                    height: 32,
+                                                    bgcolor: 'grey.200',
+                                                    color: 'text.primary',
+                                                    borderRadius: result.entityType === 'company' ? 1 : '50%',
+                                                }}
+                                            >
+                                                {result.entityType === 'company' ? (
+                                                    <BusinessRounded sx={{ fontSize: 16, color: 'grey.600' }} />
+                                                ) : (
+                                                    result.name
+                                                        .split(' ')
+                                                        .map((part) => part[0])
+                                                        .join('')
+                                                        .slice(0, 2)
+                                                        .toUpperCase()
+                                                )}
+                                            </Avatar>
+
+                                            <Box flex={1} minWidth={0}>
+                                                <Stack direction="row" spacing={0.75} alignItems="center">
+                                                    <Typography variant="body2" fontWeight={600} noWrap>
+                                                        {result.name}
+                                                    </Typography>
+                                                    <Chip label="On platform" size="small" sx={{ height: 18, fontSize: '0.65rem' }} />
+                                                </Stack>
+                                                <Typography variant="caption" color="text.secondary" noWrap>
+                                                    {result.subtitle ?? (result.entityType === 'company' ? 'Company' : 'User')}
+                                                </Typography>
+                                            </Box>
+                                        </Box>
+                                    ))
+                                ) : (
+                                    <Box px={1.5} py={1.5}>
+                                        <Typography variant="body2" color="text.secondary">
+                                            No matching {teamRole === 'company' ? 'companies' : 'users'} found.
+                                        </Typography>
+                                    </Box>
+                                )}
+
+                                <Box
+                                    onClick={() => {
+                                        setTeamManualMode(true);
+                                        setTeamName(teamSearch);
+                                        setTeamSearch('');
+                                        setTeamSelectedPlatform(null);
+                                    }}
+                                    sx={{
+                                        px: 1.5,
+                                        py: 1.25,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 1,
+                                        cursor: 'pointer',
+                                        bgcolor: 'grey.50',
+                                        '&:hover': { bgcolor: 'grey.100' },
+                                        borderTop: '1px solid',
+                                        borderColor: 'grey.100',
+                                    }}
+                                >
+                                    <Typography variant="body2" color="text.secondary">
+                                        Not on platform? Add manually
+                                    </Typography>
+                                </Box>
+                            </Paper>
+                        ) : null}
+
+                        <Button
+                            size="small"
+                            onClick={() => {
+                                setTeamManualMode(true);
+                                setTeamSelectedPlatform(null);
+                                setTeamSearch('');
+                            }}
+                            sx={{ mt: 1, textTransform: 'none' }}
+                        >
+                            + Add manually
+                        </Button>
+                    </Box>
+                ) : (
+                    <Stack spacing={2}>
+                        <Box display="flex" alignItems="center" justifyContent="space-between">
+                            <Typography variant="caption" color="text.secondary" fontWeight="medium">
+                                Manual entry
+                            </Typography>
+                            <Button
+                                size="small"
+                                onClick={() => {
+                                    setTeamManualMode(false);
+                                    setTeamName('');
+                                }}
+                                sx={{ textTransform: 'none' }}
+                            >
+                                Search instead
+                            </Button>
+                        </Box>
+
+                        <TextField
+                            label={teamRole === 'company' ? 'Company name' : 'Full name'}
+                            fullWidth
+                            value={teamName}
+                            onChange={(e) => setTeamName(e.target.value)}
+                            placeholder={teamRole === 'company' ? 'e.g. South Pole' : 'e.g. Jane Smith'}
+                        />
+                    </Stack>
+                )}
+
+                {(teamSelectedPlatform || teamManualMode) ? (
+                    <>
+                        <FormControl fullWidth size="small">
+                            <InputLabel>Project role</InputLabel>
+                            <Select
+                                value={teamProjectRole}
+                                label="Project role"
+                                onChange={(e) => setTeamProjectRole(e.target.value)}
+                            >
+                                {TEAM_PROJECT_ROLE_OPTIONS.map((option) => (
+                                    <MenuItem key={option} value={option}>
+                                        {option}
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+
+                        <Button variant="contained" onClick={addSelectedTeamMember}>
+                            Add to team
+                        </Button>
+                    </>
+                ) : null}
+
+                <Stack spacing={2}>
+                    {items.map((item, index) => {
+                        const isCreator =
+                            item.memberType === 'user' && item.permission === 'creator';
+
+                        return (
+                            <Paper
+                                key={`${item.memberType}:${item.memberId ?? item.id}:${index}`}
+                                variant="outlined"
+                                sx={{ p: 2, borderRadius: 2 }}
+                            >
+                                <Stack spacing={2}>
+                                    <Stack direction="row" spacing={1.5} alignItems="center">
+                                        <Avatar
+                                            src={item.avatarUrl ?? undefined}
+                                            sx={{
+                                                width: 40,
+                                                height: 40,
+                                                bgcolor: 'grey.200',
+                                                color: 'text.primary',
+                                                borderRadius: item.memberType === 'company' ? 1 : '50%',
+                                            }}
+                                        >
+                                            {item.memberType === 'company' ? (
+                                                <BusinessRounded sx={{ fontSize: 18, color: 'grey.600' }} />
                                             ) : (
-                                                result.name
+                                                item.name
                                                     .split(' ')
                                                     .map((part) => part[0])
                                                     .join('')
@@ -2693,206 +3648,110 @@ export default function ProjectSidebarEditor({
 
                                         <Box flex={1} minWidth={0}>
                                             <Stack direction="row" spacing={0.75} alignItems="center">
-                                                <Typography variant="body2" fontWeight={600} noWrap>
-                                                    {result.name}
-                                                </Typography>
-                                                <Chip
-                                                    label="On platform"
-                                                    size="small"
-                                                    sx={{ height: 18, fontSize: '0.65rem' }}
-                                                />
-                                            </Stack>
-                                            <Typography variant="caption" color="text.secondary" noWrap>
-                                                {result.subtitle ?? (result.entityType === 'company' ? 'Company' : 'User')}
-                                            </Typography>
-                                        </Box>
-                                    </Box>
-                                ))
-                            ) : (
-                                <Box px={1.5} py={1.5}>
-                                    <Typography variant="body2" color="text.secondary">
-                                        No matching {teamRole === 'company' ? 'companies' : 'users'} found.
-                                    </Typography>
-                                </Box>
-                            )}
-                        </Paper>
-                    ) : null}
-                </Box>
-
-                <Stack spacing={2}>
-                    {(
-                        items.map((item, index) => {
-                            const isCreator =
-                                item.memberType === 'user' && item.permission === 'creator';
-
-                            return (
-                                <Paper
-                                    key={`${item.memberType}:${item.memberId}:${index}`}
-                                    variant="outlined"
-                                    sx={{ p: 2, borderRadius: 2 }}
-                                >
-                                    <Stack spacing={2}>
-                                        <Stack direction="row" spacing={1.5} alignItems="center">
-                                            <Avatar
-                                                src={item.avatarUrl ?? undefined}
-                                                sx={{
-                                                    width: 40,
-                                                    height: 40,
-                                                    bgcolor: 'grey.200',
-                                                    color: 'text.primary',
-                                                    borderRadius: item.memberType === 'company' ? 1 : '50%',
-                                                }}
-                                            >
-                                                {item.memberType === 'company' ? (
-                                                    <BusinessRounded sx={{ fontSize: 18, color: 'grey.600' }} />
-                                                ) : (
-                                                    item.name
-                                                        .split(' ')
-                                                        .map((part) => part[0])
-                                                        .join('')
-                                                        .slice(0, 2)
-                                                        .toUpperCase()
-                                                )}
-                                            </Avatar>
-
-                                            <Box flex={1} minWidth={0}>
                                                 <Typography variant="body2" fontWeight={700} noWrap>
                                                     {item.name}
                                                 </Typography>
-                                                <Typography variant="caption" color="text.secondary" noWrap>
-                                                    {item.memberType === 'company'
-                                                        ? item.companyName || 'Platform company'
-                                                        : isCreator
-                                                            ? 'Project creator'
-                                                            : item.companyName || 'Platform user'}
-                                                </Typography>
-                                            </Box>
+                                                {item.isPlatformMember ? (
+                                                    <Chip label="On platform" size="small" sx={{ height: 18, fontSize: '0.65rem' }} />
+                                                ) : (
+                                                    <Chip label="Manual" size="small" sx={{ height: 18, fontSize: '0.65rem' }} />
+                                                )}
+                                            </Stack>
 
-                                            {!isCreator && (
-                                                <IconButton
-                                                    size="small"
-                                                    onClick={() => {
-                                                        const next = items.filter((_, i) => i !== index);
-                                                        setField('team', next);
-                                                    }}
-                                                >
-                                                    <CloseRounded sx={{ fontSize: 18 }} />
-                                                </IconButton>
-                                            )}
-                                        </Stack>
+                                            <Typography variant="caption" color="text.secondary" noWrap>
+                                                {item.memberType === 'company'
+                                                    ? item.companyName || 'Company'
+                                                    : isCreator
+                                                        ? 'Project creator'
+                                                        : item.companyName || (item.isPlatformMember ? 'Platform user' : 'External individual')}
+                                            </Typography>
+                                        </Box>
 
-                                        <TextField
-                                            label="Project role"
-                                            size="small"
-                                            fullWidth
-                                            value={item.role ?? ''}
-                                            onChange={(e) => {
-                                                const next = [...items];
-                                                next[index] = { ...next[index], role: e.target.value } as TeamEditorMember;
-                                                setField('team', next);
-                                            }}
-                                            placeholder="e.g. MRV Provider, Developer, Advisor"
-                                        />
-
-                                        {item.memberType === 'user' ? (
-                                            <FormControl fullWidth size="small" disabled={isCreator}>
-                                                <InputLabel>Permission</InputLabel>
-                                                <Select
-                                                    value={isCreator ? 'creator' : item.permission ?? 'viewer'}
-                                                    label="Permission"
-                                                    onChange={(e) => {
-                                                        const next = [...items];
-                                                        next[index] = {
-                                                            ...next[index],
-                                                            permission: e.target.value as 'creator' | 'viewer',
-                                                        } as TeamEditorMember;
-                                                        setField('team', next);
-                                                    }}
-                                                >
-                                                    {isCreator && <MenuItem value="creator">Creator</MenuItem>}
-                                                    <MenuItem value="viewer">Viewer</MenuItem>
-                                                </Select>
-                                            </FormControl>
-                                        ) : (
-                                            <Alert severity="info" sx={{ py: 0 }}>
-                                                Company collaborators do not carry project permissions.
-                                            </Alert>
+                                        {!isCreator && (
+                                            <IconButton
+                                                size="small"
+                                                onClick={() => {
+                                                    const next = items.filter((_, i) => i !== index);
+                                                    setField('team', next);
+                                                }}
+                                            >
+                                                <CloseRounded sx={{ fontSize: 18 }} />
+                                            </IconButton>
                                         )}
                                     </Stack>
-                                </Paper>
-                            );
-                        })
-                    )}
+
+                                    <FormControl fullWidth size="small">
+                                        <InputLabel>Project role</InputLabel>
+                                        <Select
+                                            value={item.role ?? ''}
+                                            label="Project role"
+                                            onChange={(e) => {
+                                                const next = [...items];
+                                                next[index] = {
+                                                    ...next[index],
+                                                    role: e.target.value,
+                                                } as TeamEditorMember;
+                                                setField('team', next);
+                                            }}
+                                        >
+                                            {TEAM_PROJECT_ROLE_OPTIONS.map((option) => (
+                                                <MenuItem key={option} value={option}>
+                                                    {option}
+                                                </MenuItem>
+                                            ))}
+                                        </Select>
+                                    </FormControl>
+
+                                    {item.memberType === 'user' ? (
+                                        <FormControl fullWidth size="small" disabled={isCreator}>
+                                            <InputLabel>Permission</InputLabel>
+                                            <Select
+                                                value={isCreator ? 'creator' : item.permission ?? 'viewer'}
+                                                label="Permission"
+                                                onChange={(e) => {
+                                                    const next = [...items];
+                                                    next[index] = {
+                                                        ...next[index],
+                                                        permission: e.target.value as 'creator' | 'viewer',
+                                                    } as TeamEditorMember;
+                                                    setField('team', next);
+                                                }}
+                                            >
+                                                {isCreator && <MenuItem value="creator">Creator</MenuItem>}
+                                                <MenuItem value="viewer">Viewer</MenuItem>
+                                            </Select>
+                                        </FormControl>
+                                    ) : (
+                                        <Alert severity="info" sx={{ py: 0 }}>
+                                            Company collaborators do not carry project permissions.
+                                        </Alert>
+                                    )}
+                                </Stack>
+                            </Paper>
+                        );
+                    })}
                 </Stack>
             </Stack>
         );
     };
 
-    const content = (() => {
-        switch (section) {
-            case 'overview':
-                return renderOverview();
-            case 'story':
-                return renderStory();
-            case 'location':
-                return renderLocation();
-            case 'readiness':
-                return renderReadiness();
-            case 'registry':
-                return renderRegistry();
-            case 'impact':
-                return renderImpact();
-            case 'opportunities':
-                return renderOpportunities();
-            case 'updates':
-                return renderUpdates();
-            case 'documents':
-                return renderDocuments();
-            case 'media':
-                return renderMedia();
-            case 'team':
-                return renderTeam();
-            case 'settings':
-                return renderSettings();
-            default:
-                return <Alert severity="info">No editor configured for this section yet.</Alert>;
-        }
-    })();
-
     return (
-        <Drawer anchor="right" open={open} onClose={onClose}>
-            <Box
-                sx={{
-                    width: { xs: '100vw', sm: 460 },
-                    maxWidth: '100vw',
-                    height: '100%',
-                    display: 'flex',
-                    flexDirection: 'column',
-                }}
-            >
-                <Box sx={{ px: 3, py: 2.5 }}>
-                    <Typography variant="h6" fontWeight={700}>
-                        Edit {SECTION_LABELS[section]}
-                    </Typography>
-                </Box>
-
-                <Divider />
-
-                <Box sx={{ flex: 1, overflowY: 'auto', px: 3, py: 3 }}>
-                    <Stack spacing={3}>{content}</Stack>
-                </Box>
-
-                <Divider />
-
-                <Box sx={{ p: 2, display: 'flex', justifyContent: 'flex-end', gap: 1.5 }}>
-                    <Button variant="text" onClick={onClose} disabled={saving}>
-                        Cancel
-                    </Button>
-                    <Button variant="contained" onClick={handleSave} disabled={saving}>
-                        Save
-                    </Button>
-                </Box>
-            </Box>
-        </Drawer>
+        <SidebarPanel
+            open={open}
+            onClose={onClose}
+            title={SECTION_LABELS[section]}
+            onSave={handleSave}
+            saveLabel={saving ? 'Saving...' : 'Save'}
+            saveDisabled={
+                saving ||
+                mediaUpload.busy ||
+                documentUpload.busy ||
+                (section === 'media' && !editingMediaId && !pendingMediaFile)
+            }
+            width={460}
+            showBackdrop
+        >
+            {renderSectionContent()}
+        </SidebarPanel>
     );
 }

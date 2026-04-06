@@ -65,6 +65,12 @@ interface CompanyProfileViewProps {
     onAddDocument?: () => void;
     onOpenProjectWizard?: () => void;
 
+    onMediaMenuClick?: (
+        event: React.MouseEvent<HTMLElement>,
+        item: any,
+        index: number
+    ) => void;
+
     renderTeamActions?: (member: CompanyTeamMember, index: number) => React.ReactNode;
     renderDocumentActions?: (doc: CompanyDocument, index: number) => React.ReactNode;
 }
@@ -191,6 +197,7 @@ export function CompanyProfileView({
     onAddMedia,
     onAddDocument,
     onOpenProjectWizard,
+    onMediaMenuClick,
     renderTeamActions,
     renderDocumentActions,
 }: CompanyProfileViewProps) {
@@ -683,10 +690,28 @@ export function CompanyProfileView({
                                     <SectionHeader title="Media" onAdd={isEditMode && canEdit ? onAddMedia : undefined} />
                                     <Box p={3}>
                                         <MediaGallery
-                                            items={company.media || []}
+                                            items={(company.media || []).map((item: any) => ({
+                                                id: item.id,
+                                                type: item.contentType?.startsWith('video/') ? 'video' : 'image',
+                                                url: item.url || item.assetUrl || '',
+                                                caption: item.caption || 'Untitled media',
+                                                date: item.date || item.createdAt || undefined,
+                                                _source: item,
+                                            }))}
                                             mode="grid"
                                             isOwner={isEditMode && canEdit}
                                             onAdd={isEditMode && canEdit ? onAddMedia : undefined}
+                                            onMenuClick={
+                                                isEditMode && canEdit && onMediaMenuClick
+                                                    ? (e, item, index) => {
+                                                        onMediaMenuClick(
+                                                            e,
+                                                            (item as typeof item & { _source?: any })._source ?? company.media?.[index],
+                                                            index
+                                                        );
+                                                    }
+                                                    : undefined
+                                            }
                                             emptyStateMessage="No media yet. Add photos and videos to showcase your work."
                                         />
                                     </Box>

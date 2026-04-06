@@ -37,6 +37,26 @@ export function MyCompany() {
     const [projectWizardOpen, setProjectWizardOpen] = useState(false);
     const [projectWizardDraft, setProjectWizardDraft] = useState<Partial<ProjectFormData>>({});
 
+    const [mediaMenuAnchorEl, setMediaMenuAnchorEl] = useState<HTMLElement | null>(null);
+    const [mediaMenuItem, setMediaMenuItem] = useState<any>(null);
+    const [mediaMenuIndex, setMediaMenuIndex] = useState<number | null>(null);
+
+    const handleMediaMenuOpen = (
+        event: React.MouseEvent<HTMLElement>,
+        item: any,
+        index: number
+    ) => {
+        setMediaMenuAnchorEl(event.currentTarget);
+        setMediaMenuItem(item);
+        setMediaMenuIndex(index);
+    };
+
+    const handleMediaMenuClose = () => {
+        setMediaMenuAnchorEl(null);
+        setMediaMenuItem(null);
+        setMediaMenuIndex(null);
+    };
+
     const handleTeamMenuOpen = (
         event: React.MouseEvent<HTMLElement>,
         member: any,
@@ -748,6 +768,7 @@ export function MyCompany() {
                 onAddMedia={() => openEditor('media')}
                 onAddDocument={() => openEditor('documents')}
                 onOpenProjectWizard={handleOpenProjectWizard}
+                onMediaMenuClick={(e, item, index) => handleMediaMenuOpen(e, item, index)}
                 renderTeamActions={(member, index) => (
                     <IconButton
                         size="small"
@@ -770,36 +791,50 @@ export function MyCompany() {
             />
 
             <Menu
-                anchorEl={teamMenuAnchorEl}
-                open={Boolean(teamMenuAnchorEl)}
-                onClose={handleTeamMenuClose}
+                anchorEl={mediaMenuAnchorEl}
+                open={Boolean(mediaMenuAnchorEl)}
+                onClose={handleMediaMenuClose}
             >
                 <MenuItem
                     onClick={() => {
-                        if (teamMenuMember == null || teamMenuIndex == null) return;
-                        openEditor('team', { ...teamMenuMember, index: teamMenuIndex });
-                        handleTeamMenuClose();
+                        if (mediaMenuItem == null || mediaMenuIndex == null) return;
+                        openEditor('media', { ...mediaMenuItem, index: mediaMenuIndex });
+                        handleMediaMenuClose();
                     }}
                 >
                     Edit
                 </MenuItem>
 
                 <MenuItem
-                    onClick={() => {
-                        if (teamMenuMember == null) return;
+                    onClick={async () => {
+                        if (!company || !mediaMenuItem?.id) return;
 
-                        handleSidebarSave({
-                            section: 'team',
-                            values: {
-                                action: 'remove',
-                                userId: teamMenuMember.id ? String(teamMenuMember.id) : undefined,
-                                email: teamMenuMember.email,
-                                name: teamMenuMember.name,
-                                visibility: company.privacy?.team ?? 'public',
-                            },
-                        });
+                        try {
+                            setSaveError(null);
 
-                        handleTeamMenuClose();
+                            const res = await fetch(
+                                `${API_BASE_URL}/companies/${company.id}/media/${mediaMenuItem.id}`,
+                                {
+                                    method: 'DELETE',
+                                    credentials: 'include',
+                                    headers: {
+                                        Accept: 'application/json',
+                                    },
+                                }
+                            );
+
+                            const data = await readJsonSafe(res);
+
+                            if (!res.ok) {
+                                throw new Error(data?.error || data?.message || 'Failed to delete media');
+                            }
+
+                            await loadCompany();
+                        } catch (err) {
+                            setSaveError(err instanceof Error ? err.message : 'Failed to delete media');
+                        } finally {
+                            handleMediaMenuClose();
+                        }
                     }}
                     sx={{ color: 'error.main' }}
                 >

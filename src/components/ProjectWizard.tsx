@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     Alert,
     Box,
@@ -11,6 +12,7 @@ import {
     FormControlLabel,
     IconButton,
     InputLabel,
+    LinearProgress,
     MenuItem,
     Paper,
     Radio,
@@ -21,9 +23,11 @@ import {
     Typography,
 } from '@mui/material';
 import AddRounded from '@mui/icons-material/AddRounded';
+import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
 import ChevronLeftRounded from '@mui/icons-material/ChevronLeftRounded';
 import ChevronRightRounded from '@mui/icons-material/ChevronRightRounded';
 import CloseRounded from '@mui/icons-material/CloseRounded';
+import FingerprintRounded from '@mui/icons-material/FingerprintRounded';
 import InfoRounded from '@mui/icons-material/InfoRounded';
 import ProjectLocationMap from './ProjectLocationMap';
 
@@ -32,6 +36,8 @@ import { PROJECT_STAGE_OPTIONS } from '../constants/projectStages';
 import { COUNTRIES, getStatesForCountry } from '../constants/countries';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
+
+const CREATION_SUCCESS_SCREEN_MS = 5000;
 
 export type WizardCloseResult =
     | { completed: false }
@@ -78,19 +84,6 @@ type CreateProjectResponse = {
 };
 
 const steps = ['Snapshot', 'Location', 'Story'];
-
-const COBENEFIT_OPTIONS = [
-    { label: '🌿 Biodiversity', value: 'Biodiversity' },
-    { label: '👥 Community Livelihoods', value: 'Community Livelihoods' },
-    { label: '💧 Water Quality', value: 'Water Quality' },
-    { label: '🌱 Soil Health', value: 'Soil Health' },
-    { label: '⚖️ Gender Equity', value: 'Gender Equity' },
-    { label: '🍚 Food Security', value: 'Food Security' },
-    { label: '🏛️ Cultural Heritage', value: 'Cultural Heritage' },
-    { label: '📚 Education & Training', value: 'Education & Training' },
-    { label: '❤️ Health & Wellbeing', value: 'Health & Wellbeing' },
-    { label: '💰 Economic Development', value: 'Economic Development' },
-] as const;
 
 const INITIAL_FORM_DATA: ProjectFormData = {
     companyId: '',
@@ -179,7 +172,6 @@ export function ProjectWizard({
     preferredCompanyId,
     isOnboarding = false,
 }: ProjectWizardProps) {
-
     const [activeStep, setActiveStep] = useState(0);
     const [formData, setFormData] = useState<ProjectFormData>(() =>
         buildInitialProjectFormData(draft, preferredCompanyId)
@@ -190,8 +182,13 @@ export function ProjectWizard({
 
     const [isCreating, setIsCreating] = useState(false);
 
-    const [cobenefitType, setCobenefitType] = useState('');
-    const [cobenefitNote, setCobenefitNote] = useState('');
+    const [creationProgress, setCreationProgress] = useState(0);
+    const [createdProjectId, setCreatedProjectId] = useState('');
+    const [showCreationScreen, setShowCreationScreen] = useState(false);
+    const [isCreateComplete, setIsCreateComplete] = useState(false);
+
+    const creationIntervalRef = useRef<number | null>(null);
+    const creationTimeoutRef = useRef<number | null>(null);
 
     const [errorMessage, setErrorMessage] = useState('');
     const [infoMessage, setInfoMessage] = useState('');
@@ -209,6 +206,12 @@ export function ProjectWizard({
             return;
         }
 
+        clearCreationTimers();
+        setShowCreationScreen(false);
+        setIsCreateComplete(false);
+        setCreationProgress(0);
+        setCreatedProjectId('');
+
         setActiveStep(0);
         setFormData(buildInitialProjectFormData(draft, preferredCompanyId));
         setIsCreating(false);
@@ -225,22 +228,26 @@ export function ProjectWizard({
         contentScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
     }, [activeStep, open]);
 
+    useEffect(() => {
+        return () => {
+            clearCreationTimers();
+        };
+    }, []);
+
     const resetWizard = () => {
+        clearCreationTimers();
         setActiveStep(0);
         setFormData(buildInitialProjectFormData(undefined, preferredCompanyId));
         setIsCreating(false);
-        setCobenefitType('');
-        setCobenefitNote('');
+        setShowCreationScreen(false);
+        setIsCreateComplete(false);
+        setCreationProgress(0);
+        setCreatedProjectId('');
         setErrorMessage('');
         setInfoMessage('');
         setCompanies([]);
         setIsLoadingCompanies(false);
     };
-
-    const selectedCompanyId =
-        companies.some((company) => company.id === formData.companyId)
-            ? formData.companyId
-            : "";
 
     const updateForm = (patch: Partial<ProjectFormData>) => {
         setFormData((prev) => ({
@@ -263,6 +270,34 @@ export function ProjectWizard({
         if (!open || !onDraftChange) return;
         onDraftChange(formData);
     }, [formData, open]);
+
+    useEffect(() => {
+        if (!showCreationScreen || !isCreateComplete || !createdProjectId) return;
+
+        const startedAt = Date.now();
+
+        const intervalId = window.setInterval(() => {
+            const elapsed = Date.now() - startedAt;
+            const nextProgress = Math.min(100, (elapsed / CREATION_SUCCESS_SCREEN_MS) * 100);
+            setCreationProgress(nextProgress);
+        }, 50);
+
+        const timeoutId = window.setTimeout(() => {
+            setCreationProgress(100);
+
+            onClose({
+                completed: true,
+                companyId: formData.companyId,
+                projectId: createdProjectId,
+            });
+        }, CREATION_SUCCESS_SCREEN_MS);
+
+        return () => {
+            window.clearInterval(intervalId);
+            window.clearTimeout(timeoutId);
+        };
+    }, [showCreationScreen, isCreateComplete, createdProjectId, formData.companyId, onClose]);
+
 
     const loadCompanies = async () => {
         setIsLoadingCompanies(true);
@@ -327,21 +362,42 @@ export function ProjectWizard({
         onClose({ completed: false });
     };
 
+    const clearCreationTimers = () => {
+        if (creationIntervalRef.current) {
+            window.clearInterval(creationIntervalRef.current);
+            creationIntervalRef.current = null;
+        }
+
+        if (creationTimeoutRef.current) {
+            window.clearTimeout(creationTimeoutRef.current);
+            creationTimeoutRef.current = null;
+        }
+    };
+
     const handleCreate = async () => {
         setIsCreating(true);
+        setShowCreationScreen(true);
+        setIsCreateComplete(false);
+        setCreationProgress(0);
+        setCreatedProjectId('');
         setErrorMessage('');
         setInfoMessage('');
 
         try {
             const createdProject = await createProject(formData);
 
-            onClose({
-                completed: true,
-                companyId: formData.companyId,
-                projectId: createdProject.id,
-            });
+            if (!createdProject.id) {
+                throw new Error('Project created but no project ID was returned.');
+            }
+
+            setCreatedProjectId(createdProject.id);
+            setIsCreateComplete(true);
         } catch (error) {
             console.error('Failed to create project:', error);
+            setShowCreationScreen(false);
+            setIsCreateComplete(false);
+            setCreationProgress(0);
+            setCreatedProjectId('');
             setErrorMessage(
                 error instanceof Error ? error.message : 'Unable to create project right now.'
             );
@@ -374,6 +430,185 @@ export function ProjectWizard({
     );
 
     if (!open) return null;
+
+    if (showCreationScreen) {
+        return (
+            <Box
+                sx={{
+                    position: 'fixed',
+                    inset: 0,
+                    bgcolor: 'white',
+                    zIndex: 1300,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                }}
+            >
+                <Fade in>
+                    <Box
+                        sx={{
+                            textAlign: 'center',
+                            maxWidth: 440,
+                            px: 3,
+                        }}
+                    >
+                        <Box
+                            sx={{
+                                width: 80,
+                                height: 80,
+                                borderRadius: '50%',
+                                bgcolor: isCreateComplete ? 'success.100' : 'primary.100',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                mx: 'auto',
+                                mb: 3,
+                                transition: 'all 0.3s ease',
+                            }}
+                        >
+                            {isCreateComplete ? (
+                                <CheckCircleRounded
+                                    sx={{
+                                        fontSize: 40,
+                                        color: 'success.main',
+                                    }}
+                                />
+                            ) : (
+                                <FingerprintRounded
+                                    sx={{
+                                        fontSize: 40,
+                                        color: 'primary.main',
+                                        animation: 'pulse 1.5s ease-in-out infinite',
+                                        '@keyframes pulse': {
+                                            '0%, 100%': { opacity: 1 },
+                                            '50%': { opacity: 0.5 },
+                                        },
+                                    }}
+                                />
+                            )}
+                        </Box>
+
+                        <Typography variant="h5" fontWeight="bold" gutterBottom>
+                            {isCreateComplete ? 'Project Created!' : 'Creating Project'}
+                        </Typography>
+
+                        <Typography variant="body2" color="text.secondary" mb={3}>
+                            {isCreateComplete
+                                ? 'Your project has been created successfully. Redirecting to the project page...'
+                                : 'We are creating your project now...'}
+                        </Typography>
+
+                        {createdProjectId && (
+                            <Paper
+                                variant="outlined"
+                                sx={{
+                                    p: 2,
+                                    mb: 3,
+                                    bgcolor: 'grey.50',
+                                    borderRadius: 2,
+                                }}
+                            >
+                                <Typography
+                                    variant="caption"
+                                    color="text.secondary"
+                                    display="block"
+                                    mb={0.5}
+                                >
+                                    Project ID
+                                </Typography>
+
+                                <Typography
+                                    variant="h6"
+                                    fontFamily="monospace"
+                                    fontWeight="bold"
+                                    color="text.primary"
+                                    sx={{ letterSpacing: '0.03em' }}
+                                >
+                                    {createdProjectId}
+                                </Typography>
+                            </Paper>
+                        )}
+
+                        <Box sx={{ width: '100%', mb: 2 }}>
+                            <LinearProgress
+                                variant="determinate"
+                                value={
+                                    isCreateComplete
+                                        ? Math.min(creationProgress, 100)
+                                        : 15
+                                }
+                                sx={{
+                                    height: 6,
+                                    borderRadius: 3,
+                                    bgcolor: 'grey.200',
+                                    '& .MuiLinearProgress-bar': {
+                                        borderRadius: 3,
+                                        bgcolor: isCreateComplete ? 'success.main' : 'primary.main',
+                                    },
+                                }}
+                            />
+                        </Box>
+
+                        <Stack spacing={1}>
+                            <Box
+                                display="flex"
+                                alignItems="center"
+                                gap={1}
+                                justifyContent="center"
+                            >
+                                {isCreateComplete ? (
+                                    <CheckCircleRounded sx={{ fontSize: 16, color: 'success.main' }} />
+                                ) : (
+                                    <CircularProgress size={14} />
+                                )}
+                                <Typography
+                                    variant="caption"
+                                    color={isCreateComplete ? 'success.main' : 'text.secondary'}
+                                >
+                                    Saving project details
+                                </Typography>
+                            </Box>
+
+                            <Box
+                                display="flex"
+                                alignItems="center"
+                                gap={1}
+                                justifyContent="center"
+                            >
+                                {createdProjectId ? (
+                                    <CheckCircleRounded sx={{ fontSize: 16, color: 'success.main' }} />
+                                ) : (
+                                    <Box sx={{ width: 16 }} />
+                                )}
+                                <Typography
+                                    variant="caption"
+                                    color={createdProjectId ? 'success.main' : 'text.disabled'}
+                                >
+                                    Assigning project ID
+                                </Typography>
+                            </Box>
+
+                            <Box
+                                display="flex"
+                                alignItems="center"
+                                gap={1}
+                                justifyContent="center"
+                            >
+                                {isCreateComplete ? (
+                                    <CircularProgress size={14} />
+                                ) : (
+                                    <Box sx={{ width: 16 }} />
+                                )}
+                                <Typography variant="caption" color="text.secondary">
+                                    Preparing redirect
+                                </Typography>
+                            </Box>
+                        </Stack>
+                    </Box>
+                </Fade>
+            </Box>
+        );
+    }
 
     return (
         <Box
@@ -1072,14 +1307,15 @@ async function createProject(
             Accept: 'application/json',
         },
         body: JSON.stringify({
-            companyId: formData.companyId,
-            name: formData.name,
-            tagline: formData.tagline,
-            type: formData.type,
+            companyId: formData.companyId || null,
+            name: formData.name.trim(),
+            tagline: formData.tagline.trim(),
+            type: formData.type.trim(),
             stage: formData.stage,
-            visibility: formData.visibility,
-            country: formData.country,
-            state: formData.state,
+            projectVisibility:
+                formData.visibility === 'Public' ? 'public' : 'private',
+            country: formData.country.trim(),
+            state: formData.state.trim() || null,
             coordinates:
                 lat !== null && lng !== null
                     ? {
@@ -1087,10 +1323,9 @@ async function createProject(
                         lng,
                     }
                     : null,
-            story: formData.story,
-            approach: formData.approach,
-            // cobenefitItems: formData.cobenefitItems,
-            cobenefitItems: [],
+            story: formData.story.trim(),
+            approach: formData.approach.trim(),
+            opportunities: [],
         }),
     });
 

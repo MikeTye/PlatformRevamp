@@ -75,6 +75,7 @@ export function OnboardingPage() {
     const [projectCreated, setProjectCreated] = useState(false);
     const [onboardingDraft, setOnboardingDraft] = useState<Record<string, unknown>>({});
     const [lastCreatedCompanyId, setLastCreatedCompanyId] = useState<string | null>(null);
+    const [isTransitioning, setIsTransitioning] = useState(false);
 
     const isJustExploring = selectedRoles.includes('exploring');
     // const isProjectDeveloper = selectedRoles.includes('develop');
@@ -242,82 +243,80 @@ export function OnboardingPage() {
     }, []);
 
     const handleCompanyWizardClose = async (result?: WizardCloseResult) => {
-        setIsCompanyWizardOpen(false);
-
         if (!result?.completed) {
+            setIsCompanyWizardOpen(false);
             scheduleSave(buildPayload());
             return;
         }
 
-        setLastCreatedCompanyId(result.companyId ?? null);
+        setIsTransitioning(true);
 
-        const nextDraft = {
-            ...onboardingDraft,
-            companyWizard: {},
-        };
-        setOnboardingDraft(nextDraft);
-        setCompanyCreated(true);
+        try {
+            const createdCompanyId = result.companyId ?? null;
+            setLastCreatedCompanyId(createdCompanyId);
 
-        await persistOnboarding(
-            buildPayload({
-                onboardingCompanyCreated: true,
-                onboardingStatus: 'completed',
-                onboardingDraft: nextDraft,
-                onboardingStep: 1,
-            })
-        );
-        localStorage.removeItem(storageKey);
-        navigate('/dashboard');
+            const nextDraft = {
+                ...onboardingDraft,
+                companyWizard: {},
+            };
 
-        // TEMP: Project onboarding is disabled until ProjectWizard is complete.
-        // if (isProjectDeveloper) {
-        //     const nextStep = 2;
-        //     setActiveStep(nextStep);
-        //
-        //     await persistOnboarding(
-        //         buildPayload({
-        //             onboardingCompanyCreated: true,
-        //             onboardingStep: nextStep,
-        //             onboardingDraft: nextDraft,
-        //         })
-        //     );
-        // } else {
-        //     await persistOnboarding(
-        //         buildPayload({
-        //             onboardingCompanyCreated: true,
-        //             onboardingStatus: 'completed',
-        //             onboardingDraft: nextDraft,
-        //         })
-        //     );
-        //     navigate('/dashboard');
-        // }
+            setOnboardingDraft(nextDraft);
+            setCompanyCreated(true);
+            setIsCompanyWizardOpen(false);
+
+            await persistOnboarding(
+                buildPayload({
+                    onboardingCompanyCreated: true,
+                    onboardingStatus: 'completed',
+                    onboardingDraft: nextDraft,
+                    onboardingStep: 1,
+                })
+            );
+
+            localStorage.removeItem(storageKey);
+
+            if (createdCompanyId) {
+                navigate(`/my-company/${createdCompanyId}`, { replace: true });
+                return;
+            }
+
+            navigate('/dashboard', { replace: true });
+        } finally {
+            setIsTransitioning(false);
+        }
     };
 
     const handleProjectWizardClose = async (result?: WizardCloseResult) => {
-        setIsProjectWizardOpen(false);
-
         if (!result?.completed) {
+            setIsProjectWizardOpen(false);
             scheduleSave(buildPayload());
             return;
         }
 
-        const nextDraft = {
-            ...onboardingDraft,
-            projectWizard: {},
-        };
+        setIsTransitioning(true);
 
-        setOnboardingDraft(nextDraft);
-        setProjectCreated(true);
+        try {
+            const nextDraft = {
+                ...onboardingDraft,
+                projectWizard: {},
+            };
 
-        await persistOnboarding(
-            buildPayload({
-                onboardingProjectCreated: true,
-                onboardingStatus: 'completed',
-                onboardingDraft: nextDraft,
-            })
-        );
+            setOnboardingDraft(nextDraft);
+            setProjectCreated(true);
 
-        navigate('/dashboard');
+            await persistOnboarding(
+                buildPayload({
+                    onboardingProjectCreated: true,
+                    onboardingStatus: 'completed',
+                    onboardingDraft: nextDraft,
+                })
+            );
+
+            localStorage.removeItem(storageKey);
+            navigate('/dashboard', { replace: true });
+        } finally {
+            setIsTransitioning(false);
+        }
     };
 
     useEffect(() => {
@@ -553,6 +552,7 @@ export function OnboardingPage() {
                         color="inherit"
                         startIcon={<SkipNextRounded sx={{ fontSize: 16 }} />}
                         sx={{ textTransform: 'none' }}
+                        disabled={isTransitioning}
                     >
                         Skip onboarding
                     </Button>

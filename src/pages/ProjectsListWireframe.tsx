@@ -482,14 +482,12 @@ export function ProjectsListWireframe() {
     };
 
     const handleProjectClick = (projectId: string) => {
-        if (activeTab === 'my') {
-            navigate(`/my-projects/${projectId}`);
-            return;
-        }
+        const target = projects.find((project) => project.id === projectId);
+        if (!target) return;
 
-        navigate(`/projects/${projectId}`);
+        navigate(target.isMine ? `/my-projects/${projectId}` : `/projects/${projectId}`);
     };
-
+    
     const handleFilterChange =
         (setter: React.Dispatch<React.SetStateAction<any[]>>) => (event: any) => {
             const {

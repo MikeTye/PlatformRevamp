@@ -19,7 +19,7 @@ import { MyCompany } from './pages/company/MyCompany';
 import { MyProject } from './pages/project/MyProject';
 import { ProjectDetail } from './pages/project/ProjectDetail';
 import { DashboardPage } from './pages/DashboardPage';
-import { AccountPage } from './pages/AccountPage';
+import { AccountPage } from './pages/account/AccountPage';
 import { BookmarksPage } from './pages/BookmarksPage';
 import { UserProfilePage } from './pages/UserProfilePage';
 import { ProjectStagesGuidePage } from './pages/ProjectStagesGuidePage';

@@ -7,8 +7,9 @@ import 'leaflet/dist/leaflet.css';
 type ProjectLocationMapProps = {
     lat: string;
     lng: string;
-    onChange: (next: { lat: string; lng: string }) => void;
+    onChange?: (next: { lat: string; lng: string }) => void;
     height?: number;
+    readOnly?: boolean;
 };
 
 const DEFAULT_CENTER: LatLngLiteral = { lat: 20, lng: 0 };
@@ -34,11 +35,15 @@ function formatCoordinate(value: number): string {
 
 function MapClickHandler({
     onPick,
+    disabled,
 }: {
-    onPick: (coords: { lat: string; lng: string }) => void;
+    onPick?: (coords: { lat: string; lng: string }) => void;
+    disabled?: boolean;
 }) {
     useMapEvents({
         click(event) {
+            if (disabled || !onPick) return;
+
             onPick({
                 lat: formatCoordinate(event.latlng.lat),
                 lng: formatCoordinate(event.latlng.lng),
@@ -83,6 +88,7 @@ export default function ProjectLocationMap({
     lng,
     onChange,
     height = 360,
+    readOnly = false,
 }: ProjectLocationMapProps) {
     const parsedLat = toNumber(lat);
     const parsedLng = toNumber(lng);
@@ -109,7 +115,12 @@ export default function ProjectLocationMap({
             <MapContainer
                 center={center}
                 zoom={markerPosition ? PIN_ZOOM : DEFAULT_ZOOM}
-                scrollWheelZoom
+                scrollWheelZoom={!readOnly}
+                dragging
+                doubleClickZoom={!readOnly}
+                touchZoom
+                boxZoom={!readOnly}
+                keyboard={!readOnly}
                 style={{ height: '100%', width: '100%' }}
             >
                 <TileLayer
@@ -118,7 +129,7 @@ export default function ProjectLocationMap({
                 />
 
                 <RefreshMapSize />
-                <MapClickHandler onPick={onChange} />
+                <MapClickHandler onPick={onChange} disabled={readOnly} />
                 <RecenterMap position={markerPosition} />
 
                 {markerPosition && <Marker position={markerPosition} icon={markerIcon} />}

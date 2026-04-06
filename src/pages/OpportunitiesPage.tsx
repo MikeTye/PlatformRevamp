@@ -166,9 +166,13 @@ type BackendOpportunityListItem = {
     id: string;
     projectId: string;
     projectName: string;
+    projectUpid?: string | null;
     type: string;
     description: string | null;
     urgent: boolean;
+    stage?: string | null;
+    country?: string | null;
+    developer?: string | null;
     createdAt: string;
 };
 
@@ -406,7 +410,9 @@ export function OpportunitiesPage() {
                 const flattened: Opportunity[] = (result.items ?? [])
                     .map((item): Opportunity | null => {
                         const type = asOpportunityType(item.type);
-                        if (!type) return null;
+                        const stage = asProjectStage(item.stage);
+
+                        if (!type || !stage) return null;
 
                         return {
                             id: item.id,
@@ -416,11 +422,11 @@ export function OpportunitiesPage() {
                                 item.description?.trim() ||
                                 buildFallbackDescription(type, item.projectName),
                             projectName: item.projectName,
-                            projectUpid: '',
-                            developer: '',
-                            stage: 'Exploration' as ProjectStage,
-                            country: '',
-                            countryCode: '',
+                            projectUpid: item.projectUpid || '',
+                            developer: item.developer || 'Unknown developer',
+                            stage,
+                            country: item.country || '',
+                            countryCode: toCountryCode(item.country),
                             urgent: Boolean(item.urgent),
                             isSaved: savedOpportunityIds.has(item.id),
                             isMine: false

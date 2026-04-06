@@ -196,30 +196,6 @@ export function ProjectDetail({
         }
     }, [project, isSaved]);
 
-    const handleShare = async () => {
-        if (onShare) {
-            onShare();
-            return;
-        }
-
-        const shareUrl = window.location.href;
-        const shareTitle = project?.name ?? 'Project';
-
-        try {
-            if (navigator.share) {
-                await navigator.share({
-                    title: shareTitle,
-                    url: shareUrl,
-                });
-                return;
-            }
-
-            await navigator.clipboard.writeText(shareUrl);
-        } catch {
-            // no-op
-        }
-    };
-
     if (loading) {
         return (
             <Box minHeight="100vh" bgcolor="grey.50" p={3}>
@@ -278,7 +254,8 @@ export function ProjectDetail({
             isSaved={isSaved}
             onToggleSave={handleToggleSave}
             onBack={handleBackNavigation}
-            onShare={handleShare}
+            shareUrl={`${window.location.origin}/projects/${project.id}`}
+            shareTitle={project.name}
             headerBar={{
                 backLabel: getBackLabel(),
                 contextLabel: project.companyName || null,

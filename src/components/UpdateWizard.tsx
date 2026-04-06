@@ -15,11 +15,18 @@ import {
 } from '@mui/material';
 import type { SelectChangeEvent } from '@mui/material/Select';
 import CloseRounded from '@mui/icons-material/CloseRounded';
-import { useNavigate } from 'react-router-dom';
+
+export type UpdateWizardCloseResult =
+    | { completed: false }
+    | {
+        completed: true;
+        projectId: string;
+        updateId?: string | null;
+    };
 
 interface UpdateWizardProps {
     open: boolean;
-    onClose: () => void;
+    onClose: (result?: UpdateWizardCloseResult) => void;
 }
 
 type ProjectOption = {
@@ -50,9 +57,33 @@ type MeResponse = {
     };
 };
 
-export function UpdateWizard({ open, onClose }: UpdateWizardProps) {
-    const navigate = useNavigate();
+function extractCreatedUpdateId(payload: any): string | null {
+    if (!payload || typeof payload !== 'object') return null;
 
+    const directId =
+        typeof payload.id === 'string'
+            ? payload.id
+            : typeof payload.updateId === 'string'
+                ? payload.updateId
+                : null;
+
+    if (directId) return directId;
+
+    const data = payload.data;
+    if (data && typeof data === 'object') {
+        if (typeof data.id === 'string') return data.id;
+        if (typeof data.updateId === 'string') return data.updateId;
+
+        if (data.update && typeof data.update === 'object') {
+            if (typeof data.update.id === 'string') return data.update.id;
+            if (typeof data.update.updateId === 'string') return data.update.updateId;
+        }
+    }
+
+    return null;
+}
+
+export function UpdateWizard({ open, onClose }: UpdateWizardProps) {
     const [projects, setProjects] = useState<ProjectOption[]>([]);
     const [projectsLoading, setProjectsLoading] = useState(false);
     const [projectsError, setProjectsError] = useState<string | null>(null);
@@ -125,9 +156,12 @@ export function UpdateWizard({ open, onClose }: UpdateWizardProps) {
             setProjectsError(null);
 
             try {
-                const res = await fetch(`${API_BASE_URL}/projects?scope=my&page=1&pageSize=100&sortBy=updated&sortDir=desc`, {
-                    credentials: 'include',
-                });
+                const res = await fetch(
+                    `${API_BASE_URL}/projects?scope=my&page=1&pageSize=100&sortBy=updated&sortDir=desc`,
+                    {
+                        credentials: 'include',
+                    }
+                );
 
                 if (!res.ok) {
                     throw new Error(`Failed to load projects (${res.status})`);
@@ -164,7 +198,7 @@ export function UpdateWizard({ open, onClose }: UpdateWizardProps) {
         return () => {
             cancelled = true;
         };
-    }, [open]);
+    }, [open, API_BASE_URL]);
 
     useEffect(() => {
         if (!open) {
@@ -216,18 +250,28 @@ export function UpdateWizard({ open, onClose }: UpdateWizardProps) {
                 }),
             });
 
+            const payload = await res.json().catch(() => null);
+
             if (!res.ok) {
-                const payload = await res.json().catch(() => null);
                 throw new Error(payload?.message || `Failed to create update (${res.status})`);
             }
 
-            onClose();
-            navigate(`/projects/${selectedProject}`);
+            const updateId = extractCreatedUpdateId(payload);
+
+            onClose({
+                completed: true,
+                projectId: selectedProject,
+                updateId,
+            });
         } catch (err) {
             setSubmitError(err instanceof Error ? err.message : 'Failed to create update');
         } finally {
             setSubmitting(false);
         }
+    };
+
+    const handleClose = () => {
+        onClose({ completed: false });
     };
 
     if (!open) return null;
@@ -256,7 +300,7 @@ export function UpdateWizard({ open, onClose }: UpdateWizardProps) {
                 }}
             >
                 <Box display="flex" alignItems="center" gap={2}>
-                    <IconButton onClick={onClose} size="small">
+                    <IconButton onClick={handleClose} size="small">
                         <CloseRounded sx={{ fontSize: 20 }} />
                     </IconButton>
                     <Typography variant="h6" fontWeight="bold">
@@ -264,7 +308,7 @@ export function UpdateWizard({ open, onClose }: UpdateWizardProps) {
                     </Typography>
                 </Box>
 
-                <Button onClick={onClose} sx={{ color: 'text.secondary' }}>
+                <Button onClick={handleClose} sx={{ color: 'text.secondary' }}>
                     Cancel
                 </Button>
             </Box>

@@ -35,6 +35,11 @@ import LogoutRounded from '@mui/icons-material/LogoutRounded';
 
 import countriesJson from "../data/countries.json";
 
+import rawCountryCodes from '../data/countrycode.json';
+import { buildPhoneCodeOptions, type PhoneCodeOption } from '../utils/countryPhone';
+
+const countryCodeOptions: PhoneCodeOption[] = buildPhoneCodeOptions(rawCountryCodes);
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 
 type CountryItem = {
@@ -99,81 +104,6 @@ type SaveAccountPayload = {
         permission: 'creator' | 'viewer';
     }>;
 };
-
-// Country codes with flags and full names, sorted by country name
-const countryCodes = [
-{
-  code: '+86',
-  country: 'CN',
-  name: 'China',
-  flag: '🇨🇳'
-},
-{
-  code: '+1',
-  country: 'CA',
-  name: 'Canada',
-  flag: '🇨🇦'
-},
-{
-  code: '+49',
-  country: 'DE',
-  name: 'Germany',
-  flag: '🇩🇪'
-},
-{
-  code: '+91',
-  country: 'IN',
-  name: 'India',
-  flag: '🇮🇳'
-},
-{
-  code: '+62',
-  country: 'ID',
-  name: 'Indonesia',
-  flag: '🇮🇩'
-},
-{
-  code: '+81',
-  country: 'JP',
-  name: 'Japan',
-  flag: '🇯🇵'
-},
-{
-  code: '+60',
-  country: 'MY',
-  name: 'Malaysia',
-  flag: '🇲🇾'
-},
-{
-  code: '+65',
-  country: 'SG',
-  name: 'Singapore',
-  flag: '🇸🇬'
-},
-{
-  code: '+66',
-  country: 'TH',
-  name: 'Thailand',
-  flag: '🇹🇭'
-},
-{
-  code: '+44',
-  country: 'UK',
-  name: 'United Kingdom',
-  flag: '🇬🇧'
-},
-{
-  code: '+1',
-  country: 'US',
-  name: 'United States',
-  flag: '🇺🇸'
-},
-{
-  code: '+84',
-  country: 'VN',
-  name: 'Vietnam',
-  flag: '🇻🇳'
-}]
 
 const ROLE_OPTIONS = [
     'Founder',
@@ -427,15 +357,34 @@ export function AccountPage() {
         }
     }
 
-    function syncCountryCodeFromPhone(phoneNumber: string) {
-        const match = countryCodes.find((c) => phoneNumber.startsWith(c.code));
+    function syncCountryCodeFromPhone(
+        phoneNumber: string,
+        setCountryCode: (value: string) => void,
+        setCountryFlag: (value: string) => void
+    ) {
+        const match = countryCodeOptions.find((c) => phoneNumber.startsWith(c.dialCode));
         if (match) {
-            setCountryCode(match.code);
+            setCountryCode(match.dialCode);
             setCountryFlag(match.flag);
             return;
         }
-        setCountryCode('+60');
-        setCountryFlag('🇲🇾');
+
+        const fallback =
+            countryCodeOptions.find((c) => c.iso === 'MY') ?? countryCodeOptions[0];
+
+        if (fallback) {
+            setCountryCode(fallback.dialCode);
+            setCountryFlag(fallback.flag);
+        }
+    }
+
+    function replacePhonePrefix(currentPhone: string, selectedDialCode: string): string {
+        const existing = countryCodeOptions.find((c) => currentPhone.startsWith(c.dialCode));
+        const withoutPrefix = existing
+            ? currentPhone.slice(existing.dialCode.length).trim()
+            : currentPhone.trim();
+
+        return `${selectedDialCode} ${withoutPrefix}`.trim();
     }
 
     function updateProfile<K extends keyof AccountPayload['profile']>(
@@ -452,7 +401,7 @@ export function AccountPage() {
     }
 
     function handlePhoneCodeChange(nextCode: string) {
-        const selected = countryCodes.find((c) => c.code === nextCode);
+        const selected = countryCodeOptions.find((c) => c.code === nextCode);
         if (!selected) return;
 
         setCountryCode(selected.code);
@@ -460,8 +409,8 @@ export function AccountPage() {
 
         const current = form.profile.phoneNumber.trim();
         const withoutPrefix =
-            countryCodes.find((c) => current.startsWith(c.code))
-                ? current.replace(countryCodes.find((c) => current.startsWith(c.code))!.code, '').trim()
+            countryCodeOptions.find((c) => current.startsWith(c.code))
+                ? current.replace(countryCodeOptions.find((c) => current.startsWith(c.code))!.code, '').trim()
                 : current;
 
         updateProfile('phoneNumber', `${selected.code} ${withoutPrefix}`.trim());
@@ -666,12 +615,24 @@ export function AccountPage() {
                                     />
 
                                     <Box display="flex" gap={1.5}>
-                                        <FormControl sx={{ minWidth: 150 }}>
+                                        <FormControl sx={{ minWidth: 170 }}>
                                             <InputLabel>Code</InputLabel>
                                             <Select
                                                 value={countryCode}
                                                 label="Code"
-                                                onChange={(e) => handlePhoneCodeChange(String(e.target.value))}
+                                                onChange={(e) => {
+                                                    const nextCode = String(e.target.value);
+                                                    const selected = countryCodeOptions.find((c) => c.dialCode === nextCode);
+                                                    if (!selected) return;
+
+                                                    setCountryCode(selected.dialCode);
+                                                    setCountryFlag(selected.flag);
+
+                                                    updateProfile(
+                                                        'phoneNumber',
+                                                        replacePhonePrefix(form.profile.phoneNumber, selected.dialCode)
+                                                    );
+                                                }}
                                                 renderValue={() => (
                                                     <Box display="flex" alignItems="center" gap={1}>
                                                         <span>{countryFlag}</span>
@@ -679,9 +640,15 @@ export function AccountPage() {
                                                     </Box>
                                                 )}
                                             >
-                                                {countries.map((country) => (
-                                                    <MenuItem key={country} value={country}>
-                                                        {country}
+                                                {countryCodeOptions.map((item) => (
+                                                    <MenuItem key={`${item.iso}-${item.code}`} value={item.dialCode}>
+                                                        <Box display="flex" alignItems="center" gap={1.5} width="100%">
+                                                            <span style={{ fontSize: '1.1rem' }}>{item.flag}</span>
+                                                            <span>{item.country}</span>
+                                                            <Typography variant="body2" color="text.secondary" sx={{ ml: 'auto' }}>
+                                                                {item.dialCode}
+                                                            </Typography>
+                                                        </Box>
                                                     </MenuItem>
                                                 ))}
                                             </Select>

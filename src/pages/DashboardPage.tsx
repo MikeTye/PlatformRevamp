@@ -77,6 +77,8 @@ interface DashboardProject {
     dateAdded: string;
     lat: number | null;
     lng: number | null;
+    coverImageUrl?: string | null;
+    coverThumbUrl?: string | null;
 }
 
 interface DashboardCompany {
@@ -316,6 +318,56 @@ function normalizeIso(value?: string | null): string {
     return buildCountryCode(raw);
 }
 
+function getProjectCardImage(project: DashboardProject): string | null {
+    return project.coverThumbUrl || project.coverImageUrl || null;
+}
+
+function ProjectThumb({
+    project,
+    size = 40,
+}: {
+    project: DashboardProject;
+    size?: number;
+}) {
+    const [failed, setFailed] = useState(false);
+    const src = !failed ? (project.coverThumbUrl || project.coverImageUrl || null) : null;
+
+    return (
+        <Box
+            sx={{
+                width: size,
+                height: size,
+                borderRadius: 1,
+                overflow: 'hidden',
+                bgcolor: 'grey.100',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                border: '1px solid',
+                borderColor: 'grey.200',
+            }}
+        >
+            {src ? (
+                <Box
+                    component="img"
+                    src={src}
+                    alt={project.name}
+                    onError={() => setFailed(true)}
+                    sx={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                        display: 'block',
+                    }}
+                />
+            ) : (
+                <ParkRounded sx={{ fontSize: 20, color: 'grey.500' }} />
+            )}
+        </Box>
+    );
+}
+
 async function loadDashboardData(): Promise<Omit<DashboardState, 'loading' | 'error'>> {
     const base = createStubDashboardState();
 
@@ -369,6 +421,8 @@ async function loadDashboardData(): Promise<Omit<DashboardState, 'loading' | 'er
                     : project.lng != null
                         ? Number(project.lng)
                         : null,
+            coverImageUrl: project.coverImageUrl ?? null,
+            coverThumbUrl: project.coverThumbUrl ?? null,
         }));
     } else {
         next.savedProjectsCount = 0;
@@ -965,6 +1019,7 @@ export function DashboardPage() {
                                                 gap: 2,
                                             }}
                                         >
+
                                             <Box display="flex" alignItems="center" gap={2} flex={1} minWidth={0}>
                                                 <Box
                                                     sx={{
@@ -978,7 +1033,7 @@ export function DashboardPage() {
                                                         flexShrink: 0,
                                                     }}
                                                 >
-                                                    <ParkRounded sx={{ fontSize: 20, color: 'grey.500' }} />
+                                                    <ProjectThumb project={project} size={40} />
                                                 </Box>
                                                 <Box minWidth={0}>
                                                     <Typography variant="body2" fontWeight="medium" color="text.primary" noWrap>

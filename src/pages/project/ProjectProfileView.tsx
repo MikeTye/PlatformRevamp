@@ -21,6 +21,8 @@ import {
     MenuItem,
     Menu,
     Popper,
+    ListItemIcon,
+    ListItemText,
 } from '@mui/material';
 import EditRounded from '@mui/icons-material/EditRounded';
 import AddRounded from '@mui/icons-material/AddRounded';
@@ -29,8 +31,9 @@ import BusinessRounded from '@mui/icons-material/BusinessRounded';
 import DescriptionRounded from '@mui/icons-material/DescriptionRounded';
 import AttachMoneyRounded from '@mui/icons-material/AttachMoneyRounded';
 import PeopleRounded from '@mui/icons-material/PeopleRounded';
-import ShieldRounded from '@mui/icons-material/ShieldRounded';
 import LockRounded from '@mui/icons-material/LockRounded';
+import PublicRounded from '@mui/icons-material/PublicRounded';
+import MoreVertRounded from '@mui/icons-material/MoreVertRounded';
 import PhotoCameraRounded from '@mui/icons-material/PhotoCameraRounded';
 import BookmarkBorderRounded from '@mui/icons-material/BookmarkBorderRounded';
 import BookmarkRounded from '@mui/icons-material/BookmarkRounded';
@@ -45,6 +48,9 @@ import { Link as RouterLink } from 'react-router-dom';
 
 import { ProfileCompleteness, type CompletenessItem } from '../../components/ProfileCompleteness';
 import { MediaGallery } from '../../components/MediaGallery';
+import { ShareMenu } from '../../components/ShareMenu';
+import ProjectLocationMap from '../../components/ProjectLocationMap';
+
 import { CloseRounded } from '@mui/icons-material';
 
 export type CollaboratorEntityType = 'user' | 'company';
@@ -61,7 +67,7 @@ export type ProjectStage =
 
 export type ProjectRole = 'creator' | 'viewer';
 export type SectionVisibility = 'public' | 'private';
-export type ProjectEditorTarget = ProjectSectionKey | 'settings';
+export type ProjectEditorTarget = ProjectSectionKey | 'cover' | 'settings';
 
 export type ProjectSectionKey =
     | 'overview'
@@ -78,15 +84,67 @@ export type ProjectSectionKey =
 
 export interface ProjectTeamMember {
     id: string;
-    memberType: CollaboratorEntityType;
-    memberId: string;
+    memberType: 'user' | 'company';
+    memberId?: string | null;
     userId?: string | null;
     companyId?: string | null;
+
     name: string;
     role?: string | null;
     companyName?: string;
     avatarUrl?: string | null;
     permission?: 'creator' | 'viewer' | null;
+
+    isPlatformMember?: boolean;
+    manualName?: string | null;
+    manualOrganization?: string | null;
+}
+
+function getTeamMemberDisplayName(member: ProjectTeamMember): string {
+    if (member.isPlatformMember === false) {
+        if (member.memberType === 'company') {
+            return (
+                member.manualOrganization?.trim() ||
+                member.companyName?.trim() ||
+                member.manualName?.trim() ||
+                member.name?.trim() ||
+                'External company'
+            );
+        }
+
+        return (
+            member.manualName?.trim() ||
+            member.name?.trim() ||
+            member.manualOrganization?.trim() ||
+            'External collaborator'
+        );
+    }
+
+    if (member.memberType === 'company') {
+        return member.companyName?.trim() || member.name?.trim() || 'Company';
+    }
+
+    return member.name?.trim() || member.manualName?.trim() || 'User';
+}
+
+function getTeamMemberSubtitle(member: ProjectTeamMember): string {
+    const roleLabel = member.role?.trim();
+
+    if (member.isPlatformMember === false) {
+        if (member.memberType === 'company') {
+            return roleLabel || 'External company';
+        }
+
+        const org = member.manualOrganization?.trim() || member.companyName?.trim();
+        return roleLabel ? (org ? `${roleLabel} · ${org}` : roleLabel) : org || 'External collaborator';
+    }
+
+    if (roleLabel) return roleLabel;
+
+    if (member.permission === 'viewer') return 'Viewer';
+    if (member.memberType === 'company') return 'Company Collaborator';
+
+    return 'Team Member';
 }
 
 export interface ProjectOpportunity {
@@ -96,13 +154,16 @@ export interface ProjectOpportunity {
     urgent?: boolean;
 }
 
+export type ProjectDocumentStatus = 'Draft' | 'Final';
+
 export interface ProjectDocument {
     id: string;
-    kind?: string | null;
+    kind?: string | null; // backend source for displayed Type
     assetUrl: string;
     contentType?: string | null;
     name?: string | null;
     type?: string | null;
+    status?: ProjectDocumentStatus | null;
     createdAt?: string | null;
 }
 
@@ -142,7 +203,7 @@ export interface ProjectProfileData {
     latitude?: number | null;
     longitude?: number | null;
     coverImageUrl?: string | null;
-    projectVisibility?: 'Public' | 'Private' | 'Draft' | null;
+    projectVisibility?: 'public' | 'private' | 'draft' | null;
     storyProblem?: string | null;
     storyApproach?: string | null;
     methodology?: string | null;
@@ -185,15 +246,46 @@ export interface ProjectProfileViewProps {
     isSaved?: boolean;
     onToggleSave?: () => void;
     onBack?: () => void;
-    onShare?: () => void;
-    onOpenEditor?: (section: ProjectEditorTarget) => void;
+    shareUrl?: string;
+    shareTitle?: string;
+    onOpenEditor?: (
+        section: ProjectEditorTarget,
+        itemId?: string | null
+    ) => void;
     onOpenSettings?: () => void;
+    onMediaMenuClick?: (
+        event: React.MouseEvent<HTMLElement>,
+        item: ProjectMediaItem,
+        index: number
+    ) => void;
+    onOpportunityMenuClick?: (
+        event: React.MouseEvent<HTMLElement>,
+        item: ProjectOpportunity,
+        index: number
+    ) => void;
+    onUpdateMenuClick?: (
+        event: React.MouseEvent<HTMLElement>,
+        item: ProjectUpdate,
+        index: number
+    ) => void;
+    onDocumentMenuClick?: (
+        event: React.MouseEvent<HTMLElement>,
+        item: ProjectDocument,
+        index: number
+    ) => void;
+    onSectionVisibilityChange?: (
+        section: ProjectSectionKey,
+        visibility: SectionVisibility
+    ) => void;
     renderSidebarAnchor?: React.ReactNode;
     headerBar?: {
         backLabel?: string;
         contextLabel?: string | null;
         showSettingsButton?: boolean;
     };
+    focusSection?: ProjectSectionKey | null;
+    highlightedUpdateId?: string | null;
+    onSectionFocusHandled?: () => void;
 }
 
 const STAGE_ORDER: ProjectStage[] = [
@@ -441,6 +533,27 @@ function getProjectCompletenessItems(project: ProjectProfileData): CompletenessI
     return Array.from(deduped.values());
 }
 
+function getDocumentDisplayType(document: ProjectDocument): string {
+    return document.kind?.trim() || document.type?.trim() || 'Other';
+}
+
+function getDocumentDisplayStatus(document: ProjectDocument): string {
+    return document.status?.trim() || 'Draft';
+}
+
+function formatDocumentDate(value?: string | null): string {
+    if (!value) return '—';
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+
+    return date.toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+    });
+}
+
 function getVisibleSections(project: ProjectProfileData, access: ProjectAccess): Set<ProjectSectionKey> {
     const allSections: ProjectSectionKey[] = [
         'overview',
@@ -526,9 +639,14 @@ function CollaboratorsCard({
     sidebarEditSx: Record<string, unknown>;
 }) {
     const developerName = project.companyName?.trim();
-    const team = project.team || [];
+
+    const visibleTeam = React.useMemo(
+        () => (project.team || []).filter((member) => member.permission !== 'creator'),
+        [project.team]
+    );
+
     const hasDeveloper = Boolean(developerName);
-    const hasTeam = team.length > 0;
+    const hasTeam = visibleTeam.length > 0;
     const hasPeople = hasDeveloper || hasTeam;
 
     const sectionLabelSx = {
@@ -578,7 +696,7 @@ function CollaboratorsCard({
                 bgcolor="grey.50"
             >
                 <Typography variant="caption" fontWeight="bold" color="text.primary">
-                    Project Collaborators
+                    Project Partners
                 </Typography>
 
                 {canEdit ? (
@@ -614,10 +732,10 @@ function CollaboratorsCard({
 
                         {hasTeam ? (
                             <Box>
-                                <Typography sx={sectionLabelSx}>Team</Typography>
+                                <Typography sx={sectionLabelSx}>Partners</Typography>
 
                                 <Stack spacing={0.5}>
-                                    {team.map((member) => {
+                                    {visibleTeam.map((member) => {
                                         const key =
                                             member.memberId ||
                                             member.userId ||
@@ -625,6 +743,7 @@ function CollaboratorsCard({
                                             member.id;
 
                                         const isCompanyMember = member.memberType === 'company';
+                                        const isExternal = member.isPlatformMember === false;
 
                                         return (
                                             <Box key={key} sx={rowSx}>
@@ -641,21 +760,25 @@ function CollaboratorsCard({
                                                 )}
 
                                                 <Box minWidth={0} flex={1}>
-                                                    <Typography variant="body2" fontWeight={600} color="text.primary" noWrap>
-                                                        {member.name}
-                                                    </Typography>
+                                                    <Stack minWidth={0} flex={1} spacing={0.5}>
+                                                        <Typography variant="body2" fontWeight={600} color="text.primary" noWrap>
+                                                            {getTeamMemberDisplayName(member)}
+                                                        </Typography>
 
-                                                    <Typography variant="caption" color="text.secondary" noWrap>
-                                                        {member.role ||
-                                                            (member.permission === 'creator'
-                                                                ? 'Owner'
-                                                                : member.permission === 'viewer'
-                                                                    ? 'Viewer'
-                                                                    : isCompanyMember
-                                                                        ? 'Company Collaborator'
-                                                                        : 'Team Member')}
-                                                        {member.companyName && !isCompanyMember ? ` • ${member.companyName}` : ''}
-                                                    </Typography>
+                                                        <Stack direction="row" spacing={0.75} alignItems="center" minWidth={0}>
+                                                            <Typography variant="caption" color="text.secondary" noWrap>
+                                                                {getTeamMemberSubtitle(member)}
+                                                            </Typography>
+
+                                                            {isExternal ? (
+                                                                <Chip
+                                                                    label="External"
+                                                                    size="small"
+                                                                    sx={{ height: 20, fontSize: '0.6rem', flexShrink: 0 }}
+                                                                />
+                                                            ) : null}
+                                                        </Stack>
+                                                    </Stack>
                                                 </Box>
                                             </Box>
                                         );
@@ -709,6 +832,30 @@ function SectionCard(props: {
 
     const [visMenuAnchor, setVisMenuAnchor] = React.useState<null | HTMLElement>(null);
     const isPrivate = visibility === 'private';
+
+    const visibilityMeta: Record<
+        SectionVisibility,
+        {
+            icon: React.ReactNode;
+            label: string;
+            desc: string;
+            iconColor?: string;
+        }
+    > = {
+        public: {
+            icon: <PublicRounded sx={{ fontSize: 16 }} />,
+            label: 'Public',
+            desc: 'Anyone can view',
+        },
+        private: {
+            icon: <LockRounded sx={{ fontSize: 16 }} />,
+            label: 'Private',
+            desc: 'Only users with project permission can view',
+            iconColor: '#ed6c02',
+        },
+    };
+
+    const currentMeta = visibilityMeta[visibility];
 
     return (
         <Paper
@@ -774,7 +921,7 @@ function SectionCard(props: {
                     {isOwner && onVisibilityChange ? (
                         <>
                             <Tooltip
-                                title={isPrivate ? 'Private: only users with project permission can view' : 'Public: anyone can view'}
+                                title={`${currentMeta.label}: ${currentMeta.desc}`}
                                 arrow
                                 placement="top"
                             >
@@ -782,15 +929,15 @@ function SectionCard(props: {
                                     size="small"
                                     onClick={(e) => setVisMenuAnchor(e.currentTarget)}
                                     sx={{
-                                        color: isPrivate ? '#ed6c02' : 'grey.500',
+                                        color: currentMeta.iconColor || 'grey.500',
                                         p: 0.5,
                                         '&:hover': {
-                                            color: 'grey.700',
+                                            color: currentMeta.iconColor || 'grey.700',
                                             bgcolor: 'grey.100',
                                         },
                                     }}
                                 >
-                                    {isPrivate ? <LockRounded sx={{ fontSize: 16 }} /> : <ShieldRounded sx={{ fontSize: 16 }} />}
+                                    {currentMeta.icon}
                                 </IconButton>
                             </Tooltip>
 
@@ -802,7 +949,7 @@ function SectionCard(props: {
                                 transformOrigin={{ vertical: 'top', horizontal: 'right' }}
                                 PaperProps={{
                                     sx: {
-                                        minWidth: 180,
+                                        minWidth: 220,
                                         boxShadow: 3,
                                         borderRadius: 1.5,
                                     },
@@ -823,25 +970,50 @@ function SectionCard(props: {
                                     </Typography>
                                 </Box>
 
-                                <MenuItem
-                                    selected={visibility === 'public'}
-                                    onClick={() => {
-                                        onVisibilityChange('public');
-                                        setVisMenuAnchor(null);
-                                    }}
-                                >
-                                    Public
-                                </MenuItem>
+                                {(['public', 'private'] as SectionVisibility[]).map((option) => {
+                                    const meta = visibilityMeta[option];
 
-                                <MenuItem
-                                    selected={visibility === 'private'}
-                                    onClick={() => {
-                                        onVisibilityChange('private');
-                                        setVisMenuAnchor(null);
-                                    }}
-                                >
-                                    Private
-                                </MenuItem>
+                                    return (
+                                        <MenuItem
+                                            key={option}
+                                            selected={visibility === option}
+                                            onClick={() => {
+                                                onVisibilityChange(option);
+                                                setVisMenuAnchor(null);
+                                            }}
+                                            sx={{ py: 0.75 }}
+                                        >
+                                            <ListItemIcon
+                                                sx={{
+                                                    minWidth: 28,
+                                                    color: meta.iconColor || 'grey.600',
+                                                }}
+                                            >
+                                                {meta.icon}
+                                            </ListItemIcon>
+
+                                            <ListItemText
+                                                primary={
+                                                    <Typography
+                                                        variant="body2"
+                                                        fontWeight={visibility === option ? 600 : 400}
+                                                    >
+                                                        {meta.label}
+                                                    </Typography>
+                                                }
+                                                secondary={
+                                                    <Typography
+                                                        variant="caption"
+                                                        color="text.secondary"
+                                                        sx={{ fontSize: '0.65rem' }}
+                                                    >
+                                                        {meta.desc}
+                                                    </Typography>
+                                                }
+                                            />
+                                        </MenuItem>
+                                    );
+                                })}
                             </Menu>
                         </>
                     ) : null}
@@ -1210,14 +1382,37 @@ export default function ProjectProfileView({
     isSaved,
     onToggleSave,
     onBack,
-    onShare,
+    shareUrl,
+    shareTitle,
     onOpenEditor,
     onOpenSettings,
+    onMediaMenuClick,
+    onOpportunityMenuClick,
+    onUpdateMenuClick,
+    onDocumentMenuClick,
+    onSectionVisibilityChange,
     headerBar,
+    focusSection = null,
+    highlightedUpdateId = null,
+    onSectionFocusHandled,
 }: ProjectProfileViewProps) {
     const visibleSections = getVisibleSections(project, access);
     const [coachMarkOpen, setCoachMarkOpen] = React.useState(false);
     const settingsButtonRef = React.useRef<HTMLButtonElement | null>(null);
+
+    const updatesSectionRef = React.useRef<HTMLDivElement | null>(null);
+    const [updatesSectionFlash, setUpdatesSectionFlash] = React.useState(false);
+    const [highlightedUpdateFlashId, setHighlightedUpdateFlashId] = React.useState<string | null>(null);
+
+    const [shareAnchorEl, setShareAnchorEl] = React.useState<HTMLElement | null>(null);
+
+    const handleOpenShareMenu = (event: React.MouseEvent<HTMLElement>) => {
+        setShareAnchorEl(event.currentTarget);
+    };
+
+    const handleCloseShareMenu = () => {
+        setShareAnchorEl(null);
+    };
 
     const canSee = (key: ProjectSectionKey) =>
         visibleSections.has(key) && shouldShowStageSection(key, project.stage);
@@ -1254,6 +1449,7 @@ export default function ProjectProfileView({
                 url: item.assetUrl,
                 caption: item.caption || 'Untitled media',
                 date: formatDateLabel(item.createdAt) || undefined,
+                _source: item,
             })),
         [project.media]
     );
@@ -1266,6 +1462,35 @@ export default function ProjectProfileView({
             localStorage.setItem('project_settings_coachmark_seen', '1');
         }
     }, [headerBar?.showSettingsButton]);
+
+    React.useEffect(() => {
+        if (focusSection !== 'updates') return;
+        if (!canSee('updates')) return;
+
+        const sectionEl = updatesSectionRef.current;
+        if (!sectionEl) return;
+
+        sectionEl.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+        });
+
+        setUpdatesSectionFlash(true);
+
+        if (highlightedUpdateId) {
+            setHighlightedUpdateFlashId(highlightedUpdateId);
+        }
+
+        const timer = window.setTimeout(() => {
+            setUpdatesSectionFlash(false);
+            setHighlightedUpdateFlashId(null);
+            onSectionFocusHandled?.();
+        }, 2200);
+
+        return () => {
+            window.clearTimeout(timer);
+        };
+    }, [focusSection, highlightedUpdateId, onSectionFocusHandled, canSee]);
 
     return (
         <Box sx={{ maxWidth: 1400, mx: 'auto', px: { xs: 2, md: 3 }, py: 3 }}>
@@ -1410,7 +1635,7 @@ export default function ProjectProfileView({
                         <Box flex={1} minWidth={0}>
                             <Box display="flex" alignItems="flex-start" gap={2} mb={2}>
                                 <Box
-                                    onClick={canEdit ? () => onOpenEditor?.('overview') : undefined}
+                                    onClick={canEdit ? () => onOpenEditor?.('cover') : undefined}
                                     sx={{
                                         width: 80,
                                         height: 80,
@@ -1467,7 +1692,7 @@ export default function ProjectProfileView({
                                 <Box flex={1} minWidth={0}>
                                     <Typography variant="h5" fontWeight="bold" color="text.primary" mb={1}>
                                         {project.name}
-                                        {project.projectVisibility && project.projectVisibility !== 'Public' ? (
+                                        {project.projectVisibility && project.projectVisibility !== 'public' ? (
                                             <Tooltip title="Unpublished — only visible to permitted users" arrow placement="top">
                                                 <LockRounded
                                                     sx={{
@@ -1601,12 +1826,12 @@ export default function ProjectProfileView({
                                     </Button>
                                 ) : null}
 
-                                {onShare ? (
+                                {shareUrl ? (
                                     <Button
                                         variant="outlined"
                                         fullWidth
                                         startIcon={<ShareRounded sx={{ fontSize: 14 }} />}
-                                        onClick={onShare}
+                                        onClick={handleOpenShareMenu}
                                         sx={{
                                             borderColor: 'grey.200',
                                             color: 'text.secondary',
@@ -1640,6 +1865,11 @@ export default function ProjectProfileView({
                                     {...editProps('story')}
                                     isOwner={canEdit}
                                     visibility={getSectionVisibility('story')}
+                                    onVisibilityChange={
+                                        canEdit
+                                            ? (value) => onSectionVisibilityChange?.('story', value)
+                                            : undefined
+                                    }
                                     empty={!project.storyProblem && !project.storyApproach}
                                     emptyText="No project story added"
                                     emptyActionLabel={canEdit ? 'Add Story' : undefined}
@@ -1702,12 +1932,29 @@ export default function ProjectProfileView({
                                     onAdd={canEdit ? () => onOpenEditor?.('media') : undefined}
                                     isOwner={canEdit}
                                     visibility={getSectionVisibility('media')}
+                                    onVisibilityChange={
+                                        canEdit
+                                            ? (value) => onSectionVisibilityChange?.('media', value)
+                                            : undefined
+                                    }
                                 >
                                     <MediaGallery
                                         items={galleryMediaItems}
                                         mode="carousel"
                                         isOwner={canEdit}
                                         onAdd={canEdit ? () => onOpenEditor?.('media') : undefined}
+                                        onMenuClick={
+                                            canEdit
+                                                ? (e, item, index) => {
+                                                    onMediaMenuClick?.(
+                                                        e,
+                                                        (item as typeof item & { _source?: ProjectMediaItem })._source ??
+                                                        project.media?.[index]!,
+                                                        index
+                                                    );
+                                                }
+                                                : undefined
+                                        }
                                     />
                                 </SectionCard>
                             ) : null}
@@ -1719,86 +1966,193 @@ export default function ProjectProfileView({
                                     addable={canEdit}
                                     isOwner={canEdit}
                                     visibility={getSectionVisibility('opportunities')}
+                                    onVisibilityChange={
+                                        canEdit
+                                            ? (value) => onSectionVisibilityChange?.('opportunities', value)
+                                            : undefined
+                                    }
                                     empty={!project.opportunities?.length}
                                     emptyText="No open opportunities listed"
                                     emptyActionLabel={canEdit ? 'Add Opportunity' : undefined}
-                                    onEmptyAction={canEdit ? () => onOpenEditor?.('opportunities') : undefined}
-                                    onAdd={canEdit ? () => onOpenEditor?.('opportunities') : undefined}
+                                    onEmptyAction={canEdit ? () => onOpenEditor?.('opportunities', null) : undefined}
+                                    onAdd={canEdit ? () => onOpenEditor?.('opportunities', null) : undefined}
                                 >
-                                    <Stack spacing={1.5}>
+                                    <Box
+                                        sx={{
+                                            display: 'grid',
+                                            gridTemplateColumns: {
+                                                xs: '1fr',
+                                                md: 'repeat(2, minmax(0, 1fr))',
+                                            },
+                                            gap: 1.5,
+                                        }}
+                                    >
                                         {project.opportunities?.length
-                                            ? project.opportunities.map((item) => (
-                                                <Paper key={item.id} variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-                                                    <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-                                                        <PeopleRounded sx={{ fontSize: 18, color: 'text.secondary' }} />
-                                                        <Typography variant="body2" fontWeight={700}>
-                                                            {item.type}
-                                                        </Typography>
-                                                        {item.urgent ? <Chip label="Priority" size="small" color="warning" /> : null}
-                                                    </Stack>
-                                                    {item.description ? (
-                                                        <Typography variant="body2" color="text.secondary">
-                                                            {item.description}
-                                                        </Typography>
-                                                    ) : null}
-                                                </Paper>
-                                            ))
-                                            : null}
-                                    </Stack>
-                                </SectionCard>
-                            ) : null}
-
-                            {canSee('updates') ? (
-                                <SectionCard
-                                    title="Updates"
-                                    subtitle="Latest project news and milestones"
-                                    addable={canEdit}
-                                    isOwner={canEdit}
-                                    visibility={getSectionVisibility('updates')}
-                                    empty={!project.updates?.length}
-                                    emptyText="No updates yet"
-                                    emptyActionLabel={canEdit ? 'Post Update' : undefined}
-                                    onEmptyAction={canEdit ? () => onOpenEditor?.('updates') : undefined}
-                                    onAdd={canEdit ? () => onOpenEditor?.('updates') : undefined}
-                                >
-                                    <Stack spacing={2}>
-                                        {project.updates?.length
-                                            ? project.updates.map((update) => (
-                                                <Paper key={update.id} variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+                                            ? project.opportunities.map((item, index) => (
+                                                <Paper
+                                                    key={item.id}
+                                                    variant="outlined"
+                                                    sx={{
+                                                        p: 2,
+                                                        borderRadius: 2,
+                                                        height: '100%',
+                                                    }}
+                                                >
                                                     <Stack spacing={1}>
-                                                        <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={1}>
-                                                            <Box>
-                                                                <Typography variant="body2" fontWeight={700}>
-                                                                    {update.title}
-                                                                </Typography>
-                                                                {update.authorName || update.dateLabel ? (
-                                                                    <Typography variant="caption" color="text.secondary">
-                                                                        {[update.authorName, update.dateLabel].filter(Boolean).join(' • ')}
-                                                                    </Typography>
-                                                                ) : null}
-                                                            </Box>
-
-                                                            {update.type ? (
-                                                                <Chip
-                                                                    size="small"
-                                                                    label={update.type === 'stage' ? 'Stage change' : 'Progress'}
-                                                                    variant="outlined"
-                                                                    color={update.type === 'stage' ? 'primary' : 'default'}
+                                                        <Stack
+                                                            direction="row"
+                                                            justifyContent="space-between"
+                                                            alignItems="flex-start"
+                                                            spacing={1}
+                                                        >
+                                                            <Stack
+                                                                direction="row"
+                                                                spacing={1}
+                                                                alignItems="center"
+                                                                sx={{ minWidth: 0, flex: 1 }}
+                                                            >
+                                                                <PeopleRounded
+                                                                    sx={{ fontSize: 18, color: 'text.secondary', mt: '2px', flexShrink: 0 }}
                                                                 />
+
+                                                                <Box minWidth={0}>
+                                                                    <Typography variant="body2" fontWeight={700}>
+                                                                        {item.type}
+                                                                    </Typography>
+                                                                </Box>
+
+                                                                {item.urgent ? (
+                                                                    <Chip label="Priority" size="small" color="warning" sx={{ flexShrink: 0 }} />
+                                                                ) : null}
+                                                            </Stack>
+
+                                                            {canEdit ? (
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={(event) => onOpportunityMenuClick?.(event, item, index)}
+                                                                    sx={{ color: 'grey.500', flexShrink: 0 }}
+                                                                >
+                                                                    <MoreVertRounded sx={{ fontSize: 18 }} />
+                                                                </IconButton>
                                                             ) : null}
                                                         </Stack>
 
-                                                        {update.description ? (
+                                                        {item.description ? (
                                                             <Typography variant="body2" color="text.secondary">
-                                                                {update.description}
+                                                                {item.description}
                                                             </Typography>
                                                         ) : null}
                                                     </Stack>
                                                 </Paper>
                                             ))
                                             : null}
-                                    </Stack>
+                                    </Box>
                                 </SectionCard>
+                            ) : null}
+
+                            {canSee('updates') ? (
+                                <Box
+                                    ref={updatesSectionRef}
+                                    sx={{
+                                        scrollMarginTop: 96,
+                                        borderRadius: 2,
+                                        transition: 'box-shadow 0.25s ease, background-color 0.25s ease',
+                                        boxShadow: updatesSectionFlash ? '0 0 0 3px rgba(0, 137, 147, 0.18)' : 'none',
+                                        bgcolor: updatesSectionFlash ? 'rgba(0, 137, 147, 0.04)' : 'transparent',
+                                    }}
+                                >
+                                    <SectionCard
+                                        title="Updates"
+                                        subtitle="Latest project news and milestones"
+                                        addable={canEdit}
+                                        isOwner={canEdit}
+                                        visibility={getSectionVisibility('updates')}
+                                        onVisibilityChange={
+                                            canEdit
+                                                ? (value) => onSectionVisibilityChange?.('updates', value)
+                                                : undefined
+                                        }
+                                        empty={!project.updates?.length}
+                                        emptyText="No updates yet"
+                                        emptyActionLabel={canEdit ? 'Post Update' : undefined}
+                                        onEmptyAction={canEdit ? () => onOpenEditor?.('updates', null) : undefined}
+                                        onAdd={canEdit ? () => onOpenEditor?.('updates', null) : undefined}
+                                    >
+                                        <Stack spacing={2}>
+                                            {project.updates?.length
+                                                ? project.updates.map((update, index) => {
+                                                    const isHighlighted = highlightedUpdateFlashId === update.id;
+
+                                                    return (
+                                                        <Paper
+                                                            key={update.id}
+                                                            variant="outlined"
+                                                            sx={{
+                                                                p: 2,
+                                                                borderRadius: 2,
+                                                                transition: 'box-shadow 0.25s ease, border-color 0.25s ease, background-color 0.25s ease',
+                                                                borderColor: isHighlighted ? 'primary.main' : 'grey.200',
+                                                                boxShadow: isHighlighted
+                                                                    ? '0 0 0 3px rgba(0, 137, 147, 0.14)'
+                                                                    : 'none',
+                                                                bgcolor: isHighlighted ? 'primary.50' : 'background.paper',
+                                                            }}
+                                                        >
+                                                            <Stack spacing={1}>
+                                                                <Stack
+                                                                    direction={{ xs: 'column', sm: 'row' }}
+                                                                    justifyContent="space-between"
+                                                                    spacing={1}
+                                                                >
+                                                                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                                                                        <Typography variant="body2" fontWeight={700}>
+                                                                            {update.title}
+                                                                        </Typography>
+
+                                                                        {update.authorName || update.dateLabel ? (
+                                                                            <Typography variant="caption" color="text.secondary">
+                                                                                {[update.authorName, update.dateLabel]
+                                                                                    .filter(Boolean)
+                                                                                    .join(' • ')}
+                                                                            </Typography>
+                                                                        ) : null}
+                                                                    </Box>
+
+                                                                    <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end">
+                                                                        {update.type ? (
+                                                                            <Chip
+                                                                                size="small"
+                                                                                label={update.type === 'stage' ? 'Stage change' : 'Progress'}
+                                                                                variant="outlined"
+                                                                                color={update.type === 'stage' ? 'primary' : 'default'}
+                                                                            />
+                                                                        ) : null}
+
+                                                                        {canEdit ? (
+                                                                            <IconButton
+                                                                                size="small"
+                                                                                onClick={(event) => onUpdateMenuClick?.(event, update, index)}
+                                                                                sx={{ color: 'grey.500' }}
+                                                                            >
+                                                                                <MoreVertRounded sx={{ fontSize: 18 }} />
+                                                                            </IconButton>
+                                                                        ) : null}
+                                                                    </Stack>
+                                                                </Stack>
+
+                                                                {update.description ? (
+                                                                    <Typography variant="body2" color="text.secondary">
+                                                                        {update.description}
+                                                                    </Typography>
+                                                                ) : null}
+                                                            </Stack>
+                                                        </Paper>
+                                                    );
+                                                })
+                                                : null}
+                                        </Stack>
+                                    </SectionCard>
+                                </Box>
                             ) : null}
 
                             {canSee('documents') ? (
@@ -1807,6 +2161,11 @@ export default function ProjectProfileView({
                                     addable={canEdit}
                                     isOwner={canEdit}
                                     visibility={getSectionVisibility('documents')}
+                                    onVisibilityChange={
+                                        canEdit
+                                            ? (value) => onSectionVisibilityChange?.('documents', value)
+                                            : undefined
+                                    }
                                     onAdd={canEdit ? () => onOpenEditor?.('documents') : undefined}
                                     empty={!project.documents?.length}
                                     emptyText="No documents uploaded"
@@ -1815,60 +2174,72 @@ export default function ProjectProfileView({
                                 >
                                     <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden', width: '100%' }}>
                                         <Table size="small">
-                                            <TableHead sx={{ bgcolor: 'grey.50' }}>
+                                            <TableHead>
                                                 <TableRow>
-                                                    <TableCell sx={{ fontSize: '0.75rem', fontWeight: 600, color: 'text.secondary' }}>
-                                                        Document
-                                                    </TableCell>
-                                                    <TableCell sx={{ fontSize: '0.75rem', fontWeight: 600, color: 'text.secondary' }}>
-                                                        Type
-                                                    </TableCell>
-                                                    <TableCell sx={{ fontSize: '0.75rem', fontWeight: 600, color: 'text.secondary' }}>
-                                                        Kind
-                                                    </TableCell>
-                                                    <TableCell sx={{ fontSize: '0.75rem', fontWeight: 600, color: 'text.secondary' }}>
-                                                        Uploaded
-                                                    </TableCell>
+                                                    <TableCell>Document</TableCell>
+                                                    <TableCell>Type</TableCell>
+                                                    <TableCell>Date</TableCell>
+                                                    <TableCell>Status</TableCell>
+                                                    {canEdit ? <TableCell align="right" width={56} /> : null}
                                                 </TableRow>
                                             </TableHead>
 
                                             <TableBody>
-                                                {project.documents?.map((doc) => (
-                                                    <TableRow key={doc.id} hover>
+                                                {(project.documents ?? []).map((item, index) => (
+                                                    <TableRow key={item.id} hover>
                                                         <TableCell>
-                                                            <Box display="flex" alignItems="center" gap={1}>
-                                                                <DescriptionRounded sx={{ fontSize: 16, color: 'grey.400' }} />
-                                                                <Link
-                                                                    href={doc.assetUrl}
-                                                                    target="_blank"
-                                                                    rel="noreferrer"
-                                                                    underline="hover"
-                                                                    color="inherit"
-                                                                    sx={{
-                                                                        display: 'inline-flex',
-                                                                        alignItems: 'center',
-                                                                        gap: 0.5,
-                                                                        fontSize: '0.75rem',
-                                                                        fontWeight: 500,
-                                                                    }}
+                                                            <Stack direction="row" spacing={1} alignItems="center">
+                                                                <DescriptionRounded fontSize="small" color="action" />
+                                                                {item.assetUrl ? (
+                                                                    <Link
+                                                                        href={item.assetUrl}
+                                                                        target="_blank"
+                                                                        rel="noreferrer"
+                                                                        underline="hover"
+                                                                        color="inherit"
+                                                                    >
+                                                                        <Typography variant="body2" fontWeight={600}>
+                                                                            {item.name || 'Untitled document'}
+                                                                        </Typography>
+                                                                    </Link>
+                                                                ) : (
+                                                                    <Typography variant="body2" fontWeight={600}>
+                                                                        {item.name || 'Untitled document'}
+                                                                    </Typography>
+                                                                )}
+                                                            </Stack>
+                                                        </TableCell>
+
+                                                        <TableCell>
+                                                            <Typography variant="body2" color="text.secondary">
+                                                                {getDocumentDisplayType(item)}
+                                                            </Typography>
+                                                        </TableCell>
+
+                                                        <TableCell>
+                                                            <Typography variant="body2" color="text.secondary">
+                                                                {formatDocumentDate(item.createdAt)}
+                                                            </Typography>
+                                                        </TableCell>
+
+                                                        <TableCell>
+                                                            <Chip
+                                                                size="small"
+                                                                label={getDocumentDisplayStatus(item)}
+                                                                variant="outlined"
+                                                            />
+                                                        </TableCell>
+
+                                                        {canEdit ? (
+                                                            <TableCell align="right">
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={(event) => onDocumentMenuClick?.(event, item, index)}
                                                                 >
-                                                                    {doc.name || getFileLabelFromUrl(doc.assetUrl)}
-                                                                    <OpenInNewRounded sx={{ fontSize: 13 }} />
-                                                                </Link>
-                                                            </Box>
-                                                        </TableCell>
-
-                                                        <TableCell sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
-                                                            {doc.type || doc.contentType || '—'}
-                                                        </TableCell>
-
-                                                        <TableCell sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
-                                                            {doc.kind || '—'}
-                                                        </TableCell>
-
-                                                        <TableCell sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
-                                                            {formatDateLabel(doc.createdAt) || '—'}
-                                                        </TableCell>
+                                                                    <MoreVertRounded fontSize="small" />
+                                                                </IconButton>
+                                                            </TableCell>
+                                                        ) : null}
                                                     </TableRow>
                                                 ))}
                                             </TableBody>
@@ -2001,20 +2372,37 @@ export default function ProjectProfileView({
                                     <Box
                                         sx={{
                                             aspectRatio: '4/3',
-                                            bgcolor: 'grey.100',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
                                             borderBottom: 1,
                                             borderColor: 'grey.100',
+                                            overflow: 'hidden',
+                                            bgcolor: 'grey.100',
                                         }}
                                     >
-                                        <Stack alignItems="center" spacing={1}>
-                                            <LocationOnRounded sx={{ fontSize: 24, color: 'grey.400' }} />
-                                            <Typography variant="caption" color="text.secondary">
-                                                Map preview
-                                            </Typography>
-                                        </Stack>
+                                        {project.latitude != null && project.longitude != null ? (
+                                            <ProjectLocationMap
+                                                lat={String(project.latitude)}
+                                                lng={String(project.longitude)}
+                                                height={320}
+                                                readOnly
+                                            />
+                                        ) : (
+                                            <Box
+                                                sx={{
+                                                    width: '100%',
+                                                    height: '100%',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                }}
+                                            >
+                                                <Stack alignItems="center" spacing={1}>
+                                                    <LocationOnRounded sx={{ fontSize: 24, color: 'grey.400' }} />
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        Map preview unavailable
+                                                    </Typography>
+                                                </Stack>
+                                            </Box>
+                                        )}
                                     </Box>
 
                                     <Box p={1.5} bgcolor="white" borderTop={1} borderColor="grey.100">
@@ -2082,6 +2470,13 @@ export default function ProjectProfileView({
                     </Box>
                 </Box>
             </Stack>
+            <ShareMenu
+                anchorEl={shareAnchorEl}
+                open={Boolean(shareAnchorEl)}
+                onClose={handleCloseShareMenu}
+                shareUrl={shareUrl || window.location.href}
+                shareTitle={shareTitle || project.name}
+            />
         </Box>
     );
 }
