@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Box, Typography, Button, Paper } from '@mui/material';
+import { Box, Typography, Button, Paper, ListItemIcon, ListItemText } from '@mui/material';
 import { getCompanyDetail, patchCompanySection, getUserOptions } from './companyProfile.api';
 import { CompanyProfileView } from './CompanyProfileView';
 import type { CompanyPrivacyLevel, CompanyPrivacyMap, CompanyProfile } from './companyProfile.types';
@@ -14,6 +14,9 @@ import { canEditCompany, canViewCompanySection } from './companyProfile.access';
 import MoreVertRounded from '@mui/icons-material/MoreVertRounded';
 import { IconButton, Menu, MenuItem } from '@mui/material';
 import { ProjectWizard, type ProjectFormData, type WizardCloseResult } from '../../components/ProjectWizard';
+import MoreHorizRounded from '@mui/icons-material/MoreHorizRounded';
+import EditRounded from '@mui/icons-material/EditRounded';
+import DeleteRounded from '@mui/icons-material/DeleteRounded';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -41,6 +44,10 @@ export function MyCompany() {
     const [mediaMenuItem, setMediaMenuItem] = useState<any>(null);
     const [mediaMenuIndex, setMediaMenuIndex] = useState<number | null>(null);
 
+    const [documentMenuAnchorEl, setDocumentMenuAnchorEl] = useState<HTMLElement | null>(null);
+    const [documentMenuItem, setDocumentMenuItem] = useState<any>(null);
+    const [documentMenuIndex, setDocumentMenuIndex] = useState<number | null>(null);
+
     const handleMediaMenuOpen = (
         event: React.MouseEvent<HTMLElement>,
         item: any,
@@ -55,6 +62,96 @@ export function MyCompany() {
         setMediaMenuAnchorEl(null);
         setMediaMenuItem(null);
         setMediaMenuIndex(null);
+    };
+
+    const handleDocumentMenuOpen = (
+        event: React.MouseEvent<HTMLElement>,
+        item: any,
+        index: number
+    ) => {
+        setDocumentMenuAnchorEl(event.currentTarget);
+        setDocumentMenuItem(item);
+        setDocumentMenuIndex(index);
+    };
+
+    const handleDocumentMenuClose = () => {
+        setDocumentMenuAnchorEl(null);
+        setDocumentMenuItem(null);
+        setDocumentMenuIndex(null);
+    };
+
+    const handleEditDocument = () => {
+        if (documentMenuItem == null || documentMenuIndex == null) return;
+        openEditor('documents', { ...documentMenuItem, index: documentMenuIndex });
+        handleDocumentMenuClose();
+    };
+
+    const handleDeleteDocument = async () => {
+        if (!company || !documentMenuItem?.id) return;
+
+        try {
+            setSaveError(null);
+
+            const res = await fetch(
+                `${API_BASE_URL}/companies/${company.id}/documents/${documentMenuItem.id}`,
+                {
+                    method: 'DELETE',
+                    credentials: 'include',
+                    headers: {
+                        Accept: 'application/json',
+                    },
+                }
+            );
+
+            const data = await readJsonSafe(res);
+
+            if (!res.ok) {
+                throw new Error(data?.error || data?.message || 'Failed to delete document');
+            }
+
+            await loadCompany();
+        } catch (err) {
+            setSaveError(err instanceof Error ? err.message : 'Failed to delete document');
+        } finally {
+            handleDocumentMenuClose();
+        }
+    };
+
+    const handleEditMedia = () => {
+        if (mediaMenuItem == null || mediaMenuIndex == null) return;
+        openEditor('media', { ...mediaMenuItem, index: mediaMenuIndex });
+        handleMediaMenuClose();
+    };
+
+    const handleDeleteMedia = async () => {
+        if (!company || !mediaMenuItem?.id) return;
+
+        try {
+            setSaveError(null);
+
+            const res = await fetch(
+                `${API_BASE_URL}/companies/${company.id}/media/${mediaMenuItem.id}`,
+                {
+                    method: 'DELETE',
+                    credentials: 'include',
+                    headers: {
+                        Accept: 'application/json',
+                    },
+                }
+            );
+
+            const data = await readJsonSafe(res);
+
+            if (!res.ok) {
+                throw new Error(data?.error || data?.message || 'Failed to delete media');
+            }
+
+            applyCompanyMediaItems(extractItemsArray<CompanyMediaItem>(data));
+        } catch (err) {
+            setSaveError(err instanceof Error ? err.message : 'Failed to delete media');
+        } finally {
+            handleMediaMenuClose();
+        }
     };
 
     const handleTeamMenuOpen = (
@@ -155,7 +252,11 @@ export function MyCompany() {
         payload: SidebarSavePayload
     ): CompanyProfile {
         switch (payload.section) {
-            case 'header':
+            case 'header': {
+                const nextLogoUrl = payload.values.logoFile
+                    ? URL.createObjectURL(payload.values.logoFile)
+                    : ((prev as any).logoUrl ?? null);
+
                 return withSectionPrivacy(
                     {
                         ...prev,
@@ -166,10 +267,12 @@ export function MyCompany() {
                         description: payload.values.description,
                         country: payload.values.country,
                         countryCode: payload.values.countryCode ?? null,
-                    },
+                        logoUrl: nextLogoUrl,
+                    } as CompanyProfile,
                     'header',
                     payload.values.visibility
                 );
+            }
 
             case 'about':
                 return withSectionPrivacy(
@@ -444,6 +547,26 @@ export function MyCompany() {
         'Content-Type': 'application/json',
     });
 
+    function extractItemsArray<T = unknown>(payload: any): T[] {
+        if (Array.isArray(payload?.items)) return payload.items;
+        if (Array.isArray(payload?.data)) return payload.data;
+        if (Array.isArray(payload)) return payload;
+        return [];
+    }
+
+    type CompanyMediaItem = NonNullable<CompanyProfile['media']>[number];
+
+    function applyCompanyMediaItems(items: CompanyMediaItem[]) {
+        setCompany((prev) => {
+            if (!prev) return prev;
+            return {
+                ...prev,
+                media: items,
+            };
+        });
+    }
+
+
     async function readJsonSafe(res: Response) {
         const text = await res.text();
         try {
@@ -506,6 +629,8 @@ export function MyCompany() {
         caption: string;
         visibility: 'public' | 'hidden';
         editingItem?: any;
+        isCover?: boolean;
+        kind?: string;
     }) => {
         if (!company) return;
 
@@ -514,7 +639,9 @@ export function MyCompany() {
 
         if (isEdit) {
             if (input.file) {
-                throw new Error('Replacing an existing media file is not supported yet. Update caption only, or delete and add a new file.');
+                throw new Error(
+                    'Replacing an existing media file is not supported yet. Update caption only, or delete and add a new file.'
+                );
             }
 
             const res = await fetch(`${API_BASE_URL}/companies/${company.id}/media/${mediaId}`, {
@@ -523,6 +650,7 @@ export function MyCompany() {
                 headers: getAuthJsonHeaders(),
                 body: JSON.stringify({
                     caption: input.caption,
+                    ...(input.isCover !== undefined ? { isCover: input.isCover } : {}),
                 }),
             });
 
@@ -532,7 +660,7 @@ export function MyCompany() {
                 throw new Error(data?.error || data?.message || 'Failed to update media');
             }
 
-            await loadCompany();
+            applyCompanyMediaItems(extractItemsArray<CompanyMediaItem>(data));
             return;
         }
 
@@ -553,11 +681,12 @@ export function MyCompany() {
             credentials: 'include',
             headers: getAuthJsonHeaders(),
             body: JSON.stringify({
-                kind: 'gallery',
+                kind: input.kind ?? 'gallery',
                 caption: input.caption,
                 assetUrl: upload.assetUrl,
                 s3Key: upload.key,
                 contentType: input.file.type || 'application/octet-stream',
+                isCover: Boolean(input.isCover),
                 metadata: {
                     originalName: input.file.name,
                     size: input.file.size,
@@ -571,7 +700,7 @@ export function MyCompany() {
             throw new Error(createData?.error || createData?.message || 'Failed to create media record');
         }
 
-        await loadCompany();
+        applyCompanyMediaItems(extractItemsArray<CompanyMediaItem>(createData));
     };
 
     const uploadCompanyDocument = async (input: {
@@ -661,16 +790,31 @@ export function MyCompany() {
         setSidebarOpen(false);
 
         const backendPayload = toBackendSectionPayload(payload);
-        if (!backendPayload) return;
 
         try {
             setSaving(true);
-            const updated = await patchCompanySection(
-                company.id,
-                backendPayload.section,
-                backendPayload.data
-            );
-            setCompany(updated);
+
+            let updatedCompany = previous;
+
+            if (backendPayload) {
+                updatedCompany = await patchCompanySection(
+                    company.id,
+                    backendPayload.section,
+                    backendPayload.data
+                );
+                setCompany(updatedCompany);
+            }
+
+            if (payload.section === 'header' && payload.values.logoFile) {
+                await uploadCompanyMedia({
+                    file: payload.values.logoFile,
+                    caption: '',
+                    visibility: payload.values.visibility,
+                    kind: 'logo',
+                });
+
+                await loadCompany();
+            }
         } catch (err) {
             setCompany(previous);
             setSaveError(err instanceof Error ? err.message : 'Failed to save changes');
@@ -783,10 +927,20 @@ export function MyCompany() {
                         <MoreVertRounded sx={{ fontSize: 18 }} />
                     </IconButton>
                 )}
+
                 renderDocumentActions={(doc, index) => (
-                    <Button size="small" onClick={() => openEditor('documents', { ...doc, index })}>
-                        Edit
-                    </Button>
+                    <IconButton
+                        size="small"
+                        onClick={(e) => handleDocumentMenuOpen(e, doc, index)}
+                        sx={{
+                            color: 'grey.400',
+                            '&:hover': {
+                                color: 'grey.600',
+                            },
+                        }}
+                    >
+                        <MoreVertRounded sx={{ fontSize: 18 }} />
+                    </IconButton>
                 )}
             />
 
@@ -794,51 +948,107 @@ export function MyCompany() {
                 anchorEl={mediaMenuAnchorEl}
                 open={Boolean(mediaMenuAnchorEl)}
                 onClose={handleMediaMenuClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'right',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'right',
+                }}
+                PaperProps={{
+                    sx: {
+                        minWidth: 160,
+                        boxShadow: 3,
+                    },
+                }}
             >
-                <MenuItem
-                    onClick={() => {
-                        if (mediaMenuItem == null || mediaMenuIndex == null) return;
-                        openEditor('media', { ...mediaMenuItem, index: mediaMenuIndex });
-                        handleMediaMenuClose();
-                    }}
-                >
-                    Edit
+                <MenuItem onClick={handleEditMedia}>
+                    <ListItemIcon>
+                        <EditRounded sx={{ fontSize: 18 }} />
+                    </ListItemIcon>
+                    <ListItemText
+                        primary="Edit"
+                        primaryTypographyProps={{
+                            variant: 'body2',
+                        }}
+                    />
                 </MenuItem>
 
                 <MenuItem
-                    onClick={async () => {
-                        if (!company || !mediaMenuItem?.id) return;
-
-                        try {
-                            setSaveError(null);
-
-                            const res = await fetch(
-                                `${API_BASE_URL}/companies/${company.id}/media/${mediaMenuItem.id}`,
-                                {
-                                    method: 'DELETE',
-                                    credentials: 'include',
-                                    headers: {
-                                        Accept: 'application/json',
-                                    },
-                                }
-                            );
-
-                            const data = await readJsonSafe(res);
-
-                            if (!res.ok) {
-                                throw new Error(data?.error || data?.message || 'Failed to delete media');
-                            }
-
-                            await loadCompany();
-                        } catch (err) {
-                            setSaveError(err instanceof Error ? err.message : 'Failed to delete media');
-                        } finally {
-                            handleMediaMenuClose();
-                        }
+                    onClick={handleDeleteMedia}
+                    sx={{
+                        color: 'error.main',
                     }}
-                    sx={{ color: 'error.main' }}
                 >
-                    Remove
+                    <ListItemIcon>
+                        <DeleteRounded
+                            sx={{
+                                fontSize: 18,
+                                color: 'error.main',
+                            }}
+                        />
+                    </ListItemIcon>
+                    <ListItemText
+                        primary="Delete"
+                        primaryTypographyProps={{
+                            variant: 'body2',
+                        }}
+                    />
+                </MenuItem>
+            </Menu>
+
+            <Menu
+                anchorEl={documentMenuAnchorEl}
+                open={Boolean(documentMenuAnchorEl)}
+                onClose={handleDocumentMenuClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'right',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'right',
+                }}
+                PaperProps={{
+                    sx: {
+                        minWidth: 160,
+                        boxShadow: 3,
+                    },
+                }}
+            >
+                <MenuItem onClick={handleEditDocument}>
+                    <ListItemIcon>
+                        <EditRounded sx={{ fontSize: 18 }} />
+                    </ListItemIcon>
+                    <ListItemText
+                        primary="Edit"
+                        primaryTypographyProps={{
+                            variant: 'body2',
+                        }}
+                    />
+                </MenuItem>
+
+                <MenuItem
+                    onClick={handleDeleteDocument}
+                    sx={{
+                        color: 'error.main',
+                    }}
+                >
+                    <ListItemIcon>
+                        <DeleteRounded
+                            sx={{
+                                fontSize: 18,
+                                color: 'error.main',
+                            }}
+                        />
+                    </ListItemIcon>
+                    <ListItemText
+                        primary="Delete"
+                        primaryTypographyProps={{
+                            variant: 'body2',
+                        }}
+                    />
                 </MenuItem>
             </Menu>
 

@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate, Link as RouterLink } from 'react-router-dom';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, Link as RouterLink, useSearchParams } from 'react-router-dom';
 import {
     Box,
     Typography,
@@ -14,9 +14,14 @@ import {
 } from '@mui/material';
 import EmailRounded from '@mui/icons-material/EmailRounded';
 import { useAuth } from '../../context/AuthContext';
+import {
+    clearAllAccessContext,
+    getInviteRedirectPath,
+    getShareRedirectPath,
+} from '../../utils/authAccessContext';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? '';
 
 declare global {
     interface Window {
@@ -24,19 +29,63 @@ declare global {
     }
 }
 
+type LoginResponse = {
+    ok?: boolean;
+    code?: string;
+    message?: string;
+    next?: 'dashboard' | 'signup' | 'login' | 'verify';
+    redirectTo?: string;
+    companyId?: string;
+    companySlug?: string;
+    projectId?: string;
+    projectSlug?: string;
+};
+
 export function LoginPage() {
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const { refreshSession } = useAuth();
 
-    const [email, setEmail] = useState('');
+    const companyInviteToken = useMemo(
+        () => (searchParams.get('companyInvite') ?? '').trim(),
+        [searchParams]
+    );
+
+    const shareToken = useMemo(
+        () => (searchParams.get('share') ?? '').trim(),
+        [searchParams]
+    );
+
+    const initialEmail = useMemo(() => searchParams.get('email') ?? '', [searchParams]);
+
+    const [email, setEmail] = useState(initialEmail);
     const [showValidation, setShowValidation] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [formError, setFormError] = useState('');
     const [googleError, setGoogleError] = useState('');
 
     const googleInitializedRef = useRef(false);
-
     const googleButtonRef = useRef<HTMLDivElement | null>(null);
+
+    const latestEmailRef = useRef(email);
+    const latestInviteTokenRef = useRef(companyInviteToken);
+    const latestShareTokenRef = useRef(shareToken);
+
+    useEffect(() => {
+        latestEmailRef.current = email;
+    }, [email]);
+
+    useEffect(() => {
+        latestInviteTokenRef.current = companyInviteToken;
+    }, [companyInviteToken]);
+
+    useEffect(() => {
+        latestShareTokenRef.current = shareToken;
+    }, [shareToken]);
+
+    useEffect(() => {
+        setEmail(initialEmail);
+    }, [initialEmail]);
 
     const isValid = email.trim() !== '' && email.includes('@');
 
@@ -61,6 +110,10 @@ export function LoginPage() {
                     throw new Error('Missing Google credential');
                 }
 
+                const currentInviteToken = latestInviteTokenRef.current;
+                const currentShareToken = latestShareTokenRef.current;
+                const currentEmail = latestEmailRef.current;
+
                 setIsLoading(true);
 
                 const resp = await fetch(`${API_BASE_URL}/auth/google/sign-in`, {
@@ -72,19 +125,43 @@ export function LoginPage() {
                     body: JSON.stringify({
                         credential: response.credential,
                         intent: 'login',
+                        companyInviteToken: currentInviteToken || undefined,
+                        shareToken: currentShareToken || undefined,
                     }),
                 });
 
-                const data = await resp.json().catch(() => ({}));
+                const data = (await resp.json().catch(() => ({}))) as LoginResponse;
 
                 if (resp.ok) {
                     await refreshSession();
-                    navigate('/dashboard');
+
+                    if (currentInviteToken) {
+                        const redirectPath = getInviteRedirectPath(data);
+                        clearAllAccessContext();
+                        navigate(redirectPath, { replace: true });
+                        return;
+                    }
+
+                    if (currentShareToken) {
+                        const redirectPath = getShareRedirectPath(data);
+                        clearAllAccessContext();
+                        navigate(redirectPath, { replace: true });
+                        return;
+                    }
+
+                    navigate('/dashboard', { replace: true });
                     return;
                 }
 
                 if (data.code === 'ACCOUNT_NOT_FOUND' || data.next === 'signup') {
+                    const params = new URLSearchParams({
+                        ...(currentEmail ? { email: currentEmail } : {}),
+                        ...(currentInviteToken ? { companyInvite: currentInviteToken } : {}),
+                        ...(currentShareToken ? { share: currentShareToken } : {}),
+                    });
+
                     setGoogleError('No account exists for this Google email. Please sign up first.');
+                    navigate(`/signup?${params.toString()}`, { replace: true });
                     return;
                 }
 
@@ -137,13 +214,23 @@ export function LoginPage() {
                 body: JSON.stringify({
                     email,
                     intent: 'login',
+                    companyInviteToken: companyInviteToken || undefined,
+                    shareToken: shareToken || undefined,
                 }),
             });
 
             const data = await resp.json().catch(() => ({}));
 
             if (resp.ok) {
-                navigate(`/verify?email=${encodeURIComponent(email)}&intent=login`);
+                const params = new URLSearchParams({
+                    email,
+                    intent: 'login',
+                });
+
+                if (companyInviteToken) params.set('companyInvite', companyInviteToken);
+                if (shareToken) params.set('share', shareToken);
+
+                navigate(`/verify?${params.toString()}`);
                 return;
             }
 
@@ -191,7 +278,9 @@ export function LoginPage() {
                             Welcome back
                         </Typography>
                         <Typography variant="body1" color="text.secondary" mb={4}>
-                            Sign in to access your dashboard and projects.
+                            {companyInviteToken || shareToken
+                                ? 'Sign in to continue to your destination.'
+                                : 'Sign in to access your dashboard and projects.'}
                         </Typography>
 
                         <form onSubmit={handleSubmit}>
@@ -201,8 +290,11 @@ export function LoginPage() {
                                         {formError}{' '}
                                         <Link
                                             component={RouterLink}
-                                            to={`/signup?email=${encodeURIComponent(email)}`}
-                                            underline="hover"
+                                            to={`/signup?${new URLSearchParams({
+                                                ...(email ? { email } : {}),
+                                                ...(companyInviteToken ? { companyInvite: companyInviteToken } : {}),
+                                                ...(shareToken ? { share: shareToken } : {}),
+                                            }).toString()}`}
                                         >
                                             Go to sign up
                                         </Link>
@@ -214,7 +306,11 @@ export function LoginPage() {
                                         {googleError}{' '}
                                         <Link
                                             component={RouterLink}
-                                            to="/signup"
+                                            to={`/signup?${new URLSearchParams({
+                                                ...(email ? { email } : {}),
+                                                ...(companyInviteToken ? { companyInvite: companyInviteToken } : {}),
+                                                ...(shareToken ? { share: shareToken } : {}),
+                                            }).toString()}`}
                                             underline="hover"
                                         >
                                             Sign up
@@ -301,7 +397,14 @@ export function LoginPage() {
                                 Don't have an account?{' '}
                                 <Link
                                     component={RouterLink}
-                                    to="/signup"
+                                    to={
+                                        companyInviteToken || shareToken
+                                            ? `/signup?${new URLSearchParams({
+                                                ...(companyInviteToken ? { companyInvite: companyInviteToken } : {}),
+                                                ...(shareToken ? { share: shareToken } : {}),
+                                            }).toString()}`
+                                            : '/signup'
+                                    }
                                     fontWeight="medium"
                                     color="primary.main"
                                     underline="hover"

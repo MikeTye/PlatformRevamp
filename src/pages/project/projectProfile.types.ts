@@ -1,3 +1,5 @@
+export type CollaboratorEntityType = 'user' | 'company';
+
 export type ProjectStage =
     | 'Exploration'
     | 'Concept'
@@ -10,7 +12,7 @@ export type ProjectStage =
 
 export type ProjectRole = 'creator' | 'viewer';
 export type SectionVisibility = 'public' | 'private';
-export type ProjectEditorTarget = ProjectSectionKey | 'settings';
+export type ProjectEditorTarget = ProjectSectionKey | 'cover' | 'settings';
 
 export type ProjectSectionKey =
     | 'overview'
@@ -27,12 +29,20 @@ export type ProjectSectionKey =
 
 export interface ProjectTeamMember {
     id: string;
-    userId: string;
+    memberType: CollaboratorEntityType;
+    memberId?: string | null;
+    userId?: string | null;
+    companyId?: string | null;
+
     name: string;
-    role?: string;
+    role?: string | null;
     companyName?: string;
     avatarUrl?: string | null;
-    permission?: 'creator' | 'viewer' | null;
+    permission?: ProjectRole | null;
+
+    isPlatformMember?: boolean;
+    manualName?: string | null;
+    manualOrganization?: string | null;
 }
 
 export interface ProjectOpportunity {
@@ -42,19 +52,27 @@ export interface ProjectOpportunity {
     urgent?: boolean;
 }
 
+export type ProjectDocumentStatus = 'Draft' | 'Final';
+
 export interface ProjectDocument {
     id: string;
-    name: string;
+    kind?: string | null;
+    assetUrl: string;
+    contentType?: string | null;
+    name?: string | null;
     type?: string | null;
-    status?: string | null;
-    dateLabel?: string | null;
+    status?: ProjectDocumentStatus | null;
+    createdAt?: string | null;
 }
 
 export interface ProjectMediaItem {
     id: string;
-    url: string;
+    kind?: string | null;
+    assetUrl: string;
+    contentType?: string | null;
     caption?: string | null;
-    dateLabel?: string | null;
+    isCover?: boolean;
+    createdAt?: string | null;
 }
 
 export interface ProjectReadinessItem {
@@ -102,9 +120,12 @@ export interface ProjectProfileData {
     storyProblem?: string | null;
     storyApproach?: string | null;
     methodology?: string | null;
-    registryName?: string | null;
+
+    registrationPlatform?: string | null;
     registryStatus?: string | null;
-    registryProjectId?: string | null;
+    registryProjectUrl?: string | null;
+    registryId?: string | null;
+
     totalAreaHa?: number | null;
     estimatedAnnualRemoval?: string | null;
     readiness?: ProjectReadinessItem[];
@@ -115,6 +136,16 @@ export interface ProjectProfileData {
     media?: ProjectMediaItem[];
     team?: ProjectTeamMember[];
     sectionVisibility?: Partial<Record<ProjectSectionKey, SectionVisibility>>;
+
+    totalCreditsIssued?: number | null;
+    annualEstimatedCredits?: number | null;
+    annualEstimateUnit?: string | null;
+    firstVintageYear?: number | null;
+
+    creditIssuanceDate?: string | null;
+    creditingStart?: string | null;
+    creditingEnd?: string | null;
+    tenureText?: string | null;
 }
 
 export type ProjectCompletenessRule = {

@@ -51,12 +51,43 @@ type AccountResponse = {
         showPhone: boolean;
         showContactEmail: boolean;
     };
-    affiliations: Array<{
+    affiliations?: Array<{
         id?: string;
         companyId: string | null;
         companyName: string;
         role: string;
         permission: 'creator' | 'viewer';
+    }>;
+    stats?: {
+        companyCount: number;
+        projectCount: number;
+    };
+};
+
+type AccountCompaniesResponse = {
+    items: Array<{
+        id?: string;
+        companyId: string | null;
+        companyName: string;
+        role: string;
+        permission: 'creator' | 'viewer';
+    }>;
+};
+
+type AccountProjectsResponse = {
+    items: Array<{
+        id?: string;
+        projectId: string;
+        projectName: string;
+        stage: string;
+        type: string;
+        country: string;
+        role: string;
+        permission: 'creator' | 'viewer';
+        memberType: 'user' | 'company';
+        source: 'direct' | 'company';
+        companyId: string | null;
+        companyName: string;
     }>;
 };
 
@@ -66,6 +97,7 @@ interface UserProfile {
     title: string;
     company: string;
     companyId: string;
+    companyRole: string;
     country: string;
     countryCode: string;
     summary: string;
@@ -85,7 +117,6 @@ interface UserProfile {
         role: string;
     }[];
 }
-
 type CountryCodeItem = {
     country: string;
     code: string;
@@ -116,8 +147,55 @@ function getInitials(name: string): string {
     return safeName.substring(0, 2).toUpperCase();
 }
 
-function mapAccountToUserProfile(data: AccountResponse): UserProfile {
-    const primaryAffiliation = data.affiliations?.[0] ?? null;
+function normalizeProjectStage(stage: string): ProjectStage {
+    const value = (stage || '').trim().toLowerCase();
+
+    switch (value) {
+        case 'exploration':
+            return 'Exploration';
+
+        case 'concept':
+        case 'idea':
+            return 'Concept';
+
+        case 'design':
+        case 'development':
+        case 'in_development':
+        case 'active':
+            return 'Design';
+
+        case 'listed':
+            return 'Listed';
+
+        case 'validation':
+        case 'validated':
+            return 'Validation';
+
+        case 'registered':
+            return 'Registered';
+
+        case 'issued':
+            return 'Issued';
+
+        case 'closed':
+        case 'completed':
+            return 'Closed';
+
+        default:
+            return 'Concept'; // safe fallback
+    }
+}
+
+function mapAccountToUserProfile(
+    data: AccountResponse,
+    companies: AccountCompaniesResponse['items'] = [],
+    projects: AccountProjectsResponse['items'] = []
+): UserProfile {
+    const primaryAffiliation =
+        companies[0] ??
+        data.affiliations?.[0] ??
+        null;
+
     const countryCode = getCountryCode(data.profile.country);
 
     return {
@@ -130,6 +208,7 @@ function mapAccountToUserProfile(data: AccountResponse): UserProfile {
             '',
         company: primaryAffiliation?.companyName ?? '',
         companyId: primaryAffiliation?.companyId ?? '',
+        companyRole: primaryAffiliation?.role ?? '',
         country: data.profile.country || '',
         countryCode,
         summary: data.profile.bio || '',
@@ -139,11 +218,19 @@ function mapAccountToUserProfile(data: AccountResponse): UserProfile {
         standards: data.profile.standards ?? [],
         languages: data.profile.languages ?? [],
         contactEmail: data.profile.contactEmail || '',
-        projects: [], // still stubbed for now
+        projects: projects.map((project) => ({
+            upid: project.projectId,
+            name: project.projectName || 'Untitled Project',
+            stage: normalizeProjectStage(project.stage),
+            type: project.type || '',
+            country: project.country || '',
+            countryCode: getCountryCode(project.country || ''),
+            role: project.role || project.companyName || '',
+        })),
     };
 }
 
-async function fetchOwnAccountProfile(): Promise<UserProfile> {
+async function fetchOwnAccountProfile(): Promise<AccountResponse> {
     const response = await fetch(`${API_BASE_URL}/account`, {
         method: 'GET',
         credentials: 'include',
@@ -164,11 +251,52 @@ async function fetchOwnAccountProfile(): Promise<UserProfile> {
         throw new Error(`Failed to load profile (${response.status})`);
     }
 
-    const data = await response.json();
-    return mapAccountToUserProfile(data);
+    return response.json();
 }
 
-async function fetchPublicProfile(userId: string): Promise<UserProfile> {
+async function fetchOwnCompanies(): Promise<AccountCompaniesResponse['items']> {
+    const response = await fetch(`${API_BASE_URL}/account/companies`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+            Accept: 'application/json',
+        },
+    });
+
+    if (response.status === 401) {
+        throw new Error('UNAUTHORIZED');
+    }
+
+    if (!response.ok) {
+        throw new Error(`Failed to load companies (${response.status})`);
+    }
+
+    const data: AccountCompaniesResponse = await response.json();
+    return Array.isArray(data.items) ? data.items : [];
+}
+
+async function fetchOwnProjects(): Promise<AccountProjectsResponse['items']> {
+    const response = await fetch(`${API_BASE_URL}/account/projects`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+            Accept: 'application/json',
+        },
+    });
+
+    if (response.status === 401) {
+        throw new Error('UNAUTHORIZED');
+    }
+
+    if (!response.ok) {
+        throw new Error(`Failed to load projects (${response.status})`);
+    }
+
+    const data: AccountProjectsResponse = await response.json();
+    return Array.isArray(data.items) ? data.items : [];
+}
+
+async function fetchPublicProfile(userId: string): Promise<AccountResponse> {
     const response = await fetch(`${API_BASE_URL}/account/${encodeURIComponent(userId)}/profile`, {
         method: 'GET',
         credentials: 'include',
@@ -185,8 +313,49 @@ async function fetchPublicProfile(userId: string): Promise<UserProfile> {
         throw new Error(`Failed to load profile (${response.status})`);
     }
 
-    const data = await response.json();
-    return mapAccountToUserProfile(data);
+    return response.json();
+}
+
+async function fetchPublicCompanies(userId: string): Promise<AccountCompaniesResponse['items']> {
+    const response = await fetch(`${API_BASE_URL}/account/${encodeURIComponent(userId)}/companies`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+            Accept: 'application/json',
+        },
+    });
+
+    if (response.status === 404) {
+        throw new Error('NOT_FOUND');
+    }
+
+    if (!response.ok) {
+        throw new Error(`Failed to load companies (${response.status})`);
+    }
+
+    const data: AccountCompaniesResponse = await response.json();
+    return Array.isArray(data.items) ? data.items : [];
+}
+
+async function fetchPublicProjects(userId: string): Promise<AccountProjectsResponse['items']> {
+    const response = await fetch(`${API_BASE_URL}/account/${encodeURIComponent(userId)}/projects`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+            Accept: 'application/json',
+        },
+    });
+
+    if (response.status === 404) {
+        throw new Error('NOT_FOUND');
+    }
+
+    if (!response.ok) {
+        throw new Error(`Failed to load projects (${response.status})`);
+    }
+
+    const data: AccountProjectsResponse = await response.json();
+    return Array.isArray(data.items) ? data.items : [];
 }
 
 export function UserProfilePage() {
@@ -212,13 +381,23 @@ export function UserProfilePage() {
             setError(null);
 
             try {
-                const profile =
-                    !id || id === 'me'
-                        ? await fetchOwnAccountProfile()
-                        : await fetchPublicProfile(id);
+                const isOwn = !id || id === 'me';
+
+                const [account, companies, projects] = isOwn
+                    ? await Promise.all([
+                        fetchOwnAccountProfile(),
+                        fetchOwnCompanies(),
+                        fetchOwnProjects(),
+                    ])
+                    : await Promise.all([
+                        fetchPublicProfile(id),
+                        fetchPublicCompanies(id),
+                        fetchPublicProjects(id),
+                    ]);
 
                 if (!isMounted) return;
-                setUser(profile);
+
+                setUser(mapAccountToUserProfile(account, companies, projects));
             } catch (err) {
                 if (!isMounted) return;
 
@@ -354,8 +533,8 @@ export function UserProfilePage() {
                                 {user.name}
                             </Typography>
 
-                            <Typography variant="body2" color="text.secondary" mb={1}>
-                                {user.title}
+                            <Typography variant="caption" color="text.secondary">
+                                {user.companyRole || user.title || 'Member'}
                             </Typography>
 
                             <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">

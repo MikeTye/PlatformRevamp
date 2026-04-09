@@ -6,33 +6,19 @@ import {
     Button,
     Chip,
     Collapse,
-    Grid,
     IconButton,
-    Link,
     Paper,
     Stack,
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableRow,
     Tooltip,
     Typography,
-    MenuItem,
-    Menu,
     Popper,
-    ListItemIcon,
-    ListItemText,
 } from '@mui/material';
 import EditRounded from '@mui/icons-material/EditRounded';
 import AddRounded from '@mui/icons-material/AddRounded';
 import LocationOnRounded from '@mui/icons-material/LocationOnRounded';
 import BusinessRounded from '@mui/icons-material/BusinessRounded';
-import DescriptionRounded from '@mui/icons-material/DescriptionRounded';
-import AttachMoneyRounded from '@mui/icons-material/AttachMoneyRounded';
 import PeopleRounded from '@mui/icons-material/PeopleRounded';
 import LockRounded from '@mui/icons-material/LockRounded';
-import PublicRounded from '@mui/icons-material/PublicRounded';
 import MoreVertRounded from '@mui/icons-material/MoreVertRounded';
 import PhotoCameraRounded from '@mui/icons-material/PhotoCameraRounded';
 import BookmarkBorderRounded from '@mui/icons-material/BookmarkBorderRounded';
@@ -43,62 +29,43 @@ import ExpandLessRounded from '@mui/icons-material/ExpandLessRounded';
 import InfoOutlined from '@mui/icons-material/InfoOutlined';
 import ArrowBackRounded from '@mui/icons-material/ArrowBackRounded';
 import TuneRounded from '@mui/icons-material/TuneRounded';
-import OpenInNewRounded from '@mui/icons-material/OpenInNewRounded';
 import { Link as RouterLink } from 'react-router-dom';
 
 import { ProfileCompleteness, type CompletenessItem } from '../../components/ProfileCompleteness';
-import { MediaGallery } from '../../components/MediaGallery';
 import { ShareMenu } from '../../components/ShareMenu';
 import ProjectLocationMap from '../../components/ProjectLocationMap';
 
+import ProjectMediaSection from './ProjectMediaSection';
+import ProjectOpportunitiesSection from './ProjectOpportunitiesSection';
+import ProjectDocumentsSection from './ProjectDocumentsSection';
+
 import { CloseRounded } from '@mui/icons-material';
+import { ProjectSectionCard } from './ProjectSectionCard';
+
+import {
+    STAGE_ORDER,
+    stageDescriptions,
+    STAGE_COMPLETENESS_RULES,
+} from './projectProfile.constants.ts';
+
+import type {
+    ProjectAccess,
+    ProjectDocument,
+    ProjectEditorTarget,
+    ProjectMediaItem,
+    ProjectOpportunity,
+    ProjectProfileData,
+    ProjectReadinessItem,
+    ProjectRole,
+    ProjectSectionKey,
+    ProjectServiceProvider,
+    ProjectStage,
+    ProjectTeamMember,
+    ProjectUpdate,
+    SectionVisibility,
+} from './projectProfile.types';
 
 export type CollaboratorEntityType = 'user' | 'company';
-
-export type ProjectStage =
-    | 'Exploration'
-    | 'Concept'
-    | 'Design'
-    | 'Listed'
-    | 'Validation'
-    | 'Registered'
-    | 'Issued'
-    | 'Closed';
-
-export type ProjectRole = 'creator' | 'viewer';
-export type SectionVisibility = 'public' | 'private';
-export type ProjectEditorTarget = ProjectSectionKey | 'cover' | 'settings';
-
-export type ProjectSectionKey =
-    | 'overview'
-    | 'story'
-    | 'location'
-    | 'readiness'
-    | 'registry'
-    | 'impact'
-    | 'opportunities'
-    | 'updates'
-    | 'documents'
-    | 'media'
-    | 'team';
-
-export interface ProjectTeamMember {
-    id: string;
-    memberType: 'user' | 'company';
-    memberId?: string | null;
-    userId?: string | null;
-    companyId?: string | null;
-
-    name: string;
-    role?: string | null;
-    companyName?: string;
-    avatarUrl?: string | null;
-    permission?: 'creator' | 'viewer' | null;
-
-    isPlatformMember?: boolean;
-    manualName?: string | null;
-    manualOrganization?: string | null;
-}
 
 function getTeamMemberDisplayName(member: ProjectTeamMember): string {
     if (member.isPlatformMember === false) {
@@ -147,95 +114,7 @@ function getTeamMemberSubtitle(member: ProjectTeamMember): string {
     return 'Team Member';
 }
 
-export interface ProjectOpportunity {
-    id: string;
-    type: string;
-    description?: string | null;
-    urgent?: boolean;
-}
-
 export type ProjectDocumentStatus = 'Draft' | 'Final';
-
-export interface ProjectDocument {
-    id: string;
-    kind?: string | null; // backend source for displayed Type
-    assetUrl: string;
-    contentType?: string | null;
-    name?: string | null;
-    type?: string | null;
-    status?: ProjectDocumentStatus | null;
-    createdAt?: string | null;
-}
-
-export interface ProjectMediaItem {
-    id: string;
-    kind?: string | null;
-    assetUrl: string;
-    contentType?: string | null;
-    caption?: string | null;
-    isCover?: boolean;
-    createdAt?: string | null;
-}
-
-export interface ProjectReadinessItem {
-    id: string;
-    label: string;
-    status: 'yes' | 'progress' | 'seeking' | 'na';
-    note?: string | null;
-}
-
-export type ProjectAccess = {
-    isProjectMember: boolean;
-    projectRole: ProjectRole | null;
-    canViewPrivateSections: boolean;
-};
-
-export interface ProjectProfileData {
-    id: string;
-    upid?: string | null;
-    name: string;
-    stage: ProjectStage;
-    type?: string | null;
-    description?: string | null;
-    companyName?: string | null;
-    country?: string | null;
-    region?: string | null;
-    latitude?: number | null;
-    longitude?: number | null;
-    coverImageUrl?: string | null;
-    projectVisibility?: 'public' | 'private' | 'draft' | null;
-    storyProblem?: string | null;
-    storyApproach?: string | null;
-    methodology?: string | null;
-    registryName?: string | null;
-    registryStatus?: string | null;
-    registryProjectId?: string | null;
-    totalAreaHa?: number | null;
-    estimatedAnnualRemoval?: string | null;
-    readiness?: ProjectReadinessItem[];
-    serviceProviders?: ProjectServiceProvider[];
-    opportunities?: ProjectOpportunity[];
-    updates?: ProjectUpdate[];
-    documents?: ProjectDocument[];
-    media?: ProjectMediaItem[];
-    team?: ProjectTeamMember[];
-    sectionVisibility?: Partial<Record<ProjectSectionKey, SectionVisibility>>;
-}
-
-export interface ProjectUpdate {
-    id: string;
-    title: string;
-    description?: string | null;
-    dateLabel?: string | null;
-    authorName?: string | null;
-    type?: 'progress' | 'stage' | null;
-}
-
-export interface ProjectServiceProvider {
-    id: string;
-    name: string;
-    type?: string | null;
-}
 
 export interface ProjectProfileViewProps {
     project: ProjectProfileData;
@@ -288,260 +167,37 @@ export interface ProjectProfileViewProps {
     onSectionFocusHandled?: () => void;
 }
 
-const STAGE_ORDER: ProjectStage[] = [
-    'Exploration',
-    'Concept',
-    'Design',
-    'Listed',
-    'Validation',
-    'Registered',
-    'Issued',
-    'Closed',
-];
-
-const stageDescriptions: Record<ProjectStage, string> = {
-    Exploration:
-        'A potential project is being explored, but key project boundaries and implementation details are still early.',
-    Concept:
-        'The project is defined in principle, with intended pathway and core structure identified.',
-    Design:
-        'The project is materially designed, with documentation and implementation planning underway.',
-    Listed:
-        'The project has been submitted and listed for review.',
-    Validation:
-        'The project is undergoing third-party validation.',
-    Registered:
-        'The project is registered and eligible for issuance subject to monitoring and verification.',
-    Issued:
-        'The project has had credits issued.',
-    Closed:
-        'The project is no longer active.',
-};
-
-type ProjectCompletenessRule = {
-    id: string;
-    label: string;
-    description?: string;
-    section: ProjectSectionKey;
-    isComplete: (project: ProjectProfileData) => boolean;
-};
-
-const STAGE_COMPLETENESS_RULES: Record<ProjectStage, ProjectCompletenessRule[]> = {
-    Exploration: [
-        {
-            id: 'location',
-            label: 'Identify project area or asset',
-            description: 'Add country, region, or location context.',
-            section: 'location',
-            isComplete: (project) => Boolean(project.country || project.region),
-        },
-        {
-            id: 'story',
-            label: 'Define initial project context',
-            description: 'Describe the problem, context, or early project approach.',
-            section: 'story',
-            isComplete: (project) => Boolean(project.storyProblem || project.storyApproach || project.description),
-        },
-        {
-            id: 'team',
-            label: 'Map stakeholders and collaborators',
-            description: 'Add internal team members or service providers.',
-            section: 'team',
-            isComplete: (project) => Boolean(project.team?.length || project.serviceProviders?.length),
-        },
-    ],
-    Concept: [
-        {
-            id: 'story-concept',
-            label: 'Define project scope and concept',
-            description: 'Add project story and intended pathway.',
-            section: 'story',
-            isComplete: (project) => Boolean(project.storyProblem && project.storyApproach),
-        },
-        {
-            id: 'registry-method',
-            label: 'Select standard or methodology',
-            description: 'Add registry or methodology details.',
-            section: 'registry',
-            isComplete: (project) => Boolean(project.registryName || project.methodology),
-        },
-        {
-            id: 'documents-concept',
-            label: 'Prepare concept note or supporting documentation',
-            description: 'Upload concept note, PIN, or related materials.',
-            section: 'documents',
-            isComplete: (project) => Boolean(project.documents?.length),
-        },
-    ],
-    Design: [
-        {
-            id: 'documents-design',
-            label: 'Add design-stage documents',
-            description: 'Upload PDD, plans, assessments, or similar materials.',
-            section: 'documents',
-            isComplete: (project) => Boolean(project.documents?.length),
-        },
-        {
-            id: 'readiness-design',
-            label: 'Track design readiness',
-            description: 'Add readiness items for monitoring, baseline, and implementation progress.',
-            section: 'readiness',
-            isComplete: (project) => Boolean(project.readiness?.length),
-        },
-        {
-            id: 'media-design',
-            label: 'Add media or supporting evidence',
-            description: 'Upload site photos, diagrams, or visual material.',
-            section: 'media',
-            isComplete: (project) => Boolean(project.media?.length),
-        },
-    ],
-    Listed: [
-        {
-            id: 'registry-listed',
-            label: 'Add registry submission details',
-            description: 'Record registry platform, status, or project ID.',
-            section: 'registry',
-            isComplete: (project) =>
-                Boolean(project.registryName && (project.registryStatus || project.registryProjectId)),
-        },
-        {
-            id: 'documents-listed',
-            label: 'Upload listing-related documents',
-            description: 'Include materials submitted for listing or review.',
-            section: 'documents',
-            isComplete: (project) => Boolean(project.documents?.length),
-        },
-        {
-            id: 'updates-listed',
-            label: 'Post listing progress update',
-            description: 'Add an update once the project enters formal review.',
-            section: 'updates',
-            isComplete: (project) => Boolean(project.updates?.length),
-        },
-    ],
-    Validation: [
-        {
-            id: 'registry-validation',
-            label: 'Track validation status',
-            description: 'Keep registry status current during validation.',
-            section: 'registry',
-            isComplete: (project) => Boolean(project.registryStatus),
-        },
-        {
-            id: 'readiness-validation',
-            label: 'Track validation readiness',
-            description: 'Record validation, audit, or corrective-action progress.',
-            section: 'readiness',
-            isComplete: (project) => Boolean(project.readiness?.length),
-        },
-        {
-            id: 'updates-validation',
-            label: 'Post validation update',
-            description: 'Share validation milestones or review progress.',
-            section: 'updates',
-            isComplete: (project) => Boolean(project.updates?.length),
-        },
-    ],
-    Registered: [
-        {
-            id: 'registry-registered',
-            label: 'Complete registration details',
-            description: 'Registry platform, status, and project identifier should be present.',
-            section: 'registry',
-            isComplete: (project) =>
-                Boolean(project.registryName && project.registryStatus && project.registryProjectId),
-        },
-        {
-            id: 'impact-registered',
-            label: 'Add project impact metrics',
-            description: 'Include area, estimated removals, or similar credit-related figures.',
-            section: 'impact',
-            isComplete: (project) => Boolean(project.totalAreaHa || project.estimatedAnnualRemoval),
-        },
-        {
-            id: 'readiness-registered',
-            label: 'Show operational readiness',
-            description: 'Add monitoring or reporting readiness details.',
-            section: 'readiness',
-            isComplete: (project) => Boolean(project.readiness?.length),
-        },
-    ],
-    Issued: [
-        {
-            id: 'registry-issued',
-            label: 'Show issued credit status',
-            description: 'Keep issuance-related registry details current.',
-            section: 'registry',
-            isComplete: (project) => Boolean(project.registryName && project.registryStatus),
-        },
-        {
-            id: 'impact-issued',
-            label: 'Add issued-project metrics',
-            description: 'Show area, annual estimate, or similar impact information.',
-            section: 'impact',
-            isComplete: (project) => Boolean(project.totalAreaHa || project.estimatedAnnualRemoval),
-        },
-        {
-            id: 'updates-issued',
-            label: 'Post issuance update',
-            description: 'Add an update when credits have been issued.',
-            section: 'updates',
-            isComplete: (project) => Boolean(project.updates?.length),
-        },
-    ],
-    Closed: [
-        {
-            id: 'updates-closed',
-            label: 'Document closure outcome',
-            description: 'Add a final update or closure summary.',
-            section: 'updates',
-            isComplete: (project) => Boolean(project.updates?.length),
-        },
-        {
-            id: 'documents-closed',
-            label: 'Upload final records',
-            description: 'Store final reports, lessons learned, or supporting materials.',
-            section: 'documents',
-            isComplete: (project) => Boolean(project.documents?.length),
-        },
-    ],
-};
-
 function getProjectCompletenessItems(project: ProjectProfileData): CompletenessItem[] {
-    const currentStageIndex = STAGE_ORDER.indexOf(project.stage);
+    const rules = STAGE_COMPLETENESS_RULES[project.stage] || [];
 
-    const rules = STAGE_ORDER
-        .slice(0, currentStageIndex + 1)
-        .flatMap((stage) => STAGE_COMPLETENESS_RULES[stage] || []);
-
-    const deduped = new Map<string, CompletenessItem>();
-
-    for (const rule of rules) {
-        if (!deduped.has(rule.id)) {
-            deduped.set(rule.id, {
-                id: rule.id,
-                label: rule.label,
-                description: rule.description,
-                isComplete: rule.isComplete(project),
-                section: rule.section,
-                requiredForStage: project.stage,
-            });
-        }
-    }
-
-    return Array.from(deduped.values());
+    return rules.map((rule) => ({
+        id: rule.id,
+        label: rule.label,
+        description: rule.description,
+        isComplete: rule.isComplete(project),
+        section: rule.section,
+        requiredForStage: project.stage,
+    }));
 }
 
-function getDocumentDisplayType(document: ProjectDocument): string {
-    return document.kind?.trim() || document.type?.trim() || 'Other';
+function formatCompactNumber(value?: number | null): string {
+    if (value == null || Number.isNaN(value)) return '—';
+
+    return new Intl.NumberFormat(undefined, {
+        notation: 'compact',
+        maximumFractionDigits: 1,
+    }).format(value);
 }
 
-function getDocumentDisplayStatus(document: ProjectDocument): string {
-    return document.status?.trim() || 'Draft';
+function formatFullNumber(value?: number | null): string {
+    if (value == null || Number.isNaN(value)) return '—';
+
+    return new Intl.NumberFormat(undefined, {
+        maximumFractionDigits: 0,
+    }).format(value);
 }
 
-function formatDocumentDate(value?: string | null): string {
+function formatMonthYear(value?: string | null): string {
     if (!value) return '—';
 
     const date = new Date(value);
@@ -550,8 +206,19 @@ function formatDocumentDate(value?: string | null): string {
     return date.toLocaleDateString(undefined, {
         year: 'numeric',
         month: 'short',
-        day: 'numeric',
     });
+}
+
+function getCreditingPeriodLabel(project: ProjectProfileData): string {
+    if (project.tenureText?.trim()) return project.tenureText.trim();
+
+    if (project.creditingStart || project.creditingEnd) {
+        const start = project.creditingStart ? formatMonthYear(project.creditingStart) : '—';
+        const end = project.creditingEnd ? formatMonthYear(project.creditingEnd) : '—';
+        return `${start} – ${end}`;
+    }
+
+    return '—';
 }
 
 function getVisibleSections(project: ProjectProfileData, access: ProjectAccess): Set<ProjectSectionKey> {
@@ -593,20 +260,20 @@ function getVisibleSections(project: ProjectProfileData, access: ProjectAccess):
 
 function shouldShowStageSection(section: ProjectSectionKey, stage: ProjectStage): boolean {
     switch (section) {
-        case 'readiness':
-            return !['Closed'].includes(stage);
+        // case 'readiness':
+        //     return !['Closed'].includes(stage);
 
-        case 'registry':
-            return ['Design', 'Listed', 'Validation', 'Registered', 'Issued', 'Closed'].includes(stage);
+        // case 'registry':
+        //     return ['Design', 'Listed', 'Validation', 'Registered', 'Issued', 'Closed'].includes(stage);
 
         case 'impact':
             return ['Registered', 'Issued', 'Closed'].includes(stage);
 
-        case 'opportunities':
-            return !['Closed'].includes(stage);
+        // case 'opportunities':
+        //     return !['Closed'].includes(stage);
 
-        case 'updates':
-            return !['Exploration'].includes(stage);
+        // case 'updates':
+        //     return !['Exploration'].includes(stage);
 
         default:
             return true;
@@ -797,299 +464,6 @@ function CollaboratorsCard({
     );
 }
 
-function SectionCard(props: {
-    title: string;
-    subtitle?: string;
-    children: React.ReactNode;
-    editable?: boolean;
-    addable?: boolean;
-    onEdit?: () => void;
-    onAdd?: () => void;
-    empty?: boolean;
-    emptyText?: string;
-    emptyActionLabel?: string;
-    onEmptyAction?: () => void;
-    isOwner?: boolean;
-    visibility?: SectionVisibility;
-    onVisibilityChange?: (v: SectionVisibility) => void;
-}) {
-    const {
-        title,
-        subtitle,
-        children,
-        editable,
-        addable,
-        onEdit,
-        onAdd,
-        empty,
-        emptyText,
-        emptyActionLabel,
-        onEmptyAction,
-        isOwner = false,
-        visibility = 'public',
-        onVisibilityChange,
-    } = props;
-
-    const [visMenuAnchor, setVisMenuAnchor] = React.useState<null | HTMLElement>(null);
-    const isPrivate = visibility === 'private';
-
-    const visibilityMeta: Record<
-        SectionVisibility,
-        {
-            icon: React.ReactNode;
-            label: string;
-            desc: string;
-            iconColor?: string;
-        }
-    > = {
-        public: {
-            icon: <PublicRounded sx={{ fontSize: 16 }} />,
-            label: 'Public',
-            desc: 'Anyone can view',
-        },
-        private: {
-            icon: <LockRounded sx={{ fontSize: 16 }} />,
-            label: 'Private',
-            desc: 'Only users with project permission can view',
-            iconColor: '#ed6c02',
-        },
-    };
-
-    const currentMeta = visibilityMeta[visibility];
-
-    return (
-        <Paper
-            variant="outlined"
-            sx={{
-                borderRadius: 2,
-                overflow: 'hidden',
-                width: '100%',
-                mb: 0,
-                opacity: isPrivate ? 0.78 : 1,
-                borderColor: isPrivate ? '#ffcc80' : undefined,
-            }}
-        >
-            <Box
-                sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    p: 2,
-                    borderBottom: 1,
-                    borderColor: 'grey.100',
-                    bgcolor: isPrivate ? '#fff8e1' : 'grey.50',
-                    gap: 1,
-                }}
-            >
-                <Box minWidth={0} display="flex" alignItems="center" gap={1} flexWrap="wrap">
-                    <Typography variant="subtitle2" fontWeight="bold" color="text.primary">
-                        {title}
-                    </Typography>
-
-                    {isPrivate && isOwner ? (
-                        <Chip
-                            icon={<LockRounded sx={{ fontSize: 14 }} />}
-                            label="Private"
-                            size="small"
-                            sx={{
-                                height: 22,
-                                fontSize: '0.625rem',
-                                bgcolor: '#fff3e0',
-                                color: '#ed6c02',
-                                border: 1,
-                                borderColor: '#ffcc80',
-                                fontWeight: 600,
-                                '& .MuiChip-icon': {
-                                    color: '#ed6c02',
-                                },
-                            }}
-                        />
-                    ) : null}
-
-                    {subtitle ? (
-                        <Typography
-                            variant="caption"
-                            color="text.secondary"
-                            sx={{ display: 'block', ml: { xs: 0, sm: 0.5 } }}
-                        >
-                            {subtitle}
-                        </Typography>
-                    ) : null}
-                </Box>
-
-                <Box display="flex" alignItems="center" gap={1} flexShrink={0}>
-                    {isOwner && onVisibilityChange ? (
-                        <>
-                            <Tooltip
-                                title={`${currentMeta.label}: ${currentMeta.desc}`}
-                                arrow
-                                placement="top"
-                            >
-                                <IconButton
-                                    size="small"
-                                    onClick={(e) => setVisMenuAnchor(e.currentTarget)}
-                                    sx={{
-                                        color: currentMeta.iconColor || 'grey.500',
-                                        p: 0.5,
-                                        '&:hover': {
-                                            color: currentMeta.iconColor || 'grey.700',
-                                            bgcolor: 'grey.100',
-                                        },
-                                    }}
-                                >
-                                    {currentMeta.icon}
-                                </IconButton>
-                            </Tooltip>
-
-                            <Menu
-                                anchorEl={visMenuAnchor}
-                                open={Boolean(visMenuAnchor)}
-                                onClose={() => setVisMenuAnchor(null)}
-                                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                                transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-                                PaperProps={{
-                                    sx: {
-                                        minWidth: 220,
-                                        boxShadow: 3,
-                                        borderRadius: 1.5,
-                                    },
-                                }}
-                            >
-                                <Box px={1.5} pt={1} pb={0.5}>
-                                    <Typography
-                                        variant="caption"
-                                        color="text.secondary"
-                                        fontWeight={600}
-                                        sx={{
-                                            textTransform: 'uppercase',
-                                            letterSpacing: 0.5,
-                                            fontSize: '0.6rem',
-                                        }}
-                                    >
-                                        Section visibility
-                                    </Typography>
-                                </Box>
-
-                                {(['public', 'private'] as SectionVisibility[]).map((option) => {
-                                    const meta = visibilityMeta[option];
-
-                                    return (
-                                        <MenuItem
-                                            key={option}
-                                            selected={visibility === option}
-                                            onClick={() => {
-                                                onVisibilityChange(option);
-                                                setVisMenuAnchor(null);
-                                            }}
-                                            sx={{ py: 0.75 }}
-                                        >
-                                            <ListItemIcon
-                                                sx={{
-                                                    minWidth: 28,
-                                                    color: meta.iconColor || 'grey.600',
-                                                }}
-                                            >
-                                                {meta.icon}
-                                            </ListItemIcon>
-
-                                            <ListItemText
-                                                primary={
-                                                    <Typography
-                                                        variant="body2"
-                                                        fontWeight={visibility === option ? 600 : 400}
-                                                    >
-                                                        {meta.label}
-                                                    </Typography>
-                                                }
-                                                secondary={
-                                                    <Typography
-                                                        variant="caption"
-                                                        color="text.secondary"
-                                                        sx={{ fontSize: '0.65rem' }}
-                                                    >
-                                                        {meta.desc}
-                                                    </Typography>
-                                                }
-                                            />
-                                        </MenuItem>
-                                    );
-                                })}
-                            </Menu>
-                        </>
-                    ) : null}
-
-                    {addable ? (
-                        <IconButton
-                            size="small"
-                            onClick={onAdd}
-                            sx={{
-                                color: 'grey.700',
-                                bgcolor: 'white',
-                                border: 1,
-                                borderColor: 'grey.300',
-                                width: 32,
-                                height: 32,
-                                '&:hover': {
-                                    color: 'primary.main',
-                                    bgcolor: 'primary.50',
-                                    borderColor: 'primary.main',
-                                },
-                            }}
-                        >
-                            <AddRounded sx={{ fontSize: 18 }} />
-                        </IconButton>
-                    ) : null}
-
-                    {editable ? (
-                        <IconButton
-                            size="small"
-                            onClick={onEdit}
-                            sx={{
-                                color: 'grey.700',
-                                bgcolor: 'white',
-                                border: 1,
-                                borderColor: 'grey.300',
-                                width: 32,
-                                height: 32,
-                                '&:hover': {
-                                    color: 'primary.main',
-                                    bgcolor: 'primary.50',
-                                    borderColor: 'primary.main',
-                                },
-                            }}
-                        >
-                            <EditRounded sx={{ fontSize: 18 }} />
-                        </IconButton>
-                    ) : null}
-                </Box>
-            </Box>
-
-            <Box p={3}>
-                {empty ? (
-                    <Box textAlign="center" py={1}>
-                        <Typography variant="body2" color="text.secondary">
-                            {emptyText || 'Nothing added yet'}
-                        </Typography>
-
-                        {emptyActionLabel && onEmptyAction ? (
-                            <Button
-                                size="small"
-                                startIcon={<AddRounded sx={{ fontSize: 14 }} />}
-                                onClick={onEmptyAction}
-                                sx={{ mt: 1, textTransform: 'none' }}
-                            >
-                                {emptyActionLabel}
-                            </Button>
-                        ) : null}
-                    </Box>
-                ) : (
-                    children
-                )}
-            </Box>
-        </Paper>
-    );
-}
-
 function StagePill({ stage }: { stage: ProjectStage }) {
     const index = STAGE_ORDER.indexOf(stage);
     return (
@@ -1239,23 +613,16 @@ function CompactStageTrack({ stage }: { stage: ProjectStage }) {
     );
 }
 
-function isSectionEditable(section: ProjectSectionKey): boolean {
-    switch (section) {
-        case 'readiness':
-            return false;
-        default:
-            return true;
-    }
+function isSectionEditable(_section: ProjectSectionKey): boolean {
+    return true;
+    // always return true for now
 }
-
 function ReadinessSidebarCard({
     stage,
-    readiness,
     canEdit,
     onEdit,
 }: {
     stage: ProjectStage;
-    readiness?: ProjectReadinessItem[];
     canEdit: boolean;
     onEdit?: () => void;
 }) {
@@ -1272,7 +639,7 @@ function ReadinessSidebarCard({
                 justifyContent="space-between"
                 bgcolor="white"
             >
-                <Box display="flex" alignItems="center" gap={0.5}>
+                <Box display="flex" alignItems="center">
                     <Typography
                         variant="caption"
                         fontWeight="bold"
@@ -1281,18 +648,6 @@ function ReadinessSidebarCard({
                     >
                         Progress
                     </Typography>
-                    <IconButton
-                        size="small"
-                        sx={{
-                            width: 18,
-                            height: 18,
-                            color: 'grey.400',
-                            '&:hover': { color: 'primary.main', bgcolor: 'primary.50' },
-                        }}
-                        title={stageDescriptions[stage]}
-                    >
-                        <InfoOutlined sx={{ fontSize: 14 }} />
-                    </IconButton>
                 </Box>
 
                 {canEdit ? (
@@ -1326,51 +681,19 @@ function ReadinessSidebarCard({
                 <Collapse in={open}>
                     <Box px={1.5} pb={1.5}>
                         <Stack spacing={1}>
-                            {(readiness || []).map((row) => (
-                                <Box key={row.id} display="flex" alignItems="center" justifyContent="space-between" gap={1}>
-                                    <Typography variant="caption" color="text.secondary">
-                                        {row.label}
-                                    </Typography>
-                                    <ReadinessChip status={row.status} />
-                                </Box>
-                            ))}
+                            <Typography variant="body2" fontWeight={700} color="text.primary">
+                                {stage}
+                            </Typography>
 
-                            {!readiness?.length ? (
-                                <Typography variant="caption" color="text.secondary">
-                                    No readiness details added.
-                                </Typography>
-                            ) : null}
+                            <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                                {stageDescriptions[stage]}
+                            </Typography>
                         </Stack>
                     </Box>
                 </Collapse>
             </Box>
         </Paper>
     );
-}
-
-function formatDateLabel(value?: string | null) {
-    if (!value) return null;
-
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-
-    return date.toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-    });
-}
-
-function getFileLabelFromUrl(url?: string | null) {
-    if (!url) return 'Untitled document';
-
-    try {
-        const clean = url.split('?')[0] || url;
-        const parts = clean.split('/');
-        return decodeURIComponent(parts[parts.length - 1] || 'Untitled document');
-    } catch {
-        return 'Untitled document';
-    }
 }
 
 export default function ProjectProfileView({
@@ -1440,19 +763,6 @@ export default function ProjectProfileView({
 
     const getSectionVisibility = (key: ProjectSectionKey): SectionVisibility =>
         project.sectionVisibility?.[key] ?? 'public';
-
-    const galleryMediaItems = React.useMemo(
-        () =>
-            (project.media || []).map((item) => ({
-                id: item.id,
-                type: item.contentType?.startsWith('video/') ? 'video' : 'image',
-                url: item.assetUrl,
-                caption: item.caption || 'Untitled media',
-                date: formatDateLabel(item.createdAt) || undefined,
-                _source: item,
-            })),
-        [project.media]
-    );
 
     React.useEffect(() => {
         const seen = localStorage.getItem('project_settings_coachmark_seen');
@@ -1860,7 +1170,7 @@ export default function ProjectProfileView({
                     <Box sx={{ flex: { xs: '1 1 100%', lg: '1 1 66.666%' }, minWidth: 0 }}>
                         <Stack spacing={3}>
                             {canSee('story') ? (
-                                <SectionCard
+                                <ProjectSectionCard
                                     title="Project Story"
                                     {...editProps('story')}
                                     isOwner={canEdit}
@@ -1922,132 +1232,37 @@ export default function ProjectProfileView({
                                             </Box>
                                         ) : null}
                                     </Stack>
-                                </SectionCard>
+                                </ProjectSectionCard>
                             ) : null}
 
                             {canSee('media') ? (
-                                <SectionCard
-                                    title="Media"
-                                    addable={canEdit}
-                                    onAdd={canEdit ? () => onOpenEditor?.('media') : undefined}
-                                    isOwner={canEdit}
+                                <ProjectMediaSection
+                                    media={project.media}
+                                    canEdit={canEdit}
                                     visibility={getSectionVisibility('media')}
                                     onVisibilityChange={
                                         canEdit
                                             ? (value) => onSectionVisibilityChange?.('media', value)
                                             : undefined
                                     }
-                                >
-                                    <MediaGallery
-                                        items={galleryMediaItems}
-                                        mode="carousel"
-                                        isOwner={canEdit}
-                                        onAdd={canEdit ? () => onOpenEditor?.('media') : undefined}
-                                        onMenuClick={
-                                            canEdit
-                                                ? (e, item, index) => {
-                                                    onMediaMenuClick?.(
-                                                        e,
-                                                        (item as typeof item & { _source?: ProjectMediaItem })._source ??
-                                                        project.media?.[index]!,
-                                                        index
-                                                    );
-                                                }
-                                                : undefined
-                                        }
-                                    />
-                                </SectionCard>
+                                    onOpenEditor={onOpenEditor}
+                                    onMediaMenuClick={onMediaMenuClick}
+                                />
                             ) : null}
 
                             {canSee('opportunities') ? (
-                                <SectionCard
-                                    title="Looking For"
-                                    subtitle="What this project is currently seeking"
-                                    addable={canEdit}
-                                    isOwner={canEdit}
+                                <ProjectOpportunitiesSection
+                                    opportunities={project.opportunities}
+                                    canEdit={canEdit}
                                     visibility={getSectionVisibility('opportunities')}
                                     onVisibilityChange={
                                         canEdit
                                             ? (value) => onSectionVisibilityChange?.('opportunities', value)
                                             : undefined
                                     }
-                                    empty={!project.opportunities?.length}
-                                    emptyText="No open opportunities listed"
-                                    emptyActionLabel={canEdit ? 'Add Opportunity' : undefined}
-                                    onEmptyAction={canEdit ? () => onOpenEditor?.('opportunities', null) : undefined}
-                                    onAdd={canEdit ? () => onOpenEditor?.('opportunities', null) : undefined}
-                                >
-                                    <Box
-                                        sx={{
-                                            display: 'grid',
-                                            gridTemplateColumns: {
-                                                xs: '1fr',
-                                                md: 'repeat(2, minmax(0, 1fr))',
-                                            },
-                                            gap: 1.5,
-                                        }}
-                                    >
-                                        {project.opportunities?.length
-                                            ? project.opportunities.map((item, index) => (
-                                                <Paper
-                                                    key={item.id}
-                                                    variant="outlined"
-                                                    sx={{
-                                                        p: 2,
-                                                        borderRadius: 2,
-                                                        height: '100%',
-                                                    }}
-                                                >
-                                                    <Stack spacing={1}>
-                                                        <Stack
-                                                            direction="row"
-                                                            justifyContent="space-between"
-                                                            alignItems="flex-start"
-                                                            spacing={1}
-                                                        >
-                                                            <Stack
-                                                                direction="row"
-                                                                spacing={1}
-                                                                alignItems="center"
-                                                                sx={{ minWidth: 0, flex: 1 }}
-                                                            >
-                                                                <PeopleRounded
-                                                                    sx={{ fontSize: 18, color: 'text.secondary', mt: '2px', flexShrink: 0 }}
-                                                                />
-
-                                                                <Box minWidth={0}>
-                                                                    <Typography variant="body2" fontWeight={700}>
-                                                                        {item.type}
-                                                                    </Typography>
-                                                                </Box>
-
-                                                                {item.urgent ? (
-                                                                    <Chip label="Priority" size="small" color="warning" sx={{ flexShrink: 0 }} />
-                                                                ) : null}
-                                                            </Stack>
-
-                                                            {canEdit ? (
-                                                                <IconButton
-                                                                    size="small"
-                                                                    onClick={(event) => onOpportunityMenuClick?.(event, item, index)}
-                                                                    sx={{ color: 'grey.500', flexShrink: 0 }}
-                                                                >
-                                                                    <MoreVertRounded sx={{ fontSize: 18 }} />
-                                                                </IconButton>
-                                                            ) : null}
-                                                        </Stack>
-
-                                                        {item.description ? (
-                                                            <Typography variant="body2" color="text.secondary">
-                                                                {item.description}
-                                                            </Typography>
-                                                        ) : null}
-                                                    </Stack>
-                                                </Paper>
-                                            ))
-                                            : null}
-                                    </Box>
-                                </SectionCard>
+                                    onOpenEditor={onOpenEditor}
+                                    onOpportunityMenuClick={onOpportunityMenuClick}
+                                />
                             ) : null}
 
                             {canSee('updates') ? (
@@ -2061,7 +1276,7 @@ export default function ProjectProfileView({
                                         bgcolor: updatesSectionFlash ? 'rgba(0, 137, 147, 0.04)' : 'transparent',
                                     }}
                                 >
-                                    <SectionCard
+                                    <ProjectSectionCard
                                         title="Updates"
                                         subtitle="Latest project news and milestones"
                                         addable={canEdit}
@@ -2119,14 +1334,14 @@ export default function ProjectProfileView({
                                                                     </Box>
 
                                                                     <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end">
-                                                                        {update.type ? (
+                                                                        {/* {update.type ? (
                                                                             <Chip
                                                                                 size="small"
                                                                                 label={update.type === 'stage' ? 'Stage change' : 'Progress'}
                                                                                 variant="outlined"
                                                                                 color={update.type === 'stage' ? 'primary' : 'default'}
                                                                             />
-                                                                        ) : null}
+                                                                        ) : null} */}
 
                                                                         {canEdit ? (
                                                                             <IconButton
@@ -2151,101 +1366,23 @@ export default function ProjectProfileView({
                                                 })
                                                 : null}
                                         </Stack>
-                                    </SectionCard>
+                                    </ProjectSectionCard>
                                 </Box>
                             ) : null}
 
                             {canSee('documents') ? (
-                                <SectionCard
-                                    title="Documents"
-                                    addable={canEdit}
-                                    isOwner={canEdit}
+                                <ProjectDocumentsSection
+                                    documents={project.documents}
+                                    canEdit={canEdit}
                                     visibility={getSectionVisibility('documents')}
                                     onVisibilityChange={
                                         canEdit
                                             ? (value) => onSectionVisibilityChange?.('documents', value)
                                             : undefined
                                     }
-                                    onAdd={canEdit ? () => onOpenEditor?.('documents') : undefined}
-                                    empty={!project.documents?.length}
-                                    emptyText="No documents uploaded"
-                                    emptyActionLabel={canEdit ? 'Add Document' : undefined}
-                                    onEmptyAction={canEdit ? () => onOpenEditor?.('documents') : undefined}
-                                >
-                                    <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden', width: '100%' }}>
-                                        <Table size="small">
-                                            <TableHead>
-                                                <TableRow>
-                                                    <TableCell>Document</TableCell>
-                                                    <TableCell>Type</TableCell>
-                                                    <TableCell>Date</TableCell>
-                                                    <TableCell>Status</TableCell>
-                                                    {canEdit ? <TableCell align="right" width={56} /> : null}
-                                                </TableRow>
-                                            </TableHead>
-
-                                            <TableBody>
-                                                {(project.documents ?? []).map((item, index) => (
-                                                    <TableRow key={item.id} hover>
-                                                        <TableCell>
-                                                            <Stack direction="row" spacing={1} alignItems="center">
-                                                                <DescriptionRounded fontSize="small" color="action" />
-                                                                {item.assetUrl ? (
-                                                                    <Link
-                                                                        href={item.assetUrl}
-                                                                        target="_blank"
-                                                                        rel="noreferrer"
-                                                                        underline="hover"
-                                                                        color="inherit"
-                                                                    >
-                                                                        <Typography variant="body2" fontWeight={600}>
-                                                                            {item.name || 'Untitled document'}
-                                                                        </Typography>
-                                                                    </Link>
-                                                                ) : (
-                                                                    <Typography variant="body2" fontWeight={600}>
-                                                                        {item.name || 'Untitled document'}
-                                                                    </Typography>
-                                                                )}
-                                                            </Stack>
-                                                        </TableCell>
-
-                                                        <TableCell>
-                                                            <Typography variant="body2" color="text.secondary">
-                                                                {getDocumentDisplayType(item)}
-                                                            </Typography>
-                                                        </TableCell>
-
-                                                        <TableCell>
-                                                            <Typography variant="body2" color="text.secondary">
-                                                                {formatDocumentDate(item.createdAt)}
-                                                            </Typography>
-                                                        </TableCell>
-
-                                                        <TableCell>
-                                                            <Chip
-                                                                size="small"
-                                                                label={getDocumentDisplayStatus(item)}
-                                                                variant="outlined"
-                                                            />
-                                                        </TableCell>
-
-                                                        {canEdit ? (
-                                                            <TableCell align="right">
-                                                                <IconButton
-                                                                    size="small"
-                                                                    onClick={(event) => onDocumentMenuClick?.(event, item, index)}
-                                                                >
-                                                                    <MoreVertRounded fontSize="small" />
-                                                                </IconButton>
-                                                            </TableCell>
-                                                        ) : null}
-                                                    </TableRow>
-                                                ))}
-                                            </TableBody>
-                                        </Table>
-                                    </Paper>
-                                </SectionCard>
+                                    onOpenEditor={onOpenEditor}
+                                    onDocumentMenuClick={onDocumentMenuClick}
+                                />
                             ) : null}
                         </Stack>
                     </Box>
@@ -2258,52 +1395,108 @@ export default function ProjectProfileView({
                     >
                         <Stack spacing={2}>
                             {canSee('impact') ? (
-                                <SidebarCard
-                                    title="Credits"
-                                    canEdit={canEdit}
-                                    onEdit={canEdit ? () => onOpenEditor?.('impact') : undefined}
-                                    headerBg="grey.50"
+                                <Paper
+                                    variant="outlined"
+                                    sx={{
+                                        borderRadius: 2,
+                                        overflow: 'hidden',
+                                        width: '100%',
+                                    }}
                                 >
-                                    <Box display="grid" gridTemplateColumns="1fr 1fr" gap={1}>
-                                        <Paper
-                                            variant="outlined"
-                                            sx={{
-                                                p: 1.25,
-                                                textAlign: 'center',
-                                                bgcolor: 'grey.50',
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                alignItems: 'center',
-                                            }}
-                                        >
-                                            <Typography variant="subtitle2" fontWeight={700} color="text.primary">
-                                                {project.estimatedAnnualRemoval || '—'}
-                                            </Typography>
-                                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.625rem' }}>
-                                                Annual est.
-                                            </Typography>
-                                        </Paper>
+                                    <Box
+                                        p={1.5}
+                                        borderBottom={1}
+                                        borderColor="grey.100"
+                                        display="flex"
+                                        alignItems="center"
+                                        justifyContent="space-between"
+                                        bgcolor="grey.50"
+                                    >
+                                        <Typography variant="caption" fontWeight="bold" color="text.primary">
+                                            Credits
+                                        </Typography>
 
-                                        <Paper
-                                            variant="outlined"
-                                            sx={{
-                                                p: 1.25,
-                                                textAlign: 'center',
-                                                bgcolor: 'grey.50',
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                alignItems: 'center',
-                                            }}
-                                        >
-                                            <Typography variant="subtitle2" fontWeight={700} color="text.primary">
-                                                {project.totalAreaHa ? project.totalAreaHa.toLocaleString() : '—'}
-                                            </Typography>
-                                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.625rem' }}>
-                                                Area (ha)
-                                            </Typography>
-                                        </Paper>
+                                        {canEdit ? (
+                                            <IconButton
+                                                size="small"
+                                                onClick={() => onOpenEditor?.('impact')}
+                                                sx={sectionHeaderIconButtonSx}
+                                            >
+                                                <EditRounded sx={{ fontSize: 16 }} />
+                                            </IconButton>
+                                        ) : null}
                                     </Box>
-                                </SidebarCard>
+
+                                    <Box p={1.5}>
+                                        <Box display="grid" gridTemplateColumns="1fr 1fr" gap={1}>
+                                            {[
+                                                {
+                                                    value: formatFullNumber(project.totalCreditsIssued),
+                                                    label: 'Credits Issued',
+                                                },
+                                                {
+                                                    value:
+                                                        project.firstVintageYear != null
+                                                            ? String(project.firstVintageYear)
+                                                            : '—',
+                                                    label: 'First Vintage',
+                                                },
+                                                {
+                                                    value:
+                                                        project.annualEstimatedCredits != null
+                                                            ? `${formatCompactNumber(project.annualEstimatedCredits)}${project.annualEstimateUnit ? ` ${project.annualEstimateUnit}` : ''}`
+                                                            : project.estimatedAnnualRemoval || '—',
+                                                    label:
+                                                        project.annualEstimatedCredits != null
+                                                            ? 'Annual Estimate'
+                                                            : 'Annual Removal',
+                                                },
+                                                {
+                                                    value: getCreditingPeriodLabel(project),
+                                                    label: 'Crediting Period',
+                                                },
+                                            ].map((item, i) => (
+                                                <Paper
+                                                    key={i}
+                                                    variant="outlined"
+                                                    sx={{
+                                                        p: 1.25,
+                                                        textAlign: 'center',
+                                                        bgcolor: 'grey.50',
+                                                        display: 'flex',
+                                                        flexDirection: 'column',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        minHeight: 72,
+                                                    }}
+                                                >
+                                                    <Typography
+                                                        variant="subtitle2"
+                                                        fontWeight="bold"
+                                                        color="text.primary"
+                                                        sx={{
+                                                            lineHeight: 1.2,
+                                                            wordBreak: 'break-word',
+                                                        }}
+                                                    >
+                                                        {item.value}
+                                                    </Typography>
+
+                                                    <Typography
+                                                        variant="caption"
+                                                        color="text.secondary"
+                                                        sx={{
+                                                            fontSize: '0.625rem',
+                                                            mt: 0.5,
+                                                        }}
+                                                    >
+                                                        {item.label}
+                                                    </Typography>
+                                                </Paper>
+                                            ))}
+                                        </Box>
+                                    </Box>
+                                </Paper>
                             ) : null}
 
                             {canEdit ? (
@@ -2415,7 +1608,9 @@ export default function ProjectProfileView({
                                         </Box>
 
                                         <Typography variant="caption" color="text.disabled" display="block">
-                                            {project.totalAreaHa ? `${project.totalAreaHa.toLocaleString()} hectares` : 'Area not specified'}
+                                            {project.totalAreaHa != null
+                                                ? `${project.totalAreaHa.toLocaleString()} hectares`
+                                                : 'Area not specified'}
                                         </Typography>
                                     </Box>
                                 </Paper>
@@ -2424,7 +1619,6 @@ export default function ProjectProfileView({
                             {canSee('readiness') ? (
                                 <ReadinessSidebarCard
                                     stage={project.stage}
-                                    readiness={project.readiness}
                                     canEdit={canEdit}
                                     onEdit={canEdit ? () => onOpenEditor?.('readiness') : undefined}
                                 />
@@ -2442,7 +1636,7 @@ export default function ProjectProfileView({
                                                 Platform
                                             </Typography>
                                             <Typography variant="caption" fontWeight="medium" color="text.primary" textAlign="right">
-                                                {project.registryName || '—'}
+                                                {project.registrationPlatform || '—'}
                                             </Typography>
                                         </Box>
 
@@ -2457,11 +1651,41 @@ export default function ProjectProfileView({
 
                                         <Box display="flex" justifyContent="space-between" alignItems="center" gap={1}>
                                             <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-                                                Project ID
+                                                Registry ID
                                             </Typography>
                                             <Typography variant="caption" fontWeight="medium" color="text.primary" textAlign="right">
-                                                {project.registryProjectId || '—'}
+                                                {project.registryId || '—'}
                                             </Typography>
+                                        </Box>
+
+                                        <Box display="flex" justifyContent="space-between" alignItems="flex-start" gap={1}>
+                                            <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0, pt: 0.25 }}>
+                                                Registry Link
+                                            </Typography>
+
+                                            {project.registryProjectUrl ? (
+                                                <Typography
+                                                    component="a"
+                                                    href={project.registryProjectUrl}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    variant="caption"
+                                                    fontWeight="medium"
+                                                    color="primary.main"
+                                                    textAlign="right"
+                                                    sx={{
+                                                        textDecoration: 'none',
+                                                        wordBreak: 'break-all',
+                                                        '&:hover': { textDecoration: 'underline' },
+                                                    }}
+                                                >
+                                                    {project.registryProjectUrl}
+                                                </Typography>
+                                            ) : (
+                                                <Typography variant="caption" fontWeight="medium" color="text.primary" textAlign="right">
+                                                    —
+                                                </Typography>
+                                            )}
                                         </Box>
                                     </Stack>
                                 </SidebarCard>

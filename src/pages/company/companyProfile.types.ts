@@ -19,6 +19,8 @@ export interface CompanyProject {
     type?: string;
     hectares?: number;
     expectedCredits?: string;
+    photoUrl?: string | null;
+    thumbUrl?: string | null;
 }
 
 export interface CompanyDocument {
@@ -92,6 +94,7 @@ export interface CompanyProfile {
     description?: string | null;
     fullDescription?: string | null;
     website?: string | null;
+    logoUrl?: string | null;
 
     isMyCompany?: boolean;
     accessRole?: CompanyAccessRole;

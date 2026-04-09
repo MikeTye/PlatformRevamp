@@ -25,6 +25,16 @@ import LinkRounded from '@mui/icons-material/LinkRounded';
 import { useAuth } from '../../context/AuthContext';
 import CloseRounded from '@mui/icons-material/CloseRounded';
 
+import {
+    clearAllAccessContext,
+    clearInviteContext,
+    clearShareContext,
+    getInviteRedirectPath,
+    getShareRedirectPath,
+    persistInviteContext,
+    persistShareContext,
+} from '../../utils/authAccessContext';
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? '';
 
@@ -67,6 +77,19 @@ type InvitePreviewResponse = {
     message?: string;
 };
 
+type SharePreviewResponse = {
+    ok?: boolean;
+    share?: {
+        token?: string;
+        redirectTo?: string;
+        entityType?: 'company' | 'project';
+        entityId?: string;
+        entitySlug?: string;
+        title?: string;
+    };
+    message?: string;
+};
+
 export function SignUpPage() {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
@@ -75,8 +98,14 @@ export function SignUpPage() {
     const googleButtonRef = useRef<HTMLDivElement | null>(null);
 
     const initialEmail = useMemo(() => searchParams.get('email') ?? '', [searchParams]);
+
     const companyInviteToken = useMemo(
         () => (searchParams.get('companyInvite') ?? '').trim(),
+        [searchParams]
+    );
+
+    const shareToken = useMemo(
+        () => (searchParams.get('share') ?? '').trim(),
         [searchParams]
     );
 
@@ -92,6 +121,10 @@ export function SignUpPage() {
     const [inviteLoading, setInviteLoading] = useState(false);
     const [inviteError, setInviteError] = useState('');
     const [inviteCompany, setInviteCompany] = useState<InvitePreviewResponse['company'] | null>(null);
+
+    const [shareLoading, setShareLoading] = useState(false);
+    const [shareError, setShareError] = useState('');
+    const [sharePreview, setSharePreview] = useState<SharePreviewResponse['share'] | null>(null);
 
     const [legalModal, setLegalModal] = useState<{
         open: boolean;
@@ -145,87 +178,102 @@ export function SignUpPage() {
         return errors.length > 0 ? errors[0] : '';
     };
 
-    const persistInviteContext = (company?: { id?: string; slug?: string; displayName?: string } | null) => {
-        if (!companyInviteToken) return;
-
-        sessionStorage.setItem('tce_company_invite_token', companyInviteToken);
-
-        if (company?.id) sessionStorage.setItem('tce_company_invite_company_id', company.id);
-        if (company?.slug) sessionStorage.setItem('tce_company_invite_company_slug', company.slug);
-        if (company?.displayName) {
-            sessionStorage.setItem('tce_company_invite_company_name', company.displayName);
-        }
-    };
-
-    const clearInviteContext = () => {
-        sessionStorage.removeItem('tce_company_invite_token');
-        sessionStorage.removeItem('tce_company_invite_company_id');
-        sessionStorage.removeItem('tce_company_invite_company_slug');
-        sessionStorage.removeItem('tce_company_invite_company_name');
-    };
-
-    const getInviteRedirectPath = (data?: {
-        redirectTo?: string;
-        companyId?: string;
-        companySlug?: string;
-    }) => {
-        if (data?.redirectTo) return data.redirectTo;
-        if (data?.companySlug) return `/companies/${encodeURIComponent(data.companySlug)}`;
-        if (data?.companyId) return `/companies/${encodeURIComponent(data.companyId)}`;
-        if (inviteCompany?.slug) return `/companies/${encodeURIComponent(inviteCompany.slug)}`;
-        if (inviteCompany?.id) return `/companies/${encodeURIComponent(inviteCompany.id)}`;
-        return null;
-    };
-
     useEffect(() => {
         if (!companyInviteToken) {
             clearInviteContext();
             setInviteCompany(null);
             setInviteError('');
+        }
+
+        if (!shareToken) {
+            clearShareContext();
+            setSharePreview(null);
+            setShareError('');
+        }
+
+        if (!companyInviteToken && !shareToken) {
+            clearAllAccessContext();
             return;
         }
 
         let cancelled = false;
 
-        const loadInvitePreview = async () => {
-            try {
-                setInviteLoading(true);
-                setInviteError('');
+        const run = async () => {
+            if (companyInviteToken) {
+                try {
+                    setInviteLoading(true);
+                    setInviteError('');
 
-                const resp = await fetch(
-                    `${API_BASE_URL}/auth/company-invite-links/preview?token=${encodeURIComponent(companyInviteToken)}`,
-                    {
-                        method: 'GET',
-                        credentials: 'include',
-                        headers: { Accept: 'application/json' },
+                    const resp = await fetch(
+                        `${API_BASE_URL}/auth/company-invite-links/preview?token=${encodeURIComponent(companyInviteToken)}`,
+                        {
+                            method: 'GET',
+                            credentials: 'include',
+                            headers: { Accept: 'application/json' },
+                        }
+                    );
+
+                    const data = (await resp.json().catch(() => ({}))) as InvitePreviewResponse;
+
+                    if (!resp.ok) {
+                        throw new Error(data.message || 'This invite link is invalid.');
                     }
-                );
 
-                const data = (await resp.json().catch(() => ({}))) as InvitePreviewResponse;
-
-                if (!resp.ok) {
-                    throw new Error(data.message || 'This invite link is invalid.');
+                    if (!cancelled) {
+                        setInviteCompany(data.company ?? null);
+                        persistInviteContext(companyInviteToken, data.company ?? null);
+                    }
+                } catch (err) {
+                    if (!cancelled) {
+                        setInviteCompany(null);
+                        setInviteError(err instanceof Error ? err.message : 'This invite link is invalid.');
+                    }
+                } finally {
+                    if (!cancelled) setInviteLoading(false);
                 }
+            }
 
-                if (cancelled) return;
+            if (shareToken) {
+                try {
+                    setShareLoading(true);
+                    setShareError('');
 
-                setInviteCompany(data.company ?? null);
-                persistInviteContext(data.company ?? null);
-            } catch (err) {
-                if (cancelled) return;
-                setInviteCompany(null);
-                setInviteError(err instanceof Error ? err.message : 'This invite link is invalid.');
-            } finally {
-                if (!cancelled) setInviteLoading(false);
+                    const resp = await fetch(
+                        `${API_BASE_URL}/auth/share-links/preview?token=${encodeURIComponent(shareToken)}`,
+                        {
+                            method: 'GET',
+                            credentials: 'include',
+                            headers: { Accept: 'application/json' },
+                        }
+                    );
+
+                    const data = (await resp.json().catch(() => ({}))) as SharePreviewResponse;
+
+                    if (!resp.ok) {
+                        throw new Error(data.message || 'This shared link is invalid.');
+                    }
+
+                    if (!cancelled) {
+                        setSharePreview(data.share ?? null);
+                        persistShareContext(shareToken, data.share ?? null);
+                    }
+                } catch (err) {
+                    if (!cancelled) {
+                        setSharePreview(null);
+                        setShareError(err instanceof Error ? err.message : 'This shared link is invalid.');
+                    }
+                } finally {
+                    if (!cancelled) setShareLoading(false);
+                }
             }
         };
 
-        void loadInvitePreview();
+        void run();
 
         return () => {
             cancelled = true;
         };
-    }, [companyInviteToken]);
+    }, [companyInviteToken, shareToken]);
 
     useEffect(() => {
         if (!window.google || !googleButtonRef.current || !GOOGLE_CLIENT_ID) return;
@@ -256,6 +304,7 @@ export function SignUpPage() {
                         intent: 'signup',
                         agreedToTerms: formData.agreed,
                         companyInviteToken: companyInviteToken || undefined,
+                        shareToken: shareToken || undefined,
                     }),
                 });
 
@@ -288,14 +337,24 @@ export function SignUpPage() {
                     }
 
                     if (companyInviteToken) {
-                        persistInviteContext(inviteCompany ?? null);
                         const inviteRedirectPath = getInviteRedirectPath(data);
-                        navigate(inviteRedirectPath ?? '/companies', { replace: true });
+                        clearAllAccessContext();
+                        navigate(inviteRedirectPath, { replace: true });
+                        return;
+                    }
+
+                    if (shareToken) {
+                        const shareRedirectPath = getShareRedirectPath(data);
+                        clearAllAccessContext();
+                        navigate(shareRedirectPath, { replace: true });
                         return;
                     }
 
                     sessionStorage.setItem('tce_onboarding_fresh', '1');
-                    localStorage.removeItem('tce_onboarding_v1');
+                    const normalizedEmail = formData.email.trim().toLowerCase();
+                    if (normalizedEmail) {
+                        localStorage.removeItem(`tce_onboarding_v1:${normalizedEmail}`);
+                    }
 
                     navigate('/onboarding?fresh=1', { replace: true });
                     return;
@@ -306,9 +365,8 @@ export function SignUpPage() {
                         email: formData.email.trim(),
                     });
 
-                    if (companyInviteToken) {
-                        loginParams.set('companyInvite', companyInviteToken);
-                    }
+                    if (companyInviteToken) loginParams.set('companyInvite', companyInviteToken);
+                    if (shareToken) loginParams.set('share', shareToken);
 
                     navigate(`/login?${loginParams.toString()}`);
                     return;
@@ -342,7 +400,15 @@ export function SignUpPage() {
             width: 380,
             text: 'continue_with',
         });
-    }, [companyInviteToken, formData.email, inviteCompany, navigate, refreshSession]);
+    }, [
+        companyInviteToken,
+        shareToken,
+        sharePreview,
+        formData.email,
+        formData.agreed,
+        navigate,
+        refreshSession,
+    ]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -367,6 +433,7 @@ export function SignUpPage() {
                     name: formData.name.trim(),
                     intent: 'signup',
                     companyInviteToken: companyInviteToken || undefined,
+                    shareToken: shareToken || undefined,
                 }),
             });
 
@@ -381,7 +448,12 @@ export function SignUpPage() {
 
                 if (companyInviteToken) {
                     params.set('companyInvite', companyInviteToken);
-                    persistInviteContext(inviteCompany ?? null);
+                    persistInviteContext(companyInviteToken, inviteCompany ?? null);
+                }
+
+                if (shareToken) {
+                    params.set('share', shareToken);
+                    persistShareContext(shareToken, sharePreview ?? null);
                 }
 
                 const normalizedEmail = formData.email.trim().toLowerCase();
@@ -399,9 +471,8 @@ export function SignUpPage() {
                     email: formData.email.trim(),
                 });
 
-                if (companyInviteToken) {
-                    loginParams.set('companyInvite', companyInviteToken);
-                }
+                if (companyInviteToken) loginParams.set('companyInvite', companyInviteToken);
+                if (shareToken) loginParams.set('share', shareToken);
 
                 navigate(`/login?${loginParams.toString()}`);
                 return;
@@ -448,7 +519,9 @@ export function SignUpPage() {
                         <Typography variant="body1" color="text.secondary" mb={4}>
                             {companyInviteToken
                                 ? 'Create your account to join this company as a viewer.'
-                                : 'Sign up to access your dashboard and projects.'}
+                                : shareToken
+                                    ? 'Create your account to continue to the shared page.'
+                                    : 'Sign up to access your dashboard and projects.'}
                         </Typography>
 
                         {companyInviteToken && (
@@ -462,6 +535,20 @@ export function SignUpPage() {
                                     : inviteError
                                         ? inviteError
                                         : `You were invited to join ${inviteCompany?.displayName ?? 'a company'}.`}
+                            </Alert>
+                        )}
+
+                        {shareToken && (
+                            <Alert
+                                severity={shareError ? 'error' : 'info'}
+                                icon={<LinkRounded />}
+                                sx={{ mb: 3 }}
+                            >
+                                {shareLoading
+                                    ? 'Checking shared link…'
+                                    : shareError
+                                        ? shareError
+                                        : `Continue to ${sharePreview?.title ?? 'the shared page'} after sign up.`}
                             </Alert>
                         )}
 
@@ -638,7 +725,7 @@ export function SignUpPage() {
                                             fullWidth
                                             variant="contained"
                                             size="large"
-                                            disabled={isLoading || !!inviteError}
+                                            disabled={isLoading || !!inviteError || !!shareError}
                                             sx={{
                                                 py: 1.5,
                                                 fontWeight: 600,
@@ -658,8 +745,11 @@ export function SignUpPage() {
                                 <Link
                                     component={RouterLink}
                                     to={
-                                        companyInviteToken
-                                            ? `/login?companyInvite=${encodeURIComponent(companyInviteToken)}`
+                                        companyInviteToken || shareToken
+                                            ? `/login?${new URLSearchParams({
+                                                ...(companyInviteToken ? { companyInvite: companyInviteToken } : {}),
+                                                ...(shareToken ? { share: shareToken } : {}),
+                                            }).toString()}`
                                             : '/login'
                                     }
                                     fontWeight="medium"

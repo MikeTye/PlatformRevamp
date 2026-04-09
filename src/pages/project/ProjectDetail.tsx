@@ -1,10 +1,11 @@
 import React, { useMemo } from 'react';
 import { Box, Button, Paper, Typography } from '@mui/material';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import ProjectProfileView, {
+import {
     ProjectProfileData,
     ProjectRole,
-} from './ProjectProfileView';
+} from './projectProfile.types';
+import ProjectProfileView from './ProjectProfileView';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
 
@@ -96,11 +97,22 @@ export function ProjectDetail({
                 storyProblem: json.storyProblem ?? null,
                 storyApproach: json.storyApproach ?? null,
                 methodology: json.methodology ?? null,
-                registryName: json.registryName ?? null,
+                registrationPlatform: json.registrationPlatform ?? null,
                 registryStatus: json.registryStatus ?? null,
-                registryProjectId: json.registryProjectId ?? null,
+                registryProjectUrl: json.registryProjectUrl ?? null,
+                registryId: json.registryId ?? null,
                 totalAreaHa: json.totalAreaHa ?? null,
                 estimatedAnnualRemoval: json.estimatedAnnualRemoval ?? null,
+
+                totalCreditsIssued: json.totalCreditsIssued ?? null,
+                annualEstimatedCredits: json.annualEstimatedCredits ?? null,
+                annualEstimateUnit: json.annualEstimateUnit ?? null,
+                firstVintageYear: json.firstVintageYear ?? null,
+                creditIssuanceDate: json.creditIssuanceDate ?? null,
+                creditingStart: json.creditingStart ?? null,
+                creditingEnd: json.creditingEnd ?? null,
+                tenureText: json.tenureText ?? null,
+
                 readiness: json.readiness ?? [],
                 serviceProviders: json.serviceProviders ?? [],
                 opportunities: json.opportunities ?? [],
@@ -112,7 +124,6 @@ export function ProjectDetail({
                 longitude: json.longitude ?? null,
                 sectionVisibility: json.sectionVisibility ?? {},
             });
-
             setMyRole(json.myRole ?? null);
             setIsSaved(Boolean(json.saved));
         } catch (err) {
@@ -144,15 +155,20 @@ export function ProjectDetail({
             return;
         }
 
+        if (window.history.length > 1) {
+            navigate(-1);
+            return;
+        }
+
         if (fromParam === 'profile') {
-            navigate('/account?tab=projects');
+            navigate('/account?tab=projects', { replace: true });
         } else if (isMyProject) {
-            navigate('/projects?tab=my');
+            navigate('/projects?tab=my', { replace: true });
         } else {
-            navigate('/projects');
+            navigate('/projects', { replace: true });
         }
     };
-
+    
     const getBackLabel = () => {
         if (fromParam === 'profile') return 'My Profile';
         return isMyProject ? 'My Projects' : 'Projects';

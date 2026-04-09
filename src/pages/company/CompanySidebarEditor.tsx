@@ -18,6 +18,8 @@ import {
     Autocomplete,
     Divider,
     Chip,
+    Card,
+    CardActionArea,
 } from '@mui/material';
 import LanguageRounded from '@mui/icons-material/LanguageRounded';
 import DescriptionRounded from '@mui/icons-material/DescriptionRounded';
@@ -27,6 +29,8 @@ import SearchRounded from '@mui/icons-material/SearchRounded';
 import CloseRounded from '@mui/icons-material/CloseRounded';
 import VisibilityRounded from '@mui/icons-material/VisibilityRounded';
 import VisibilityOffRounded from '@mui/icons-material/VisibilityOffRounded';
+import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
+import RadioButtonUncheckedRounded from '@mui/icons-material/RadioButtonUncheckedRounded';
 import { SidebarPanel } from '../../components/layout/SidebarPanel';
 import type {
     CompanyProfile,
@@ -72,6 +76,7 @@ export type SidebarSavePayload =
             description: string;
             country: string;
             countryCode?: string;
+            logoFile?: File | null;
             visibility: 'public' | 'hidden';
         };
     }
@@ -275,12 +280,50 @@ export function CompanySidebarEditor({
     const [isUploading, setIsUploading] = useState(false);
     const [uploadError, setUploadError] = useState('');
 
+    const [headerLogoFile, setHeaderLogoFile] = useState<File | null>(null);
+    const [headerLogoPreviewUrl, setHeaderLogoPreviewUrl] = useState<string | null>(null);
+
     const getSectionVisibilityValue = (
         company: CompanyProfile | null,
         section: CompanyEditorSection
     ): boolean => {
         if (!company || !section) return true;
         return (company.privacy?.[section as keyof typeof company.privacy] ?? 'public') === 'public';
+    };
+
+    const existingHeaderLogoUrl =
+        (company as any)?.logoUrl ||
+        (company as any)?.coverImageUrl ||
+        null;
+
+    const headerLogoDisplayUrl = headerLogoPreviewUrl || existingHeaderLogoUrl;
+
+    const getInitials = (name: string) =>
+        name
+            .split(' ')
+            .filter(Boolean)
+            .slice(0, 2)
+            .map((part) => part[0]?.toUpperCase() ?? '')
+            .join('');
+
+    const handlePickHeaderLogo = (file: File | null) => {
+        if (!file) return;
+
+        if (headerLogoPreviewUrl) {
+            URL.revokeObjectURL(headerLogoPreviewUrl);
+        }
+
+        const nextPreviewUrl = URL.createObjectURL(file);
+        setHeaderLogoFile(file);
+        setHeaderLogoPreviewUrl(nextPreviewUrl);
+    };
+
+    const handleClearHeaderLogo = () => {
+        if (headerLogoPreviewUrl) {
+            URL.revokeObjectURL(headerLogoPreviewUrl);
+        }
+        setHeaderLogoFile(null);
+        setHeaderLogoPreviewUrl(null);
     };
 
     useEffect(() => {
@@ -292,6 +335,12 @@ export function CompanySidebarEditor({
         setDocumentFile(null);
         setUploadError('');
         setIsUploading(false);
+
+        if (headerLogoPreviewUrl) {
+            URL.revokeObjectURL(headerLogoPreviewUrl);
+        }
+        setHeaderLogoFile(null);
+        setHeaderLogoPreviewUrl(null);
 
         if (section === 'header') {
             setDisplayName(company?.displayName || '');
@@ -387,6 +436,14 @@ export function CompanySidebarEditor({
         }
     }, [open, section, editingItem, company, existingUsers]);
 
+    useEffect(() => {
+        return () => {
+            if (headerLogoPreviewUrl) {
+                URL.revokeObjectURL(headerLogoPreviewUrl);
+            }
+        };
+    }, [headerLogoPreviewUrl]);
+
     const availablePermissionUsers = useMemo(() => {
         return existingUsers.filter(
             (u) =>
@@ -439,6 +496,7 @@ export function CompanySidebarEditor({
                     description: shortDesc.trim(),
                     country: country.trim(),
                     countryCode: countryCode?.trim() || undefined,
+                    logoFile: headerLogoFile,
                     visibility: visibilityValue,
                 },
             });
@@ -747,82 +805,140 @@ export function CompanySidebarEditor({
                                 Company Details
                             </Typography>
                             <Typography variant="body2" color="text.secondary">
-                                Basic information shown in the page header.
+                                Basic information about your organization.
                             </Typography>
                         </Box>
 
                         {renderVisibilityToggle()}
 
-                        <Box display="flex" justifyContent="center" mb={2}>
-                            <Box
-                                sx={{
-                                    width: 100,
-                                    height: 100,
-                                    borderRadius: 2,
-                                    border: '2px dashed',
-                                    borderColor: 'grey.300',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    cursor: 'pointer',
-                                    bgcolor: 'grey.50',
-                                }}
-                            >
-                                <ImageRounded sx={{ fontSize: 32, color: 'grey.400', mb: 0.5 }} />
-                                <Typography variant="caption" color="text.secondary">
-                                    Upload Logo
-                                </Typography>
-                            </Box>
+                        <Box display="flex" justifyContent="center">
+                            {!headerLogoFile ? (
+                                <Paper
+                                    variant="outlined"
+                                    component="label"
+                                    sx={{
+                                        width: 112,
+                                        height: 112,
+                                        borderRadius: 3,
+                                        borderStyle: 'dashed',
+                                        borderColor: 'grey.300',
+                                        bgcolor: 'grey.50',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        cursor: 'pointer',
+                                        overflow: 'hidden',
+                                        '&:hover': {
+                                            borderColor: 'grey.400',
+                                            bgcolor: 'grey.100',
+                                        },
+                                    }}
+                                >
+                                    <input
+                                        type="file"
+                                        hidden
+                                        accept="image/*"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0] ?? null;
+                                            e.currentTarget.value = '';
+                                            handlePickHeaderLogo(file);
+                                        }}
+                                    />
+
+                                    {headerLogoDisplayUrl ? (
+                                        <Box
+                                            component="img"
+                                            src={headerLogoDisplayUrl}
+                                            alt={displayName || 'Company logo preview'}
+                                            sx={{
+                                                width: '100%',
+                                                height: '100%',
+                                                objectFit: 'cover',
+                                            }}
+                                        />
+                                    ) : displayName.trim() ? (
+                                        <>
+                                            <Avatar
+                                                sx={{
+                                                    width: 64,
+                                                    height: 64,
+                                                    bgcolor: 'grey.300',
+                                                    color: 'text.primary',
+                                                    fontSize: '1.25rem',
+                                                    fontWeight: 600,
+                                                    mb: 0.5,
+                                                }}
+                                            >
+                                                {getInitials(displayName)}
+                                            </Avatar>
+                                            <Typography variant="caption" color="text.secondary">
+                                                Upload Logo
+                                            </Typography>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <ImageRounded sx={{ fontSize: 32, color: 'grey.400', mb: 0.5 }} />
+                                            <Typography variant="caption" color="text.secondary">
+                                                Upload Logo
+                                            </Typography>
+                                        </>
+                                    )}
+                                </Paper>
+                            ) : (
+                                <Stack spacing={1.5} alignItems="center" width="100%">
+                                    <Paper variant="outlined" sx={{ p: 1.5, width: '100%', maxWidth: 280 }}>
+                                        <Box
+                                            component="img"
+                                            src={headerLogoPreviewUrl!}
+                                            alt="Pending company logo preview"
+                                            sx={{
+                                                width: '100%',
+                                                maxHeight: 220,
+                                                objectFit: 'contain',
+                                                borderRadius: 1.5,
+                                                display: 'block',
+                                            }}
+                                        />
+                                    </Paper>
+
+                                    <Typography variant="caption" color="text.secondary">
+                                        {headerLogoFile.name}
+                                    </Typography>
+
+                                    <Stack direction="row" spacing={1}>
+                                        <Button variant="outlined" component="label">
+                                            Replace file
+                                            <input
+                                                type="file"
+                                                hidden
+                                                accept="image/*"
+                                                onChange={(e) => {
+                                                    const file = e.target.files?.[0] ?? null;
+                                                    e.currentTarget.value = '';
+                                                    handlePickHeaderLogo(file);
+                                                }}
+                                            />
+                                        </Button>
+
+                                        <Button
+                                            color="inherit"
+                                            variant="text"
+                                            onClick={handleClearHeaderLogo}
+                                        >
+                                            Cancel
+                                        </Button>
+                                    </Stack>
+                                </Stack>
+                            )}
                         </Box>
 
                         <TextField
-                            label="Name"
+                            label="Company Name"
                             fullWidth
                             value={displayName}
                             onChange={(e) => setDisplayName(e.target.value)}
                         />
-
-                        <Box>
-                            <Typography variant="body2" fontWeight={500} mb={1}>
-                                Company Role(s)
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary" display="block" mb={1.5}>
-                                Select all that apply.
-                            </Typography>
-
-                            <Box display="flex" gap={1.5} flexDirection="column">
-                                {companyRoles.map((role) => (
-                                    <Paper
-                                        key={role}
-                                        variant="outlined"
-                                        onClick={() =>
-                                            setRoles((prev) =>
-                                                prev.includes(role)
-                                                    ? prev.filter((item) => item !== role)
-                                                    : [...prev, role]
-                                            )
-                                        }
-                                        sx={{
-                                            p: 2,
-                                            cursor: 'pointer',
-                                            borderColor: roles.includes(role) ? 'primary.main' : 'grey.200',
-                                            borderWidth: roles.includes(role) ? 2 : 1,
-                                            bgcolor: roles.includes(role) ? 'primary.50' : 'transparent',
-                                        }}
-                                    >
-                                        <Typography variant="subtitle2" fontWeight="bold">
-                                            {role}
-                                        </Typography>
-                                        <Typography variant="caption" color="text.secondary">
-                                            {role === 'Project Developer'
-                                                ? 'Develops and manages carbon projects'
-                                                : 'Provides services to carbon projects'}
-                                        </Typography>
-                                    </Paper>
-                                ))}
-                            </Box>
-                        </Box>
 
                         <Autocomplete
                             options={countries as Array<{ name: string; code?: string }>}
@@ -835,8 +951,18 @@ export function CompanySidebarEditor({
                                 setCountryCode(value?.code ?? '');
                             }}
                             renderInput={(params) => (
-                                <TextField {...params} label="Country / Location" fullWidth />
+                                <TextField {...params} label="Country" fullWidth />
                             )}
+                        />
+
+                        <TextField
+                            label="Short Description"
+                            fullWidth
+                            multiline
+                            minRows={2}
+                            value={shortDesc}
+                            onChange={(e) => setShortDesc(e.target.value)}
+                            placeholder="Brief summary..."
                         />
 
                         <TextField
@@ -853,15 +979,63 @@ export function CompanySidebarEditor({
                             }}
                         />
 
-                        <TextField
-                            label="Short Description"
-                            fullWidth
-                            multiline
-                            minRows={2}
-                            value={shortDesc}
-                            onChange={(e) => setShortDesc(e.target.value)}
-                            placeholder="Brief summary..."
-                        />
+                        <Box>
+                            <Typography variant="body2" fontWeight={500} mb={1}>
+                                Company Role(s)
+                            </Typography>
+                            <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                display="block"
+                                mb={1.5}
+                            >
+                                Select all that apply.
+                            </Typography>
+
+                            <Box display="flex" gap={1.5} flexDirection="column">
+                                {companyRoles.map((role) => (
+                                    <Card
+                                        key={role}
+                                        variant="outlined"
+                                        sx={{
+                                            borderColor: roles.includes(role) ? 'primary.main' : 'grey.200',
+                                            borderWidth: roles.includes(role) ? 2 : 1,
+                                            bgcolor: roles.includes(role) ? 'primary.50' : 'transparent',
+                                        }}
+                                    >
+                                        <CardActionArea
+                                            onClick={() => {
+                                                setRoles((prev) =>
+                                                    prev.includes(role)
+                                                        ? prev.filter((r) => r !== role)
+                                                        : [...prev, role]
+                                                );
+                                            }}
+                                            sx={{ p: 2 }}
+                                        >
+                                            <Box display="flex" alignItems="flex-start" gap={1.5}>
+                                                {roles.includes(role) ? (
+                                                    <CheckCircleRounded color="primary" />
+                                                ) : (
+                                                    <RadioButtonUncheckedRounded sx={{ color: 'grey.400' }} />
+                                                )}
+
+                                                <Box>
+                                                    <Typography variant="subtitle2" fontWeight="bold">
+                                                        {role}
+                                                    </Typography>
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        {role === 'Project Developer'
+                                                            ? 'Develops and manages carbon projects'
+                                                            : 'Provides services to carbon projects'}
+                                                    </Typography>
+                                                </Box>
+                                            </Box>
+                                        </CardActionArea>
+                                    </Card>
+                                ))}
+                            </Box>
+                        </Box>
                     </Stack>
                 );
 
@@ -897,12 +1071,16 @@ export function CompanySidebarEditor({
                                 {editingItem ? 'Edit Media' : 'Add Media'}
                             </Typography>
                             <Typography variant="body2" color="text.secondary">
-                                Upload photos and videos.
+                                {editingItem
+                                    ? 'Update the media details. To replace the file, remove this item and upload a new one.'
+                                    : 'Upload photos and videos.'}
                             </Typography>
                         </Box>
+
                         {renderVisibilityToggle()}
                         {renderUploadError()}
-                        {!editingItem && (
+
+                        {!editingItem ? (
                             <Paper
                                 variant="outlined"
                                 sx={{ p: 3, borderStyle: 'dashed', textAlign: 'center', cursor: 'pointer' }}
@@ -911,7 +1089,7 @@ export function CompanySidebarEditor({
                                 <input
                                     type="file"
                                     hidden
-                                    accept="image/*"
+                                    accept="image/*,video/*"
                                     onChange={(e) => setMediaFile(e.target.files?.[0] ?? null)}
                                 />
                                 {mediaFile && (
@@ -921,13 +1099,31 @@ export function CompanySidebarEditor({
                                 )}
                                 <ImageRounded sx={{ fontSize: 32, color: 'grey.400', mb: 1 }} />
                                 <Typography variant="body2" color="text.secondary">
-                                    {editingItem ? 'Click to replace file' : 'Click to upload or drag and drop'}
+                                    Click to upload or drag and drop
                                 </Typography>
                                 <Typography variant="caption" color="text.disabled">
                                     PNG, JPG, JPEG, WEBP, MP4
                                 </Typography>
                             </Paper>
+                        ) : (
+                            <Paper
+                                variant="outlined"
+                                sx={{
+                                    p: 2,
+                                    borderRadius: 2,
+                                    bgcolor: 'grey.50',
+                                    borderColor: 'grey.200',
+                                }}
+                            >
+                                <Typography variant="body2" fontWeight={500}>
+                                    Existing media
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    File replacement is not supported from this editor yet.
+                                </Typography>
+                            </Paper>
                         )}
+
                         <TextField
                             label="Caption"
                             fullWidth

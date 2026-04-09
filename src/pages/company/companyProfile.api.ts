@@ -76,6 +76,7 @@ export function normalizeCompanyDetail(raw: any): CompanyProfile {
         description: raw.description ?? raw.function_description ?? '',
         fullDescription: raw.fullDescription ?? raw.full_description ?? '',
         website: raw.website ?? raw.website_url ?? '',
+        logoUrl: raw.logoUrl ?? raw.logo_url ?? null,
         isMyCompany: Boolean(raw.isMyCompany ?? raw.is_my_company ?? false),
         accessRole: raw.accessRole ?? raw.access_role ?? null,
         inheritCompanyPermissionsToProjects: Boolean(

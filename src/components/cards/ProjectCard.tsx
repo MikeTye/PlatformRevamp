@@ -34,7 +34,18 @@ export interface ProjectCardProps {
     freshness?: FreshnessStatus;
     verifiedFields?: number;
     totalFields?: number;
+
+    /**
+     * Full/original cover image URL.
+     */
     photoUrl?: string | null;
+
+    /**
+     * System-generated thumbnail/logo variant URL.
+     * Preferred for cards and list/grid views.
+     */
+    thumbUrl?: string | null;
+
     isSaved?: boolean;
     isMine?: boolean;
     onClick?: () => void;
@@ -43,10 +54,7 @@ export interface ProjectCardProps {
     variant?: 'default' | 'compact';
 }
 
-const typeIconMap: Record<
-    string,
-    React.ElementType
-> = {
+const typeIconMap: Record<string, React.ElementType> = {
     ARR: ParkRounded,
     'REDD+': ForestRounded,
     IFM: ForestRounded,
@@ -91,6 +99,44 @@ function MediaStub({ type, name }: { type: string; name: string }) {
     );
 }
 
+function ProjectCardImage({
+    imageUrl,
+    name,
+    type,
+    minHeight = 120,
+}: {
+    imageUrl?: string | null;
+    name: string;
+    type: string;
+    minHeight?: number;
+}) {
+    const [failed, setFailed] = React.useState(false);
+    const showImage = Boolean(imageUrl) && !failed;
+
+    if (!showImage) {
+        return <MediaStub type={type} name={name} />;
+    }
+
+    return (
+        <Box
+            component="img"
+            src={imageUrl!}
+            alt={name}
+            loading="lazy"
+            decoding="async"
+            onError={() => setFailed(true)}
+            sx={{
+                width: '100%',
+                height: '100%',
+                minHeight,
+                objectFit: 'cover',
+                display: 'block',
+                bgcolor: 'grey.100',
+            }}
+        />
+    );
+}
+
 export function ProjectCard({
     upid,
     name,
@@ -106,6 +152,7 @@ export function ProjectCard({
     verifiedFields,
     totalFields,
     photoUrl,
+    thumbUrl,
     isSaved = false,
     isMine = false,
     onClick,
@@ -113,7 +160,7 @@ export function ProjectCard({
     onDeveloperClick,
     variant = 'default',
 }: ProjectCardProps) {
-    const showImage = Boolean(photoUrl);
+    const imageUrl = thumbUrl || photoUrl || null;
 
     if (variant === 'compact') {
         return (
@@ -144,25 +191,12 @@ export function ProjectCard({
                         justifyContent: 'center',
                     }}
                 >
-                    {showImage ? (
-                        <Box
-                            component="img"
-                            src={photoUrl!}
-                            alt={name}
-                            onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
-                                e.currentTarget.style.display = 'none';
-                            }}
-                            sx={{
-                                width: '100%',
-                                height: '100%',
-                                minHeight: 120,
-                                objectFit: 'cover',
-                                display: 'block',
-                            }}
-                        />
-                    ) : (
-                        <MediaStub type={type} name={name} />
-                    )}
+                    <ProjectCardImage
+                        imageUrl={imageUrl}
+                        name={name}
+                        type={type}
+                        minHeight={120}
+                    />
                 </Box>
 
                 <CardContent
@@ -368,6 +402,28 @@ export function ProjectCard({
                 overflow: 'hidden',
             }}
         >
+            <Box
+                sx={{
+                    width: '100%',
+                    height: 160,
+                    flexShrink: 0,
+                    bgcolor: 'grey.100',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderBottom: 1,
+                    borderColor: 'grey.100',
+                }}
+            >
+                <ProjectCardImage
+                    imageUrl={imageUrl}
+                    name={name}
+                    type={type}
+                    minHeight={160}
+                />
+            </Box>
+
             <CardContent
                 sx={{
                     p: 2,

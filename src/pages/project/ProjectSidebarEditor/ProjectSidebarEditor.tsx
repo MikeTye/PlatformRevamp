@@ -21,24 +21,21 @@ import {
     ToggleButton,
     Chip,
 } from '@mui/material';
-import { SidebarPanel } from '../../components/layout/SidebarPanel';
-import ProjectLocationMap from '../../components/ProjectLocationMap';
+import { SidebarPanel } from '../../../components/layout/SidebarPanel';
+import ProjectLocationMap from '../../../components/ProjectLocationMap';
+import SidebarMediaSection from './SidebarMediaSection';
+import SidebarDocumentsSection from './SidebarDocumentsSection';
+import SidebarOpportunitiesSection from './SidebarOpportunitiesSection';
 
-import ImageRounded from '@mui/icons-material/ImageRounded';
 import PublicRounded from '@mui/icons-material/PublicRounded';
 import LockRounded from '@mui/icons-material/LockRounded';
 import PhotoCameraRounded from '@mui/icons-material/PhotoCameraRounded';
-import LocationOnRounded from '@mui/icons-material/LocationOnRounded';
 import SearchRounded from '@mui/icons-material/SearchRounded';
 import CloseRounded from '@mui/icons-material/CloseRounded';
 import BusinessRounded from '@mui/icons-material/BusinessRounded';
-import PeopleRounded from '@mui/icons-material/PeopleRounded';
-import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded';
 import CloudUploadRounded from '@mui/icons-material/CloudUploadRounded';
-import InsertDriveFileRounded from '@mui/icons-material/InsertDriveFileRounded';
-import StarRounded from '@mui/icons-material/StarRounded';
 
-import { PROJECT_TYPE_OPTIONS } from '../../constants/projectTypes';
+import { PROJECT_TYPE_OPTIONS } from '../../../constants/projectTypes';
 
 import type {
     ProjectDocument,
@@ -51,9 +48,9 @@ import type {
     ProjectTeamMember,
     ProjectUpdate,
     SectionVisibility,
-} from './ProjectProfileView';
-import { PROJECT_STAGE_OPTIONS } from '../../constants/projectStages';
-import DescriptionRounded from '@mui/icons-material/DescriptionRounded';
+} from '../projectProfile.types';
+import { PROJECT_STAGE_OPTIONS } from '../../../constants/projectStages';
+import { stageDescriptions } from '../projectProfile.constants';
 
 type EditableProjectPatch = Omit<
     Partial<ProjectProfileData>,
@@ -215,26 +212,6 @@ function toUiVisibility(value: string | null | undefined): SectionVisibility {
 
 function toApiVisibility(value: SectionVisibility | null | undefined): 'public' | 'private' {
     return value === 'private' ? 'private' : 'public';
-}
-
-function emptyOpportunity(): ProjectOpportunity {
-    return {
-        id: `temp-${crypto.randomUUID()}`,
-        type: '',
-        description: '',
-        urgent: false,
-    };
-}
-
-function emptyUpdate(authorName = ''): ProjectUpdate {
-    return {
-        id: crypto.randomUUID(),
-        title: '',
-        description: '',
-        dateLabel: '',
-        authorName,
-        type: 'progress',
-    };
 }
 
 function ProjectVisibilityField({
@@ -687,26 +664,12 @@ export default function ProjectSidebarEditor({
         setPendingMediaPreviewUrl(null);
     }, [pendingMediaPreviewUrl]);
 
-    const beginAddMedia = () => {
-        setEditingMediaId(null);
-        setMediaCaption('');
-        clearPendingMedia();
-    };
-
     const clearPendingDocument = React.useCallback(() => {
         setPendingDocumentFile(null);
         setEditingDocumentId(null);
         setDocumentName('');
         setDocumentType('');
         setDocumentStatus('Draft');
-    }, []);
-
-    const beginAddDocument = React.useCallback(() => {
-        setEditingDocumentId(null);
-        setDocumentName('');
-        setDocumentType('');
-        setDocumentStatus('Draft');
-        setPendingDocumentFile(null);
     }, []);
 
     useEffect(() => {
@@ -822,6 +785,7 @@ export default function ProjectSidebarEditor({
 
             case 'readiness':
                 setForm({
+                    stage: project.stage,
                     sectionVisibility: {
                         ...project.sectionVisibility,
                         readiness: project.sectionVisibility?.readiness ?? 'public',
@@ -831,9 +795,10 @@ export default function ProjectSidebarEditor({
 
             case 'registry':
                 setForm({
-                    registryName: project.registryName ?? '',
+                    registrationPlatform: project.registrationPlatform ?? '',
+                    registryId: project.registryId ?? '',
+                    registryProjectUrl: project.registryProjectUrl ?? '',
                     registryStatus: project.registryStatus ?? '',
-                    registryProjectId: project.registryProjectId ?? '',
                     methodology: project.methodology ?? '',
                     sectionVisibility: {
                         ...project.sectionVisibility,
@@ -844,8 +809,11 @@ export default function ProjectSidebarEditor({
 
             case 'impact':
                 setForm({
-                    totalAreaHa: project.totalAreaHa ?? null,
-                    estimatedAnnualRemoval: project.estimatedAnnualRemoval ?? '',
+                    totalCreditsIssued: project.totalCreditsIssued ?? null,
+                    annualEstimatedCredits: project.annualEstimatedCredits ?? null,
+                    annualEstimateUnit: project.annualEstimateUnit ?? null,
+                    creditingStart: project.creditingStart ?? null,
+                    creditingEnd: project.creditingEnd ?? null,
                     sectionVisibility: {
                         ...project.sectionVisibility,
                         impact: project.sectionVisibility?.impact ?? 'public',
@@ -893,7 +861,8 @@ export default function ProjectSidebarEditor({
                 setUpdateDescription(selectedItem?.description ?? '');
                 setUpdateDateLabel(selectedItem?.dateLabel ?? '');
                 setUpdateAuthorName(selectedItem?.authorName ?? currentUserName);
-                setUpdateType(selectedItem?.type === 'stage' ? 'stage' : 'progress');
+                // setUpdateType(selectedItem?.type === 'stage' ? 'stage' : 'progress');
+                setUpdateType('progress');
                 break;
             }
 
@@ -1054,9 +1023,10 @@ export default function ProjectSidebarEditor({
             storyProblem: json.storyProblem ?? null,
             storyApproach: json.storyApproach ?? null,
             methodology: json.methodology ?? null,
-            registryName: json.registryName ?? null,
+            registrationPlatform: json.registrationPlatform ?? null,
             registryStatus: json.registryStatus ?? null,
-            registryProjectId: json.registryProjectId ?? null,
+            registryId: json.registryId ?? null,
+            registryProjectUrl: json.registryProjectUrl ?? null,
             totalAreaHa: json.totalAreaHa ?? null,
             estimatedAnnualRemoval: json.estimatedAnnualRemoval ?? null,
             readiness: json.readiness ?? [],
@@ -1067,6 +1037,14 @@ export default function ProjectSidebarEditor({
             media: json.media ?? [],
             team: json.team ?? [],
             sectionVisibility: json.sectionVisibility ?? {},
+
+            creditingStart: json.creditingStart ?? null,
+            creditingEnd: json.creditingEnd ?? null,
+
+            totalCreditsIssued: json.totalCreditsIssued ?? null,
+            annualEstimatedCredits: json.annualEstimatedCredits ?? null,
+            annualEstimateUnit: json.annualEstimateUnit ?? null,
+            firstVintageYear: json.firstVintageYear ?? null,
         };
 
         commitProjectPatch(nextProject);
@@ -1278,21 +1256,6 @@ export default function ProjectSidebarEditor({
         }
     };
 
-    function isTempOpportunityId(id?: string | null) {
-        return !id || id.startsWith('temp-');
-    }
-
-    function normalizeOpportunityInput(items?: ProjectOpportunity[] | null) {
-        return (items ?? [])
-            .map((item) => ({
-                id: item.id,
-                type: item.type?.trim() ?? '',
-                description: item.description?.trim() || null,
-                urgent: Boolean(item.urgent),
-            }))
-            .filter((item) => item.type);
-    }
-
     const handleOpportunitySave = async () => {
         const input = {
             type: opportunityType.trim(),
@@ -1373,18 +1336,6 @@ export default function ProjectSidebarEditor({
         return refreshProjectFromResponse(response);
     };
 
-    const deleteOpportunityRecord = async (opportunityId: string) => {
-        const response = await fetch(`${API_BASE_URL}/projects/opportunities/${opportunityId}`, {
-            method: 'DELETE',
-            credentials: 'include',
-            headers: {
-                Accept: 'application/json',
-            },
-        });
-
-        return refreshProjectFromResponse(response);
-    };
-
     const createMediaRecord = async (input: {
         assetUrl: string;
         s3Key?: string | null;
@@ -1429,18 +1380,6 @@ export default function ProjectSidebarEditor({
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(input),
-        });
-
-        return refreshProjectFromResponse(response);
-    };
-
-    const deleteMediaRecord = async (mediaId: string) => {
-        const projectId = requireProjectId();
-
-        const response = await fetch(`${API_BASE_URL}/projects/${projectId}/media/${mediaId}`, {
-            method: 'DELETE',
-            credentials: 'include',
-            headers: { Accept: 'application/json' },
         });
 
         return refreshProjectFromResponse(response);
@@ -1500,18 +1439,6 @@ export default function ProjectSidebarEditor({
         return refreshProjectFromResponse(response);
     };
 
-    const deleteDocumentRecord = async (documentId: string) => {
-        const projectId = requireProjectId();
-
-        const response = await fetch(`${API_BASE_URL}/projects/${projectId}/documents/${documentId}`, {
-            method: 'DELETE',
-            credentials: 'include',
-            headers: { Accept: 'application/json' },
-        });
-
-        return refreshProjectFromResponse(response);
-    };
-
     const handleMediaFilePicked = async (file: File) => {
         try {
             setMediaUpload({ busy: false, error: null });
@@ -1537,18 +1464,6 @@ export default function ProjectSidebarEditor({
         }
     };
 
-    const handleMediaDelete = async (mediaId: string) => {
-        await deleteMediaRecord(mediaId);
-
-        const nextProject = await reloadProjectSnapshot();
-
-        setForm((prev) => ({
-            ...prev,
-            media: [...(nextProject.media ?? [])],
-            coverImageUrl: nextProject.coverImageUrl ?? '',
-        }));
-    };
-
     const handleDocumentFilePicked = async (file: File) => {
         try {
             setDocumentUpload({ busy: false, error: null });
@@ -1571,24 +1486,13 @@ export default function ProjectSidebarEditor({
         }
     };
 
-    const handleDocumentDelete = async (documentId: string) => {
-        await deleteDocumentRecord(documentId);
-
-        const nextProject = await reloadProjectSnapshot();
-
-        setForm((prev) => ({
-            ...prev,
-            documents: [...(nextProject.documents ?? [])],
-        }));
-    };
-
     const handleUpdateSave = async () => {
         const input = {
             title: updateTitle.trim(),
             description: updateDescription.trim() || null,
             dateLabel: updateDateLabel.trim() || null,
             authorName: updateAuthorName.trim() || null,
-            type: updateType,
+            type: 'progress' as const,
         };
 
         if (!input.title) {
@@ -1620,7 +1524,8 @@ export default function ProjectSidebarEditor({
         setUpdateDescription(saved?.description ?? input.description ?? '');
         setUpdateDateLabel(saved?.dateLabel ?? input.dateLabel ?? '');
         setUpdateAuthorName(saved?.authorName ?? input.authorName ?? '');
-        setUpdateType(saved?.type === 'stage' ? 'stage' : 'progress');
+        // setUpdateType(saved?.type === 'stage' ? 'stage' : 'progress');
+        setUpdateType('progress');
     };
 
     const createUpdateRecord = async (input: {
@@ -2597,7 +2502,7 @@ export default function ProjectSidebarEditor({
                 />
 
                 <TextField
-                    label="Project area (ha)"
+                    label="Project Area"
                     size="small"
                     fullWidth
                     type="number"
@@ -2605,9 +2510,11 @@ export default function ProjectSidebarEditor({
                     onChange={(e) =>
                         setField('totalAreaHa', e.target.value === '' ? null : Number(e.target.value))
                     }
+                    placeholder="e.g., 15000"
                     InputProps={{
                         endAdornment: <InputAdornment position="end">ha</InputAdornment>,
                     }}
+                    helperText="Optional — total project area in hectares"
                 />
 
                 <Box>
@@ -2665,24 +2572,103 @@ export default function ProjectSidebarEditor({
         );
     };
 
-    const renderReadiness = () => (
-        <Stack spacing={3}>
-            <Alert severity="info">
-                Project readiness is derived from the rest of the project data and is not directly editable here.
-                Update the project stage and the related sections instead.
-            </Alert>
-        </Stack>
-    );
+    const renderReadiness = () => {
+        const currentStage = (form.stage as ProjectStage) ?? project.stage;
+        const selectedStageOption = PROJECT_STAGE_OPTIONS.find(
+            (option) => option.value === currentStage
+        );
+
+        return (
+            <Stack spacing={3}>
+                <Box>
+                    <Typography variant="subtitle1" fontWeight={700} gutterBottom>
+                        Project Stage
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                        Update the current stage of the project.
+                    </Typography>
+                </Box>
+
+                <FormControl fullWidth size="small">
+                    <InputLabel>Current Stage</InputLabel>
+                    <Select
+                        value={currentStage ?? ''}
+                        label="Current Stage"
+                        onChange={(e) => setField('stage', e.target.value as ProjectStage)}
+                    >
+                        {PROJECT_STAGE_OPTIONS.map((option) => (
+                            <MenuItem key={option.value} value={option.value}>
+                                {option.label}
+                            </MenuItem>
+                        ))}
+                    </Select>
+                </FormControl>
+
+                <Typography variant="caption" color="text.secondary">
+                    {currentStage ? stageDescriptions[currentStage] : selectedStageOption?.description ?? ''}
+                </Typography>
+            </Stack>
+        );
+    };
+
+    const REGISTRY_PLATFORM_OPTIONS = [
+        { value: 'verra-vcs', label: 'Verra (VCS)' },
+        { value: 'verra-ccb', label: 'Verra (CCB)' },
+        { value: 'gold-standard', label: 'Gold Standard' },
+        { value: 'acr', label: 'American Carbon Registry (ACR)' },
+        { value: 'car', label: 'Climate Action Reserve (CAR)' },
+        { value: 'plan-vivo', label: 'Plan Vivo' },
+        { value: 'puro-earth', label: 'Puro.earth' },
+        { value: 'isometric', label: 'Isometric' },
+        { value: 'cercarbono', label: 'Cercarbono' },
+        { value: 'biocarbon', label: 'BioCarbon Registry' },
+        { value: 'other', label: 'Other' },
+    ] as const;
 
     const renderRegistry = () => (
         <Stack spacing={3}>
+            <Box>
+                <Typography variant="subtitle1" fontWeight={700} gutterBottom>
+                    Registry Information
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                    Select the carbon registry and link to your project listing.
+                </Typography>
+            </Box>
+
+            <FormControl fullWidth size="small">
+                <InputLabel>Registry Platform</InputLabel>
+                <Select
+                    value={(form.registrationPlatform as string) ?? ''}
+                    label="Registry Platform"
+                    onChange={(e) => setField('registrationPlatform', e.target.value)}
+                >
+                    {REGISTRY_PLATFORM_OPTIONS.map((option) => (
+                        <MenuItem key={option.value} value={option.value}>
+                            {option.label}
+                        </MenuItem>
+                    ))}
+                </Select>
+            </FormControl>
+
             <TextField
-                label="Registry name"
+                label="Registry ID"
                 size="small"
                 fullWidth
-                value={(form.registryName as string) ?? ''}
-                onChange={(e) => setField('registryName', e.target.value)}
+                value={(form.registryId as string) ?? ''}
+                onChange={(e) => setField('registryId', e.target.value)}
+                placeholder="e.g., VCS-2847"
             />
+
+            <TextField
+                label="Registry Listing URL"
+                size="small"
+                fullWidth
+                value={(form.registryProjectUrl as string) ?? ''}
+                onChange={(e) => setField('registryProjectUrl', e.target.value)}
+                placeholder="https://registry.verra.org/..."
+            />
+
             <TextField
                 label="Registry status"
                 size="small"
@@ -2690,13 +2676,7 @@ export default function ProjectSidebarEditor({
                 value={(form.registryStatus as string) ?? ''}
                 onChange={(e) => setField('registryStatus', e.target.value)}
             />
-            <TextField
-                label="Registry project ID"
-                size="small"
-                fullWidth
-                value={(form.registryProjectId as string) ?? ''}
-                onChange={(e) => setField('registryProjectId', e.target.value)}
-            />
+
             <TextField
                 label="Methodology"
                 size="small"
@@ -2709,24 +2689,82 @@ export default function ProjectSidebarEditor({
 
     const renderImpact = () => (
         <Stack spacing={3}>
+            <Box>
+                <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                    Impact & Credits
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                    Update credit issuance and impact data.
+                </Typography>
+            </Box>
+
             <TextField
-                label="Project area (ha)"
-                size="small"
+                label="Total Credits Issued"
                 fullWidth
-                type="number"
-                value={form.totalAreaHa ?? ''}
+                value={form.totalCreditsIssued ?? ''}
                 onChange={(e) =>
-                    setField('totalAreaHa', e.target.value === '' ? null : Number(e.target.value))
+                    setForm((prev) => ({
+                        ...prev,
+                        totalCreditsIssued: e.target.value ? Number(e.target.value) : null,
+                    }))
                 }
+                placeholder="e.g., 58000"
+                type="number"
             />
+
             <TextField
-                label="Estimated annual removal"
-                size="small"
+                label="Annual Estimate"
                 fullWidth
-                value={(form.estimatedAnnualRemoval as string) ?? ''}
-                onChange={(e) => setField('estimatedAnnualRemoval', e.target.value)}
+                value={
+                    form.annualEstimatedCredits
+                        ? `${form.annualEstimatedCredits}${form.annualEstimateUnit ? ` ${form.annualEstimateUnit}` : ''}`
+                        : ''
+                }
+                onChange={(e) => {
+                    const raw = e.target.value;
+
+                    // simple parse: "62000 tCO2e/yr"
+                    const [num, ...unitParts] = raw.split(' ');
+                    setForm((prev) => ({
+                        ...prev,
+                        annualEstimatedCredits: num ? Number(num) : null,
+                        annualEstimateUnit: unitParts.join(' ') || null,
+                    }));
+                }}
+                placeholder="e.g., 62000 tCO2e/yr"
             />
+
+            <Stack direction="row" spacing={2}>
+                <TextField
+                    label="Crediting Start"
+                    type="date"
+                    fullWidth
+                    InputLabelProps={{ shrink: true }}
+                    value={form.creditingStart ?? ''}
+                    onChange={(e) =>
+                        setForm((prev) => ({
+                            ...prev,
+                            creditingStart: e.target.value || null,
+                        }))
+                    }
+                />
+
+                <TextField
+                    label="Crediting End"
+                    type="date"
+                    fullWidth
+                    InputLabelProps={{ shrink: true }}
+                    value={form.creditingEnd ?? ''}
+                    onChange={(e) =>
+                        setForm((prev) => ({
+                            ...prev,
+                            creditingEnd: e.target.value || null,
+                        }))
+                    }
+                />
+            </Stack>
         </Stack>
+
     );
 
     const OPPORTUNITY_TYPE_OPTIONS = [
@@ -2738,62 +2776,19 @@ export default function ProjectSidebarEditor({
         'Local Partners',
     ] as const;
 
-    const renderOpportunities = () => {
-        const items = project?.opportunities ?? [];
-        const editingItem =
-            editingOpportunityId != null
-                ? items.find((item) => item.id === editingOpportunityId) ?? null
-                : null;
-
-        return (
-            <Stack spacing={3}>
-                <Box>
-                    <Typography variant="subtitle1" fontWeight={700} gutterBottom>
-                        {editingItem ? 'Edit Opportunity' : 'Add Opportunity'}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                        What does this project need?
-                    </Typography>
-                </Box>
-
-                <FormControl fullWidth size="small">
-                    <InputLabel>Type</InputLabel>
-                    <Select
-                        value={opportunityType}
-                        label="Type"
-                        onChange={(e) => setOpportunityType(e.target.value)}
-                    >
-                        {OPPORTUNITY_TYPE_OPTIONS.map((type) => (
-                            <MenuItem key={type} value={type}>
-                                {type}
-                            </MenuItem>
-                        ))}
-                    </Select>
-                </FormControl>
-
-                <TextField
-                    label="Description"
-                    fullWidth
-                    size="small"
-                    multiline
-                    minRows={3}
-                    value={opportunityDescription}
-                    onChange={(e) => setOpportunityDescription(e.target.value)}
-                    placeholder="Describe what you're looking for..."
-                />
-
-                <FormControlLabel
-                    control={
-                        <Switch
-                            checked={opportunityUrgent}
-                            onChange={(e) => setOpportunityUrgent(e.target.checked)}
-                        />
-                    }
-                    label={<Typography variant="body2">Mark as priority</Typography>}
-                />
-            </Stack>
-        );
-    };
+    const renderOpportunities = () => (
+        <SidebarOpportunitiesSection
+            items={project?.opportunities ?? []}
+            editingOpportunityId={editingOpportunityId}
+            opportunityType={opportunityType}
+            opportunityDescription={opportunityDescription}
+            opportunityUrgent={opportunityUrgent}
+            opportunityTypeOptions={OPPORTUNITY_TYPE_OPTIONS}
+            onOpportunityTypeChange={setOpportunityType}
+            onOpportunityDescriptionChange={setOpportunityDescription}
+            onOpportunityUrgentChange={setOpportunityUrgent}
+        />
+    );
 
     const renderUpdates = () => {
         const items = project?.updates ?? [];
@@ -2813,7 +2808,7 @@ export default function ProjectSidebarEditor({
                     </Typography>
                 </Box>
 
-                <Box>
+                {/* <Box>
                     <Typography
                         variant="caption"
                         fontWeight={600}
@@ -2905,7 +2900,7 @@ export default function ProjectSidebarEditor({
                             </Typography>
                         </Paper>
                     </Box>
-                </Box>
+                </Box> */}
 
                 {updateType === 'stage' && (
                     <FormControl fullWidth size="small">
@@ -2930,11 +2925,7 @@ export default function ProjectSidebarEditor({
                     size="small"
                     value={updateTitle}
                     onChange={(e) => setUpdateTitle(e.target.value)}
-                    placeholder={
-                        updateType === 'stage'
-                            ? 'e.g. Project advanced to Validation'
-                            : 'e.g. Baseline survey completed'
-                    }
+                    placeholder="e.g. Baseline survey completed"
                 />
 
                 <TextField
@@ -2955,339 +2946,46 @@ export default function ProjectSidebarEditor({
                     minRows={4}
                     value={updateDescription}
                     onChange={(e) => setUpdateDescription(e.target.value)}
-                    placeholder={
-                        updateType === 'stage'
-                            ? 'Describe what triggered this stage change...'
-                            : "Share what's new..."
-                    }
+                    placeholder="Share what's new..."
                 />
             </Stack>
         );
     };
 
-    const renderDocuments = () => {
-        const items = (form.documents ?? []) as ProjectDocument[];
-        const editingItem =
-            editingDocumentId != null
-                ? items.find((item) => item.id === editingDocumentId) ?? null
-                : null;
+    const renderDocuments = () => (
+        <SidebarDocumentsSection
+            items={(form.documents ?? []) as ProjectDocument[]}
+            editingDocumentId={editingDocumentId}
+            documentName={documentName}
+            documentType={documentType}
+            documentStatus={documentStatus}
+            documentUpload={documentUpload}
+            pendingDocumentFile={pendingDocumentFile}
+            documentTypeOptions={DOCUMENT_TYPE_OPTIONS}
+            onDocumentNameChange={setDocumentName}
+            onDocumentTypeChange={setDocumentType}
+            onDocumentStatusChange={setDocumentStatus}
+            onPickFile={handleDocumentFilePicked}
+        />
+    );
 
-        return (
-            <Stack spacing={3}>
-                <Box>
-                    <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                        {editingItem ? 'Edit Document' : 'Add Document'}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                        Upload project documents.
-                    </Typography>
-                </Box>
-
-                {documentUpload.error ? (
-                    <Alert severity="error">{documentUpload.error}</Alert>
-                ) : null}
-
-                {!editingItem && (
-                    <Paper
-                        variant="outlined"
-                        sx={{
-                            p: 3,
-                            borderStyle: 'dashed',
-                            textAlign: 'center',
-                            cursor: documentUpload.busy ? 'default' : 'pointer',
-                            opacity: documentUpload.busy ? 0.7 : 1,
-                        }}
-                        component="label"
-                    >
-                        <input
-                            type="file"
-                            hidden
-                            onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) void handleDocumentFilePicked(file);
-                                e.currentTarget.value = '';
-                            }}
-                        />
-
-                        <DescriptionRounded
-                            sx={{
-                                fontSize: 32,
-                                color: 'grey.400',
-                                mb: 1,
-                            }}
-                        />
-
-                        <Typography variant="body2" color="text.secondary">
-                            {pendingDocumentFile
-                                ? pendingDocumentFile.name
-                                : 'Click to upload or drag and drop'}
-                        </Typography>
-
-                        <Typography variant="caption" color="text.disabled">
-                            PDF, DOCX, XLSX up to 25MB
-                        </Typography>
-                    </Paper>
-                )}
-
-                <TextField
-                    label="Document Name"
-                    fullWidth
-                    value={documentName}
-                    onChange={(e) => setDocumentName(e.target.value)}
-                />
-
-                <FormControl fullWidth>
-                    <InputLabel>Document Type</InputLabel>
-                    <Select
-                        value={documentType}
-                        label="Document Type"
-                        onChange={(e) => setDocumentType(e.target.value)}
-                    >
-                        {DOCUMENT_TYPE_OPTIONS.map((type) => (
-                            <MenuItem key={type} value={type}>
-                                {type}
-                            </MenuItem>
-                        ))}
-                    </Select>
-                </FormControl>
-
-                <FormControl fullWidth>
-                    <InputLabel>Status</InputLabel>
-                    <Select
-                        value={documentStatus}
-                        label="Status"
-                        onChange={(e) => setDocumentStatus(e.target.value as ProjectDocumentStatus)}
-                    >
-                        <MenuItem value="Draft">Draft</MenuItem>
-                        <MenuItem value="Final">Final</MenuItem>
-                    </Select>
-                </FormControl>
-
-                {editingItem?.assetUrl ? (
-                    <Stack direction="row" spacing={1}>
-                        <Button
-                            variant="text"
-                            href={editingItem.assetUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            sx={{ px: 0 }}
-                        >
-                            Open document
-                        </Button>
-                    </Stack>
-                ) : null}
-            </Stack>
-        );
-    };
-
-    const renderMedia = () => {
-        const items = (form.media ?? project.media ?? []) as ProjectMediaItem[];
-        const editingItem =
-            editingMediaId != null
-                ? items.find((item) => item.id === editingMediaId) ?? null
-                : null;
-
-        const isAddingPendingMedia = !editingItem && !!pendingMediaFile;
-
-        return (
-            <Stack spacing={3}>
-                {mediaUpload.error ? <Alert severity="error">{mediaUpload.error}</Alert> : null}
-
-                {editingItem ? (
-                    <>
-                        <Box>
-                            <Typography variant="subtitle2" fontWeight={600} gutterBottom>
-                                Edit media
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                                Update the caption for this media item.
-                            </Typography>
-                        </Box>
-
-                        <Paper variant="outlined" sx={{ p: 1.5 }}>
-                            {'assetUrl' in editingItem && editingItem.assetUrl ? (
-                                <Box
-                                    component="img"
-                                    src={editingItem.assetUrl}
-                                    alt={editingItem.caption || 'Project media'}
-                                    sx={{
-                                        width: '100%',
-                                        maxHeight: 280,
-                                        objectFit: 'cover',
-                                        borderRadius: 1.5,
-                                        display: 'block',
-                                    }}
-                                />
-                            ) : (
-                                <Box
-                                    sx={{
-                                        height: 220,
-                                        borderRadius: 1.5,
-                                        bgcolor: 'grey.100',
-                                        display: 'grid',
-                                        placeItems: 'center',
-                                    }}
-                                >
-                                    <ImageRounded sx={{ fontSize: 40, color: 'grey.500' }} />
-                                </Box>
-                            )}
-                        </Paper>
-
-                        <TextField
-                            label="Caption"
-                            fullWidth
-                            value={mediaCaption}
-                            onChange={(e) => setMediaCaption(e.target.value)}
-                            placeholder="Describe this media."
-                            disabled={mediaUpload.busy || saving}
-                        />
-                    </>
-                ) : (
-                    <>
-                        <Box>
-                            <Typography variant="subtitle2" fontWeight={600} gutterBottom>
-                                Add media
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                                Upload a new media item to this project.
-                            </Typography>
-                        </Box>
-
-                        {!isAddingPendingMedia ? (
-                            <Paper
-                                variant="outlined"
-                                sx={{
-                                    p: 3,
-                                    borderStyle: 'dashed',
-                                    textAlign: 'center',
-                                    cursor: mediaUpload.busy ? 'default' : 'pointer',
-                                }}
-                                component="label"
-                            >
-                                <input
-                                    type="file"
-                                    hidden
-                                    accept="image/*,video/*"
-                                    disabled={mediaUpload.busy || saving}
-                                    onChange={async (e) => {
-                                        const file = e.target.files?.[0];
-                                        e.currentTarget.value = '';
-                                        if (!file) return;
-                                        await handleMediaFilePicked(file);
-                                    }}
-                                />
-
-                                <ImageRounded
-                                    sx={{
-                                        fontSize: 32,
-                                        color: 'grey.400',
-                                        mb: 1,
-                                    }}
-                                />
-
-                                <Typography variant="body2" color="text.secondary">
-                                    Click to upload or drag and drop
-                                </Typography>
-
-                                <Typography variant="caption" color="text.disabled">
-                                    PNG, JPG up to 10MB
-                                </Typography>
-                            </Paper>
-                        ) : (
-                            <Stack spacing={2}>
-                                <Paper variant="outlined" sx={{ p: 1.5 }}>
-                                    {pendingMediaFile?.type?.startsWith('image/') && pendingMediaPreviewUrl ? (
-                                        <Box
-                                            component="img"
-                                            src={pendingMediaPreviewUrl}
-                                            alt="Pending media preview"
-                                            sx={{
-                                                width: '100%',
-                                                maxHeight: 280,
-                                                objectFit: 'cover',
-                                                borderRadius: 1.5,
-                                                display: 'block',
-                                            }}
-                                        />
-                                    ) : pendingMediaFile?.type?.startsWith('video/') && pendingMediaPreviewUrl ? (
-                                        <Box
-                                            component="video"
-                                            src={pendingMediaPreviewUrl}
-                                            controls
-                                            sx={{
-                                                width: '100%',
-                                                maxHeight: 280,
-                                                borderRadius: 1.5,
-                                                display: 'block',
-                                            }}
-                                        />
-                                    ) : (
-                                        <Box
-                                            sx={{
-                                                height: 220,
-                                                borderRadius: 1.5,
-                                                bgcolor: 'grey.100',
-                                                display: 'grid',
-                                                placeItems: 'center',
-                                            }}
-                                        >
-                                            <ImageRounded sx={{ fontSize: 40, color: 'grey.500' }} />
-                                        </Box>
-                                    )}
-                                </Paper>
-
-                                <Typography variant="caption" color="text.secondary">
-                                    {pendingMediaFile?.name}
-                                </Typography>
-
-                                <Stack direction="row" spacing={1}>
-                                    <Button
-                                        variant="outlined"
-                                        component="label"
-                                        disabled={mediaUpload.busy || saving}
-                                    >
-                                        Replace file
-                                        <input
-                                            type="file"
-                                            hidden
-                                            accept="image/*,video/*"
-                                            onChange={async (e) => {
-                                                const file = e.target.files?.[0];
-                                                e.currentTarget.value = '';
-                                                if (!file) return;
-                                                await handleMediaFilePicked(file);
-                                            }}
-                                        />
-                                    </Button>
-
-                                    <Button
-                                        color="inherit"
-                                        variant="text"
-                                        onClick={() => {
-                                            clearPendingMedia();
-                                            setMediaCaption('');
-                                        }}
-                                        disabled={mediaUpload.busy || saving}
-                                    >
-                                        Cancel
-                                    </Button>
-                                </Stack>
-                            </Stack>
-                        )}
-
-                        <TextField
-                            label="Caption"
-                            fullWidth
-                            value={mediaCaption}
-                            onChange={(e) => setMediaCaption(e.target.value)}
-                            placeholder="Describe this media."
-                            disabled={mediaUpload.busy || saving}
-                        />
-                    </>
-                )}
-            </Stack>
-        );
-    };
+    const renderMedia = () => (
+        <SidebarMediaSection
+            items={(form.media ?? project.media ?? []) as ProjectMediaItem[]}
+            editingMediaId={editingMediaId}
+            mediaCaption={mediaCaption}
+            mediaUpload={mediaUpload}
+            saving={saving}
+            pendingMediaFile={pendingMediaFile}
+            pendingMediaPreviewUrl={pendingMediaPreviewUrl}
+            onMediaCaptionChange={setMediaCaption}
+            onPickFile={handleMediaFilePicked}
+            onClearPending={() => {
+                clearPendingMedia();
+                setMediaCaption('');
+            }}
+        />
+    );
 
     const renderTeam = () => {
         const items = (form.team ?? []) as TeamEditorMember[];

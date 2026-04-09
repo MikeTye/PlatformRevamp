@@ -81,6 +81,32 @@ const INITIAL_FORM_DATA: CompanyFormData = {
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
 
 function buildInitialFormData(draft?: Record<string, unknown>): CompanyFormData {
+    const logo =
+        draft?.logo && typeof draft.logo === 'object'
+            ? {
+                tempKey:
+                    typeof (draft.logo as any).tempKey === 'string'
+                        ? (draft.logo as any).tempKey
+                        : '',
+                tempAssetUrl:
+                    typeof (draft.logo as any).tempAssetUrl === 'string'
+                        ? (draft.logo as any).tempAssetUrl
+                        : '',
+                contentType:
+                    typeof (draft.logo as any).contentType === 'string'
+                        ? (draft.logo as any).contentType
+                        : '',
+                originalName:
+                    typeof (draft.logo as any).originalName === 'string'
+                        ? (draft.logo as any).originalName
+                        : '',
+                sha256:
+                    typeof (draft.logo as any).sha256 === 'string'
+                        ? (draft.logo as any).sha256
+                        : undefined,
+            }
+            : undefined;
+
     return {
         ...INITIAL_FORM_DATA,
         name: typeof draft?.name === 'string' ? draft.name : '',
@@ -101,19 +127,10 @@ function buildInitialFormData(draft?: Record<string, unknown>): CompanyFormData 
         regions: Array.isArray(draft?.regions)
             ? draft.regions.filter((v): v is string => typeof v === 'string')
             : [],
-
+        logo,
         logoPreview:
-            typeof draft?.logoPreview === 'string' ? draft.logoPreview : undefined,
-        logo:
-            draft?.logo && typeof draft.logo === "object"
-                ? {
-                    tempKey: typeof (draft.logo as any).tempKey === "string" ? (draft.logo as any).tempKey : "",
-                    tempAssetUrl: typeof (draft.logo as any).tempAssetUrl === "string" ? (draft.logo as any).tempAssetUrl : "",
-                    contentType: typeof (draft.logo as any).contentType === "string" ? (draft.logo as any).contentType : "",
-                    originalName: typeof (draft.logo as any).originalName === "string" ? (draft.logo as any).originalName : "",
-                    sha256: typeof (draft.logo as any).sha256 === "string" ? (draft.logo as any).sha256 : undefined,
-                }
-                : undefined,
+            logo?.tempAssetUrl ||
+            (typeof draft?.logoPreview === 'string' ? draft.logoPreview : undefined),
     };
 }
 
@@ -133,15 +150,12 @@ export function CompanyWizard({
     useEffect(() => {
         if (!open) return;
 
-        setFormData(buildInitialFormData(draft as Record<string, unknown> | undefined));
-
-        const draftLogoPreview =
-            draft && typeof draft.logoPreview === 'string' ? draft.logoPreview : null;
-
-        setLogoPreview(draftLogoPreview);
+        const rebuilt = buildInitialFormData(draft as Record<string, unknown> | undefined);
+        setFormData(rebuilt);
+        setLogoPreview(rebuilt.logo?.tempAssetUrl ?? rebuilt.logoPreview ?? null);
         setLogoFile(null);
         setSubmitError('');
-    }, [open]);
+    }, [open, draft]);
 
     const countryOptions = useMemo(
         () => COUNTRIES.map((item) => item.name),
@@ -170,7 +184,7 @@ export function CompanyWizard({
 
         const nextDraft = {
             ...formData,
-            logoPreview: logoPreview ?? undefined,
+            logoPreview: formData.logo?.tempAssetUrl ?? undefined,
         };
 
         const serialized = JSON.stringify(nextDraft);
@@ -180,7 +194,7 @@ export function CompanyWizard({
 
         lastPushedDraftRef.current = serialized;
         onDraftChange?.(nextDraft);
-    }, [formData, logoPreview, open, onDraftChange]);
+    }, [formData, open, onDraftChange]);
 
     const handleCreate = async () => {
         setIsCreating(true);
@@ -253,8 +267,8 @@ export function CompanyWizard({
 
         const reader = new FileReader();
         reader.onloadend = async () => {
-            const preview = reader.result as string;
-            setLogoPreview(preview);
+            const localPreview = reader.result as string;
+            setLogoPreview(localPreview);
 
             try {
                 const uploaded = await uploadOnboardingLogo(file);
@@ -262,9 +276,10 @@ export function CompanyWizard({
                 updateFormData((prev) => ({
                     ...prev,
                     logo: uploaded,
-                    logoPreview: preview,
+                    logoPreview: uploaded.tempAssetUrl,
                 }));
 
+                setLogoPreview(uploaded.tempAssetUrl);
                 setLogoFile(null);
             } catch (error) {
                 const message =
@@ -274,6 +289,18 @@ export function CompanyWizard({
         };
 
         reader.readAsDataURL(file);
+    };
+
+    const handleRemoveLogo = () => {
+        setLogoFile(null);
+        setLogoPreview(null);
+        setSubmitError('');
+
+        updateFormData((prev) => ({
+            ...prev,
+            logo: undefined,
+            logoPreview: undefined,
+        }));
     };
 
     const toggleRole = (role: string) => {
@@ -436,15 +463,38 @@ export function CompanyWizard({
                                                 accept="image/*"
                                                 onChange={handleLogoUpload} />
 
-                                            {logoPreview ?
-                                                <img
-                                                    src={logoPreview}
-                                                    alt="Logo"
-                                                    style={{
-                                                        width: '100%',
-                                                        height: '100%',
-                                                        objectFit: 'cover'
-                                                    }} /> :
+                                            {logoPreview ? (
+                                                <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
+                                                    <img
+                                                        src={logoPreview}
+                                                        alt="Logo"
+                                                        style={{
+                                                            width: '100%',
+                                                            height: '100%',
+                                                            objectFit: 'cover'
+                                                        }}
+                                                    />
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={(event) => {
+                                                            event.preventDefault();
+                                                            event.stopPropagation();
+                                                            handleRemoveLogo();
+                                                        }}
+                                                        sx={{
+                                                            position: 'absolute',
+                                                            top: 4,
+                                                            right: 4,
+                                                            bgcolor: 'rgba(255,255,255,0.9)',
+                                                            '&:hover': {
+                                                                bgcolor: 'rgba(255,255,255,1)',
+                                                            },
+                                                        }}
+                                                    >
+                                                        <CloseRounded sx={{ fontSize: 16 }} />
+                                                    </IconButton>
+                                                </Box>
+                                            ) :
 
                                                 formData.name ?
                                                     <Avatar

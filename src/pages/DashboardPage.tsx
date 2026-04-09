@@ -87,6 +87,7 @@ interface DashboardCompany {
     type: string;
     country: string;
     countryCode: string;
+    logoUrl?: string | null;
 }
 
 interface OpportunityItem {
@@ -449,6 +450,7 @@ async function loadDashboardData(): Promise<Omit<DashboardState, 'loading' | 'er
             countryCode: normalizeIso(
                 company.countryCode ?? company.country
             ),
+            logoUrl: company.logoUrl ?? null,
         }));
     }
 
@@ -1260,6 +1262,9 @@ export function DashboardPage() {
                                             }}
                                         >
                                             <Avatar
+                                                src={company.logoUrl || undefined}
+                                                alt={company.name}
+                                                imgProps={{ loading: 'lazy' }}
                                                 sx={{
                                                     width: 32,
                                                     height: 32,
@@ -1267,6 +1272,9 @@ export function DashboardPage() {
                                                     color: 'grey.600',
                                                     fontSize: '0.75rem',
                                                     fontWeight: 500,
+                                                    '& img': {
+                                                        objectFit: 'cover',
+                                                    },
                                                 }}
                                             >
                                                 {company.name.substring(0, 2).toUpperCase()}

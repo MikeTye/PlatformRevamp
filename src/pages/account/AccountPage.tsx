@@ -451,9 +451,9 @@ export function AccountPage() {
             <Box px={3} pt={2} borderBottom={1} borderColor="grey.200">
                 <Tabs value={tab} onChange={handleTabChange}>
                     <Tab label="Profile" value="profile" />
-                    <Tab label="Companies" value="companies" />
+                    {/* <Tab label="Companies" value="companies" />
                     <Tab label="Projects" value="projects" />
-                    <Tab label="Opportunities" value="opportunities" />
+                    <Tab label="Opportunities" value="opportunities" /> */}
                 </Tabs>
             </Box>
 

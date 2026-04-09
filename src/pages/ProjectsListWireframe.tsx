@@ -77,7 +77,10 @@ interface Project {
     isMine?: boolean;
     lat?: number | null;
     lng?: number | null;
-    coverAssetUrl?: string | null;
+
+    coverImageUrl?: string | null;
+    coverThumbUrl?: string | null;
+
     creditTotals?: {
         toDateIssued?: number | null;
         toDateOfftake?: number | null;
@@ -135,6 +138,10 @@ function formatUpdatedLabel(value?: string | null) {
 
     const years = Math.floor(diffDays / 365);
     return `${years} year${years > 1 ? 's' : ''} ago`;
+}
+
+function getProjectListImage(project: Project): string | null {
+    return project.coverThumbUrl || project.coverImageUrl || null;
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -487,7 +494,7 @@ export function ProjectsListWireframe() {
 
         navigate(target.isMine ? `/my-projects/${projectId}` : `/projects/${projectId}`);
     };
-    
+
     const handleFilterChange =
         (setter: React.Dispatch<React.SetStateAction<any[]>>) => (event: any) => {
             const {
@@ -1244,7 +1251,7 @@ export function ProjectsListWireframe() {
 
                                                         <ProjectStageIndicator stage={project.stage} />
 
-                                                        {!project.coverAssetUrl && Icon ? (
+                                                        {!getProjectListImage(project) && Icon ? (
                                                             <Box
                                                                 sx={{
                                                                     display: 'inline-flex',
@@ -1286,7 +1293,7 @@ export function ProjectsListWireframe() {
                                                 type={project.type}
                                                 country={project.country}
                                                 countryCode={project.countryCode}
-                                                photoUrl={project.coverAssetUrl ?? null}
+                                                photoUrl={getProjectListImage(project)}
                                                 isSaved={project.isSaved}
                                                 isMine={project.isMine ?? false}
                                                 onClick={() => handleProjectClick(project.id)}

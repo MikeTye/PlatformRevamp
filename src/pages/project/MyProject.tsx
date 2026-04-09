@@ -13,7 +13,9 @@ import {
 } from '@mui/material';
 import EditRounded from '@mui/icons-material/EditRounded';
 import DeleteRounded from '@mui/icons-material/DeleteRounded';
-import ProjectProfileView, {
+import ProjectProfileView from './ProjectProfileView';
+import ProjectSidebarEditor, { SaveProjectPatch } from './ProjectSidebarEditor/ProjectSidebarEditor';
+import {
     ProjectProfileData,
     ProjectRole,
     ProjectSectionKey,
@@ -23,8 +25,7 @@ import ProjectProfileView, {
     ProjectOpportunity,
     ProjectUpdate,
     ProjectDocument,
-} from './ProjectProfileView';
-import ProjectSidebarEditor, { SaveProjectPatch } from './ProjectSidebarEditor';
+} from './projectProfile.types'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -105,7 +106,12 @@ export function MyProject() {
     );
 
     const handleBack = useCallback(() => {
-        navigate('/projects?tab=my');
+        if (window.history.length > 1) {
+            navigate(-1);
+            return;
+        }
+
+        navigate('/projects?tab=my', { replace: true });
     }, [navigate]);
 
     const handleOpenMediaEditor = useCallback(
@@ -176,7 +182,6 @@ export function MyProject() {
     const handleOpenEditor = useCallback(
         (section: ProjectEditorTarget, itemId?: string | null) => {
             if (!canEdit) return;
-            if (section === 'readiness') return;
 
             setInitialMediaId(null);
             setInitialOpportunityId(null);
@@ -213,6 +218,51 @@ export function MyProject() {
         next.delete('highlightUpdate');
         setSearchParams(next, { replace: true });
     }, [focusSection, highlightedUpdateId, searchParams, setSearchParams]);
+
+    function mapProjectApiResponse(json: ProjectApiResponse): ProjectProfileData {
+        return {
+            id: json.id,
+            upid: json.upid ?? null,
+            name: json.name,
+            stage: json.stage,
+            type: json.type ?? null,
+            description: json.description ?? null,
+            companyName: json.companyName ?? null,
+            country: json.country ?? null,
+            region: json.region ?? null,
+            coverImageUrl: json.coverImageUrl ?? null,
+            projectVisibility: json.projectVisibility ?? null,
+            storyProblem: json.storyProblem ?? null,
+            storyApproach: json.storyApproach ?? null,
+            methodology: json.methodology ?? null,
+            registrationPlatform: json.registrationPlatform ?? null,
+            registryStatus: json.registryStatus ?? null,
+            registryProjectUrl: json.registryProjectUrl ?? null,
+            registryId: json.registryId ?? null,
+            totalAreaHa: json.totalAreaHa ?? null,
+            estimatedAnnualRemoval: json.estimatedAnnualRemoval ?? null,
+
+            totalCreditsIssued: json.totalCreditsIssued ?? null,
+            annualEstimatedCredits: json.annualEstimatedCredits ?? null,
+            annualEstimateUnit: json.annualEstimateUnit ?? null,
+            firstVintageYear: json.firstVintageYear ?? null,
+            creditIssuanceDate: json.creditIssuanceDate ?? null,
+            creditingStart: json.creditingStart ?? null,
+            creditingEnd: json.creditingEnd ?? null,
+            tenureText: json.tenureText ?? null,
+
+            readiness: json.readiness ?? [],
+            serviceProviders: json.serviceProviders ?? [],
+            opportunities: json.opportunities ?? [],
+            updates: json.updates ?? [],
+            documents: json.documents ?? [],
+            media: json.media ?? [],
+            team: json.team ?? [],
+            latitude: json.latitude ?? null,
+            longitude: json.longitude ?? null,
+            sectionVisibility: json.sectionVisibility ?? {},
+        };
+    }
 
     function normalizePatchedTeamMember(
         member: NonNullable<ProjectProfileData['team']>[number],
@@ -284,68 +334,44 @@ export function MyProject() {
         };
     }
 
-    const loadProject = useCallback(async () => {
-        if (!id) {
-            setError('Missing project id.');
-            setLoading(false);
-            return;
-        }
-
-        setLoading(true);
-        setError(null);
-
-        try {
-            const res = await fetch(`${API_BASE_URL}/projects/${id}/edit`, {
-                credentials: 'include',
-            });
-
-            if (!res.ok) {
-                throw new Error(`Failed to load project (${res.status})`);
+    const loadProject = useCallback(
+        async ({ silent = false }: { silent?: boolean } = {}) => {
+            if (!id) {
+                setError('Missing project id.');
+                setLoading(false);
+                return;
             }
 
-            const raw = await res.json();
-            const json: ProjectApiResponse = raw?.data ?? raw;
+            if (!silent) {
+                setLoading(true);
+            }
+            setError(null);
 
-            setProject({
-                id: json.id,
-                upid: json.upid ?? null,
-                name: json.name,
-                stage: json.stage,
-                type: json.type ?? null,
-                description: json.description ?? null,
-                companyName: json.companyName ?? null,
-                country: json.country ?? null,
-                region: json.region ?? null,
-                coverImageUrl: json.coverImageUrl ?? null,
-                projectVisibility: json.projectVisibility ?? null,
-                storyProblem: json.storyProblem ?? null,
-                storyApproach: json.storyApproach ?? null,
-                methodology: json.methodology ?? null,
-                registryName: json.registryName ?? null,
-                registryStatus: json.registryStatus ?? null,
-                registryProjectId: json.registryProjectId ?? null,
-                totalAreaHa: json.totalAreaHa ?? null,
-                estimatedAnnualRemoval: json.estimatedAnnualRemoval ?? null,
-                readiness: json.readiness ?? [],
-                serviceProviders: json.serviceProviders ?? [],
-                opportunities: json.opportunities ?? [],
-                updates: json.updates ?? [],
-                documents: json.documents ?? [],
-                media: json.media ?? [],
-                team: json.team ?? [],
-                latitude: json.latitude ?? null,
-                longitude: json.longitude ?? null,
-                sectionVisibility: json.sectionVisibility ?? {},
-            });
+            try {
+                const res = await fetch(`${API_BASE_URL}/projects/${id}/edit`, {
+                    credentials: 'include',
+                });
 
-            setMyRole(json.myRole ?? null);
-            setIsSaved(Boolean(json.saved));
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to load project.');
-        } finally {
-            setLoading(false);
-        }
-    }, [id]);
+                if (!res.ok) {
+                    throw new Error(`Failed to load project (${res.status})`);
+                }
+
+                const raw = await res.json();
+                const json: ProjectApiResponse = raw?.data ?? raw;
+
+                setProject(mapProjectApiResponse(json));
+                setMyRole(json.myRole ?? null);
+                setIsSaved(Boolean(json.saved));
+            } catch (err) {
+                setError(err instanceof Error ? err.message : 'Failed to load project.');
+            } finally {
+                if (!silent) {
+                    setLoading(false);
+                }
+            }
+        },
+        [id],
+    );
 
     useEffect(() => {
         void loadProject();
@@ -595,7 +621,19 @@ export function MyProject() {
                     );
                 }
 
-                await loadProject();
+                const returned = payload?.data ?? payload;
+
+                if (returned?.id) {
+                    setProject(mapProjectApiResponse(returned));
+                    if ('myRole' in returned) {
+                        setMyRole(returned.myRole ?? null);
+                    }
+                    if ('saved' in returned) {
+                        setIsSaved(Boolean(returned.saved));
+                    }
+                } else {
+                    await loadProject({ silent: true });
+                }
             } catch (err) {
                 setProject(previousProject);
                 throw err;

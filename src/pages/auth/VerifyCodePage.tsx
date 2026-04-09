@@ -11,6 +11,13 @@ import {
 } from '@mui/material';
 import ArrowBackRounded from '@mui/icons-material/ArrowBackRounded';
 import { useAuth } from '../../context/AuthContext';
+import {
+    clearAllAccessContext,
+    getInviteRedirectPath,
+    getShareRedirectPath,
+    getStoredInviteToken,
+    getStoredShareToken,
+} from '../../utils/authAccessContext';
 
 type AuthIntent = 'login' | 'signup';
 
@@ -23,6 +30,8 @@ type ApiErrorResponse = {
     redirectTo?: string;
     companyId?: string;
     companySlug?: string;
+    projectId?: string;
+    projectSlug?: string;
 };
 
 export function VerifyCodePage() {
@@ -34,8 +43,14 @@ export function VerifyCodePage() {
 
     const email = useMemo(() => searchParams.get('email')?.trim() ?? '', [searchParams]);
     const name = useMemo(() => searchParams.get('name')?.trim() ?? '', [searchParams]);
+
     const companyInviteToken = useMemo(
-        () => (searchParams.get('companyInvite') ?? sessionStorage.getItem('tce_company_invite_token') ?? '').trim(),
+        () => (searchParams.get('companyInvite') ?? getStoredInviteToken() ?? '').trim(),
+        [searchParams]
+    );
+
+    const shareToken = useMemo(
+        () => (searchParams.get('share') ?? getStoredShareToken() ?? '').trim(),
         [searchParams]
     );
 
@@ -83,41 +98,6 @@ export function VerifyCodePage() {
     const resetCode = () => {
         setCode(['', '', '', '', '', '']);
         lastAutoVerifiedCodeRef.current = null;
-    };
-
-    const clearInviteContext = () => {
-        sessionStorage.removeItem('tce_company_invite_token');
-        sessionStorage.removeItem('tce_company_invite_company_id');
-        sessionStorage.removeItem('tce_company_invite_company_slug');
-        sessionStorage.removeItem('tce_company_invite_company_name');
-    };
-
-    const getInviteRedirectPath = (data?: {
-        redirectTo?: string;
-        companyId?: string;
-        companySlug?: string;
-    }) => {
-        if (data?.redirectTo) return data.redirectTo;
-
-        const storedSlug = sessionStorage.getItem('tce_company_invite_company_slug')?.trim();
-        const storedId = sessionStorage.getItem('tce_company_invite_company_id')?.trim();
-
-        if (data?.companySlug) return `/companies/${encodeURIComponent(data.companySlug)}`;
-        if (data?.companyId) return `/companies/${encodeURIComponent(data.companyId)}`;
-        if (storedSlug) return `/companies/${encodeURIComponent(storedSlug)}`;
-        if (storedId) return `/companies/${encodeURIComponent(storedId)}`;
-
-        return '/companies';
-    };
-
-    const extractErrorMessage = async (resp: Response, fallback: string) => {
-        try {
-            const data = (await resp.json()) as ApiErrorResponse;
-            return data?.error || data?.message || fallback;
-        } catch {
-            const text = await resp.text().catch(() => '');
-            return text || fallback;
-        }
     };
 
     const handleChange = (index: number, value: string) => {
@@ -202,6 +182,7 @@ export function VerifyCodePage() {
                     intent,
                     ...(intent === 'signup' && name ? { name } : {}),
                     ...(companyInviteToken ? { companyInviteToken } : {}),
+                    ...(shareToken ? { shareToken } : {}),
                 }),
             });
 
@@ -222,13 +203,16 @@ export function VerifyCodePage() {
                 sessionStorage.setItem('tce_onboarding_email', email.toLowerCase());
 
                 if (companyInviteToken) {
-                    const inviteRedirectPath = getInviteRedirectPath({
-                        redirectTo: verifyData.redirectTo,
-                        companyId: verifyData.companyId,
-                        companySlug: verifyData.companySlug,
-                    });
-                    clearInviteContext();
-                    navigate(inviteRedirectPath, { replace: true });
+                    const redirectPath = getInviteRedirectPath(verifyData);
+                    clearAllAccessContext();
+                    navigate(redirectPath, { replace: true });
+                    return;
+                }
+
+                if (shareToken) {
+                    const redirectPath = getShareRedirectPath(verifyData);
+                    clearAllAccessContext();
+                    navigate(redirectPath, { replace: true });
                     return;
                 }
 
@@ -237,16 +221,32 @@ export function VerifyCodePage() {
                 return;
             }
 
+            if (companyInviteToken) {
+                const redirectPath = getInviteRedirectPath(verifyData);
+                clearAllAccessContext();
+                navigate(redirectPath, { replace: true });
+                return;
+            }
+
+            if (shareToken) {
+                const redirectPath = getShareRedirectPath(verifyData);
+                clearAllAccessContext();
+                navigate(redirectPath, { replace: true });
+                return;
+            }
+
             const onboardingResp = await fetch(`${API_BASE_URL}/user-profiles/me/onboarding`, {
                 method: 'GET',
                 credentials: 'include',
             });
 
-            let onboarding: {
-                onboardingStatus?: 'not_started' | 'in_progress' | 'completed' | 'skipped';
-                onboardingStep?: number;
-                onboardingSelectedRoles?: string[];
-            } | undefined;
+            let onboarding:
+                | {
+                    onboardingStatus?: 'not_started' | 'in_progress' | 'completed' | 'skipped';
+                    onboardingStep?: number;
+                    onboardingSelectedRoles?: string[];
+                }
+                | undefined;
 
             if (onboardingResp.ok) {
                 const onboardingJson = await onboardingResp.json();
@@ -272,20 +272,7 @@ export function VerifyCodePage() {
                 return;
             }
 
-            if (companyInviteToken) {
-                const inviteRedirectPath = getInviteRedirectPath({
-                    redirectTo: verifyData.redirectTo,
-                    companyId: verifyData.companyId,
-                    companySlug: verifyData.companySlug,
-                });
-                clearInviteContext();
-                navigate(inviteRedirectPath, { replace: true });
-                return;
-            }
-
-            navigate('/dashboard', {
-                replace: true,
-            });
+            navigate('/dashboard', { replace: true });
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to verify code');
         } finally {
@@ -311,6 +298,7 @@ export function VerifyCodePage() {
                     intent,
                     ...(intent === 'signup' && name ? { name } : {}),
                     ...(companyInviteToken ? { companyInviteToken } : {}),
+                    ...(shareToken ? { shareToken } : {}),
                 }),
             });
 
@@ -325,6 +313,7 @@ export function VerifyCodePage() {
                 if (data?.code === 'ACCOUNT_NOT_FOUND' || data?.next === 'signup') {
                     const params = new URLSearchParams({ email });
                     if (companyInviteToken) params.set('companyInvite', companyInviteToken);
+                    if (shareToken) params.set('share', shareToken);
                     navigate(`/signup?${params.toString()}`, { replace: true });
                     return;
                 }
@@ -332,6 +321,7 @@ export function VerifyCodePage() {
                 if (data?.code === 'ACCOUNT_EXISTS' || data?.next === 'login') {
                     const params = new URLSearchParams({ email });
                     if (companyInviteToken) params.set('companyInvite', companyInviteToken);
+                    if (shareToken) params.set('share', shareToken);
                     navigate(`/login?${params.toString()}`, { replace: true });
                     return;
                 }
@@ -352,6 +342,7 @@ export function VerifyCodePage() {
     const handleUseDifferentEmail = () => {
         const params = new URLSearchParams();
         if (companyInviteToken) params.set('companyInvite', companyInviteToken);
+        if (shareToken) params.set('share', shareToken);
 
         if (intent === 'signup') {
             navigate(params.toString() ? `/signup?${params.toString()}` : '/signup');

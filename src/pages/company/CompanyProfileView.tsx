@@ -29,14 +29,17 @@ import MoreVertRounded from '@mui/icons-material/MoreVertRounded';
 import DownloadRounded from '@mui/icons-material/DownloadRounded';
 
 import { ProjectCard } from '../../components/cards/ProjectCard';
-import { MediaGallery } from '../../components/MediaGallery';
 import { ShareMenu as SharedShareMenu } from '../../components/ShareMenu';
 import { EmptyState } from '../../components/EmptyState';
+import { CompanySectionHeader } from './CompanyHeaderSection';
+import { CompanyMediaSection } from './CompanyMediaSection';
+import { CompanyDocumentsSection } from './CompanyDocumentSection';
+
 import {
     CompanyProfile,
     CompanyTeamMember,
-    CompanyDocument,
     CompanySectionKey,
+    CompanyDocument,
 } from './companyProfile.types';
 
 type Mode = 'view' | 'edit';
@@ -73,91 +76,11 @@ interface CompanyProfileViewProps {
 
     renderTeamActions?: (member: CompanyTeamMember, index: number) => React.ReactNode;
     renderDocumentActions?: (doc: CompanyDocument, index: number) => React.ReactNode;
+    onLogoUploadClick?: () => void;
 }
 
 function defaultCanView() {
     return true;
-}
-
-function SectionHeader({
-    title,
-    count,
-    onEdit,
-    onAdd,
-}: {
-    title: string;
-    count?: number;
-    onEdit?: () => void;
-    onAdd?: () => void;
-}) {
-    return (
-        <Box
-            sx={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                p: 2,
-                borderBottom: 1,
-                borderColor: 'grey.100',
-                bgcolor: 'grey.50',
-            }}
-        >
-            <Typography variant="subtitle2" fontWeight="bold" color="text.primary">
-                {title}
-                {count !== undefined && (
-                    <Typography component="span" color="text.disabled" fontWeight="normal">
-                        {' '}
-                        ({count})
-                    </Typography>
-                )}
-            </Typography>
-
-            <Box display="flex" alignItems="center" gap={1}>
-                {onAdd && (
-                    <IconButton
-                        size="small"
-                        onClick={onAdd}
-                        sx={{
-                            color: 'grey.700',
-                            bgcolor: 'white',
-                            border: 1,
-                            borderColor: 'grey.300',
-                            width: 28,
-                            height: 28,
-                            '&:hover': {
-                                color: 'primary.main',
-                                bgcolor: 'primary.50',
-                                borderColor: 'primary.main',
-                            },
-                        }}
-                    >
-                        <AddRounded sx={{ fontSize: 16 }} />
-                    </IconButton>
-                )}
-                {onEdit && (
-                    <IconButton
-                        size="small"
-                        onClick={onEdit}
-                        sx={{
-                            color: 'grey.700',
-                            bgcolor: 'white',
-                            border: 1,
-                            borderColor: 'grey.300',
-                            width: 28,
-                            height: 28,
-                            '&:hover': {
-                                color: 'primary.main',
-                                bgcolor: 'primary.50',
-                                borderColor: 'primary.main',
-                            },
-                        }}
-                    >
-                        <EditRounded sx={{ fontSize: 16 }} />
-                    </IconButton>
-                )}
-            </Box>
-        </Box>
-    );
 }
 
 function getInitials(name: string) {
@@ -200,6 +123,7 @@ export function CompanyProfileView({
     onMediaMenuClick,
     renderTeamActions,
     renderDocumentActions,
+    onLogoUploadClick,
 }: CompanyProfileViewProps) {
     const isEditMode = mode === 'edit';
     const displayCompanyName =
@@ -207,20 +131,7 @@ export function CompanyProfileView({
         (company as any).name?.trim() ||
         'Untitled Company';
 
-    const logoMedia =
-        Array.isArray(company.media)
-            ? company.media.find((item: any) =>
-                item?.isLogo === true ||
-                item?.kind === 'logo' ||
-                item?.kind === 'company-logo' ||
-                item?.isCover === true
-            )
-            : null;
-
-    const logoUrl =
-        (company as any).logoUrl ||
-        logoMedia?.url ||
-        null;
+    const logoUrl = company.logoUrl ?? null;
 
     const companyType = company.type;
     const shortDescription = company.description?.trim();
@@ -237,7 +148,17 @@ export function CompanyProfileView({
 
     const navigate = useNavigate();
 
+    const getProjectDetailPath = (project: any) => {
+        const projectId = project.id?.trim();
+        if (!projectId) return null;
+
+        return isEditMode && canEdit
+            ? `/my-projects/${projectId}`
+            : `/projects/${projectId}`;
+    };
+
     const headerEdit = isEditMode && canEdit && onEditSection ? () => onEditSection('header') : undefined;
+    const logoClick = headerEdit;
     const aboutEdit = isEditMode && canEdit && onEditSection ? () => onEditSection('about') : undefined;
     const teamEdit = isEditMode && canEdit && onEditSection ? () => onEditSection('team') : undefined;
     const docsEdit = isEditMode && canEdit && onEditSection ? () => onEditSection('documents') : undefined;
@@ -362,7 +283,7 @@ export function CompanyProfileView({
                         <Box flex={1} minWidth={0}>
                             <Box display="flex" alignItems="flex-start" gap={2} mb={2}>
                                 <Box
-                                    onClick={headerEdit}
+                                    onClick={logoClick}
                                     sx={{
                                         width: 80,
                                         height: 80,
@@ -373,19 +294,20 @@ export function CompanyProfileView({
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
-                                        cursor: headerEdit ? 'pointer' : 'default',
+                                        cursor: logoClick ? 'pointer' : 'default',
                                         flexShrink: 0,
                                         position: 'relative',
                                         overflow: 'hidden',
-                                        '&:hover': headerEdit
-                                            ? {
+
+                                        ...(logoClick && {
+                                            '&:hover': {
                                                 borderColor: 'grey.400',
                                                 bgcolor: logoUrl ? 'transparent' : 'grey.200',
                                                 '& .edit-overlay': {
                                                     opacity: 1,
                                                 },
-                                            }
-                                            : undefined,
+                                            },
+                                        }),
                                     }}
                                 >
                                     {logoUrl ? (
@@ -666,7 +588,7 @@ export function CompanyProfileView({
                         <Stack spacing={2}>
                             {canViewPrivateSection('about') && (
                                 <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
-                                    <SectionHeader title="About" onEdit={aboutEdit} />
+                                    <CompanySectionHeader title="About" onEdit={aboutEdit} />
                                     <Box p={3}>
                                         {fullDescription ? (
                                             <Typography variant="body2" color="text.secondary">
@@ -686,41 +608,18 @@ export function CompanyProfileView({
                             )}
 
                             {canViewPrivateSection('media') && (
-                                <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
-                                    <SectionHeader title="Media" onAdd={isEditMode && canEdit ? onAddMedia : undefined} />
-                                    <Box p={3}>
-                                        <MediaGallery
-                                            items={(company.media || []).map((item: any) => ({
-                                                id: item.id,
-                                                type: item.contentType?.startsWith('video/') ? 'video' : 'image',
-                                                url: item.url || item.assetUrl || '',
-                                                caption: item.caption || 'Untitled media',
-                                                date: item.date || item.createdAt || undefined,
-                                                _source: item,
-                                            }))}
-                                            mode="grid"
-                                            isOwner={isEditMode && canEdit}
-                                            onAdd={isEditMode && canEdit ? onAddMedia : undefined}
-                                            onMenuClick={
-                                                isEditMode && canEdit && onMediaMenuClick
-                                                    ? (e, item, index) => {
-                                                        onMediaMenuClick(
-                                                            e,
-                                                            (item as typeof item & { _source?: any })._source ?? company.media?.[index],
-                                                            index
-                                                        );
-                                                    }
-                                                    : undefined
-                                            }
-                                            emptyStateMessage="No media yet. Add photos and videos to showcase your work."
-                                        />
-                                    </Box>
-                                </Paper>
+                                <CompanyMediaSection
+                                    company={company}
+                                    isEditMode={isEditMode}
+                                    canEdit={canEdit}
+                                    onAddMedia={onAddMedia}
+                                    onMediaMenuClick={onMediaMenuClick}
+                                />
                             )}
 
                             {canViewPrivateSection('projects') && isProjectDeveloper && (
                                 <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
-                                    <SectionHeader
+                                    <CompanySectionHeader
                                         title="Projects"
                                         count={company.projects?.length ?? 0}
                                         onAdd={isEditMode && canEdit ? onOpenProjectWizard : undefined}
@@ -747,10 +646,15 @@ export function CompanyProfileView({
                                                             countryCode={project.countryCode ?? null}
                                                             hectares={project.hectares ?? null}
                                                             expectedCredits={project.expectedCredits ?? null}
-                                                            photoUrl={null}
+                                                            photoUrl={project.photoUrl ?? null}
+                                                            thumbUrl={project.thumbUrl ?? null}
                                                             isSaved={false}
                                                             isMine={false}
                                                             variant="compact"
+                                                            onClick={() => {
+                                                                const path = getProjectDetailPath(project);
+                                                                if (path) navigate(path);
+                                                            }}
                                                         />
                                                     );
                                                 })}
@@ -770,7 +674,7 @@ export function CompanyProfileView({
 
                             {canViewPrivateSection('projects') && isServiceProvider && (
                                 <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
-                                    <SectionHeader
+                                    <CompanySectionHeader
                                         title="Projects Participated"
                                         count={(company as any).projectsParticipated?.length ?? 0}
                                     />
@@ -796,10 +700,15 @@ export function CompanyProfileView({
                                                             countryCode={project.countryCode ?? null}
                                                             hectares={project.hectares ?? null}
                                                             expectedCredits={project.expectedCredits ?? null}
-                                                            photoUrl={null}
+                                                            photoUrl={project.photoUrl ?? null}
+                                                            thumbUrl={project.thumbUrl ?? null}
                                                             isSaved={false}
                                                             isMine={false}
                                                             variant="compact"
+                                                            onClick={() => {
+                                                                const path = getProjectDetailPath(project);
+                                                                if (path) navigate(path);
+                                                            }}
                                                         />
                                                     );
                                                 })}
@@ -815,7 +724,7 @@ export function CompanyProfileView({
 
                             {isServiceProvider && canViewPrivateSection('services') && (
                                 <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
-                                    <SectionHeader
+                                    <CompanySectionHeader
                                         title="Services Offered"
                                         count={Array.isArray((company as any).services) ? (company as any).services.length : 0}
                                         onEdit={servicesEdit}
@@ -869,107 +778,14 @@ export function CompanyProfileView({
                             )}
 
                             {canViewPrivateSection('documents') && (
-                                <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
-                                    <SectionHeader
-                                        title="Documents"
-                                        count={company.documents?.length ?? 0}
-                                        onAdd={isEditMode && canEdit ? onAddDocument : undefined}
-                                        onEdit={docsEdit}
-                                    />
-                                    <Box p={3}>
-                                        {company.documents?.length ? (
-                                            <Stack spacing={1.5}>
-                                                {company.documents.map((doc, index) => {
-                                                    const docUrl =
-                                                        (doc as any).url ||
-                                                        (doc as any).assetUrl ||
-                                                        null;
-
-                                                    const isPdf =
-                                                        ((doc as any).contentType || '').includes('pdf') ||
-                                                        String(doc.type || '').toLowerCase().includes('pdf');
-
-                                                    return (
-                                                        <Box
-                                                            key={`${doc.name}-${index}`}
-                                                            display="flex"
-                                                            alignItems="center"
-                                                            gap={1.5}
-                                                        >
-                                                            <Avatar
-                                                                variant="rounded"
-                                                                sx={{
-                                                                    width: 40,
-                                                                    height: 40,
-                                                                    bgcolor: 'grey.100',
-                                                                    color: 'text.secondary',
-                                                                }}
-                                                            >
-                                                                <FolderRounded sx={{ fontSize: 18 }} />
-                                                            </Avatar>
-
-                                                            <Box flex={1} minWidth={0}>
-                                                                {docUrl ? (
-                                                                    <Typography
-                                                                        variant="body2"
-                                                                        fontWeight={500}
-                                                                        noWrap
-                                                                        component="a"
-                                                                        href={docUrl}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        sx={{
-                                                                            color: 'primary.main',
-                                                                            textDecoration: 'none',
-                                                                            '&:hover': {
-                                                                                textDecoration: 'underline',
-                                                                            },
-                                                                        }}
-                                                                    >
-                                                                        {doc.name}
-                                                                    </Typography>
-                                                                ) : (
-                                                                    <Typography variant="body2" fontWeight={500} noWrap>
-                                                                        {doc.name}
-                                                                    </Typography>
-                                                                )}
-
-                                                                <Typography variant="caption" color="text.secondary" noWrap>
-                                                                    {[doc.type, (doc as any).date].filter(Boolean).join(' • ')}
-                                                                </Typography>
-                                                            </Box>
-
-                                                            {docUrl && (
-                                                                <Button
-                                                                    size="small"
-                                                                    variant="outlined"
-                                                                    startIcon={<DownloadRounded sx={{ fontSize: 16 }} />}
-                                                                    component="a"
-                                                                    href={docUrl}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
-                                                                >
-                                                                    {isPdf ? 'View' : 'Open'}
-                                                                </Button>
-                                                            )}
-
-                                                            {renderDocumentActions?.(doc, index)}
-                                                        </Box>
-                                                    );
-                                                })}
-                                            </Stack>
-                                        ) : (
-                                            <EmptyState
-                                                icon={FolderRounded}
-                                                title="No documents yet"
-                                                description="Upload company documents such as profiles, reports, or supporting files."
-                                                actionLabel={isEditMode && canEdit ? 'Add Document' : undefined}
-                                                onAction={onAddDocument}
-                                            />
-                                        )}
-                                    </Box>
-                                </Paper>
+                                <CompanyDocumentsSection
+                                    documents={company.documents ?? []}
+                                    isEditMode={isEditMode}
+                                    canEdit={canEdit}
+                                    onAddDocument={onAddDocument}
+                                    onEditDocuments={docsEdit}
+                                    renderDocumentActions={renderDocumentActions}
+                                />
                             )}
                         </Stack>
                     </Box>
@@ -984,7 +800,7 @@ export function CompanyProfileView({
                     >
                         <Stack spacing={2}>
                             <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
-                                <SectionHeader title="Profile Completeness" onEdit={headerEdit} />
+                                <CompanySectionHeader title="Profile Completeness" onEdit={headerEdit} />
                                 <Box p={2}>
                                     <ProfileCompleteness
                                         items={completenessItems}
@@ -1000,7 +816,7 @@ export function CompanyProfileView({
 
                             {canViewPrivateSection('team') && (
                                 <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
-                                    <SectionHeader
+                                    <CompanySectionHeader
                                         title="Team"
                                         onAdd={isEditMode && canEdit ? onAddTeam : undefined}
                                     />
@@ -1100,7 +916,7 @@ export function CompanyProfileView({
 
                             {canViewPrivateSection('geographicalCoverage') && (
                                 <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
-                                    <SectionHeader
+                                    <CompanySectionHeader
                                         title="Geographical Coverage"
                                         onEdit={geographicalCoverageEdit}
                                     />
@@ -1121,7 +937,7 @@ export function CompanyProfileView({
                             )}
 
                             <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
-                                <SectionHeader title="Permissions" onEdit={permissionsEdit} />
+                                <CompanySectionHeader title="Permissions" onEdit={permissionsEdit} />
                                 <Box p={2}>
                                     {company.permissions?.length ? (
                                         <Stack spacing={1}>
@@ -1187,7 +1003,7 @@ export function CompanyProfileView({
 
                             {canViewPrivateSection('projectTypes') && (
                                 <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
-                                    <SectionHeader
+                                    <CompanySectionHeader
                                         title="Project Types"
                                         onEdit={
                                             isEditMode && canEdit && onEditSection
@@ -1229,7 +1045,7 @@ export function CompanyProfileView({
 
                             {isServiceProvider && canViewPrivateSection('serviceCategories') && (
                                 <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
-                                    <SectionHeader
+                                    <CompanySectionHeader
                                         title="Service Categories"
                                         onEdit={serviceCategoriesEdit}
                                     />

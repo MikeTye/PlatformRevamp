@@ -74,7 +74,7 @@ export const STAGE_COMPLETENESS_RULES: Record<ProjectStage, ProjectCompletenessR
             description: 'Add registry or methodology details.',
             section: 'registry',
             isComplete: (project) =>
-                Boolean(project.registryName || project.methodology),
+                Boolean(project.registrationPlatform  || project.methodology),
         },
         {
             id: 'documents-concept',
@@ -115,7 +115,7 @@ export const STAGE_COMPLETENESS_RULES: Record<ProjectStage, ProjectCompletenessR
             description: 'Record registry platform, status, or project ID.',
             section: 'registry',
             isComplete: (project) =>
-                Boolean(project.registryName && (project.registryStatus || project.registryProjectId)),
+                Boolean(project.registrationPlatform  && (project.registryStatus || project.registryId)),
         },
         {
             id: 'documents-listed',
@@ -164,9 +164,9 @@ export const STAGE_COMPLETENESS_RULES: Record<ProjectStage, ProjectCompletenessR
             section: 'registry',
             isComplete: (project) =>
                 Boolean(
-                    project.registryName &&
+                    project.registrationPlatform  &&
                     project.registryStatus &&
-                    project.registryProjectId,
+                    project.registryId,
                 ),
         },
         {
@@ -183,7 +183,7 @@ export const STAGE_COMPLETENESS_RULES: Record<ProjectStage, ProjectCompletenessR
             label: 'Show operational readiness',
             description: 'Add monitoring or reporting readiness details.',
             section: 'readiness',
-            isComplete: (project) => Boolean(project.readiness?.length),
+            isComplete: (project) => Boolean(project.documents?.length),
         },
     ],
     Issued: [
@@ -193,7 +193,7 @@ export const STAGE_COMPLETENESS_RULES: Record<ProjectStage, ProjectCompletenessR
             description: 'Keep issuance-related registry details current.',
             section: 'registry',
             isComplete: (project) =>
-                Boolean(project.registryName && project.registryStatus),
+                Boolean(project.registrationPlatform  && project.registryStatus),
         },
         {
             id: 'impact-issued',

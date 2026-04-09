@@ -20,6 +20,13 @@ import SkipNextRounded from '@mui/icons-material/SkipNextRounded';
 import { CompanyWizard } from '../../components/CompanyWizard';
 import { ProjectWizard, type ProjectFormData } from '../../components/ProjectWizard';
 import { ONBOARDING_USER_ROLE_OPTIONS } from '../../constants/onboarding';
+import {
+    getStoredInviteToken,
+    getStoredShareToken,
+    getInviteRedirectPath,
+    getShareRedirectPath,
+    clearAllAccessContext,
+} from '../../utils/authAccessContext';
 
 type OnboardingStatus = 'not_started' | 'in_progress' | 'completed' | 'skipped';
 
@@ -60,6 +67,11 @@ export function OnboardingPage() {
             sessionStorage.getItem('tce_onboarding_fresh') === '1'
         );
     }, [searchParams]);
+
+    const inviteToken = useMemo(() => getStoredInviteToken(), []);
+    const shareToken = useMemo(() => getStoredShareToken(), []);
+
+    const hasPendingAccessRedirect = Boolean(inviteToken || shareToken);
 
     const hasLoadedInitialStateRef = useRef(false);
     const saveTimeoutRef = useRef<number | null>(null);
@@ -320,6 +332,22 @@ export function OnboardingPage() {
     };
 
     useEffect(() => {
+        if (hasPendingAccessRedirect) {
+            if (inviteToken) {
+                const path = getInviteRedirectPath();
+                clearAllAccessContext();
+                navigate(path, { replace: true });
+                return;
+            }
+
+            if (shareToken) {
+                const path = getShareRedirectPath();
+                clearAllAccessContext();
+                navigate(path, { replace: true });
+                return;
+            }
+        }
+
         let mounted = true;
 
         const load = async () => {
@@ -486,7 +514,7 @@ export function OnboardingPage() {
                 window.clearTimeout(saveTimeoutRef.current);
             }
         };
-    }, [navigate]);
+    }, [navigate, hasPendingAccessRedirect, inviteToken, shareToken]);
 
     useEffect(() => {
         if (loading) return;

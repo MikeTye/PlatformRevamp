@@ -31,6 +31,7 @@ type SavedProjectItem = {
         verifiedFields?: number;
         totalFields?: number;
         photoUrl?: string | null;
+        thumbUrl?: string | null;
         isMine?: boolean;
     };
 };
@@ -234,6 +235,7 @@ export function BookmarksPage() {
                             verifiedFields={project.verifiedFields}
                             totalFields={project.totalFields}
                             photoUrl={project.photoUrl ?? null}
+                            thumbUrl={project.thumbUrl ?? null}
                             isMine={project.isMine ?? false}
                             isSaved={!fadingItems.has(key)}
                             onClick={() => navigate(`/projects/${project.upid ?? project.id}`)}
