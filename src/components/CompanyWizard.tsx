@@ -31,20 +31,30 @@ import {
     SERVICE_CATEGORY_OPTIONS,
 } from '../constants/companies';
 
+import { trackEvent } from '../lib/analytics';
+
 export type WizardCloseResult =
     | { completed: false }
     | { completed: true; companyId?: string | null; projectId?: string | null };
+
+type CompanyWizardTrackingContext = {
+    entryPoint: 'onboarding' | 'sidebar_nav' | 'user_profile' | 'company_directory' | 'unknown';
+    draftOrigin?: 'onboarding' | 'company_drafts' | 'none' | 'unknown';
+    isFirstCompanyPublish?: boolean;
+};
 
 interface CompanyWizardProps {
     open: boolean;
     onClose: (result?: WizardCloseResult) => void;
     draft?: Partial<CompanyFormData>;
     onDraftChange?: (draft: Partial<CompanyFormData>) => void;
+    trackingContext?: CompanyWizardTrackingContext;
 }
 
 export interface CompanyFormData {
     name: string;
     description: string;
+    companyEmail: string;
     primaryGeography: string;
     roles: string[];
     serviceCategories: string[];
@@ -62,20 +72,21 @@ export interface CompanyFormData {
     };
 }
 
-type CreateCompanyResponse = {
-    id: string;
-};
-
 const INITIAL_FORM_DATA: CompanyFormData = {
     name: '',
     roles: [],
     primaryGeography: '',
     description: '',
+    companyEmail: '',
     serviceCategories: [],
     projectTypes: [],
     otherProjectType: '',
     regions: [],
     logoPreview: undefined,
+};
+
+type CreateCompanyResponse = {
+    id: string;
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
@@ -111,6 +122,7 @@ function buildInitialFormData(draft?: Record<string, unknown>): CompanyFormData 
         ...INITIAL_FORM_DATA,
         name: typeof draft?.name === 'string' ? draft.name : '',
         description: typeof draft?.description === 'string' ? draft.description : '',
+        companyEmail: typeof draft?.companyEmail === 'string' ? draft.companyEmail : '',
         primaryGeography:
             typeof draft?.primaryGeography === 'string' ? draft.primaryGeography : '',
         roles: Array.isArray(draft?.roles)
@@ -139,6 +151,7 @@ export function CompanyWizard({
     onClose,
     draft,
     onDraftChange,
+    trackingContext,
 }: CompanyWizardProps) {
     const [logoFile, setLogoFile] = useState<File | null>(null);
     const [logoPreview, setLogoPreview] = useState<string | null>(null);
@@ -146,6 +159,32 @@ export function CompanyWizard({
     const [submitError, setSubmitError] = useState('');
     const [formData, setFormData] = useState<CompanyFormData>(() => buildInitialFormData(draft));
     const lastPushedDraftRef = useRef<string>('');
+
+    const hasTrackedStartRef = useRef(false);
+    const initialDraftSnapshotRef = useRef<string>('{}');
+
+    const getTrackingProps = () => ({
+        entry_point: trackingContext?.entryPoint ?? 'unknown',
+        draft_origin: trackingContext?.draftOrigin ?? 'unknown',
+        creation_context:
+            trackingContext?.entryPoint === 'onboarding' ? 'onboarding' : 'standard',
+        has_logo: Boolean(formData.logo?.tempKey || logoPreview),
+        company_name_present: Boolean(formData.name.trim()),
+        role_count: formData.roles.length,
+        service_category_count: formData.serviceCategories.length,
+        project_type_count: formData.projectTypes.length,
+        region_count: formData.regions.length,
+        country_present: Boolean(formData.primaryGeography),
+    });
+
+    const hasMeaningfulInput = () => {
+        const current = JSON.stringify({
+            ...formData,
+            logoPreview: formData.logo?.tempAssetUrl ?? logoPreview ?? undefined,
+        });
+
+        return current !== '{}' && current !== initialDraftSnapshotRef.current;
+    };
 
     useEffect(() => {
         if (!open) return;
@@ -157,16 +196,41 @@ export function CompanyWizard({
         setSubmitError('');
     }, [open, draft]);
 
+    useEffect(() => {
+        if (!open) {
+            hasTrackedStartRef.current = false;
+            return;
+        }
+
+        if (hasTrackedStartRef.current) return;
+
+        initialDraftSnapshotRef.current = JSON.stringify(draft ?? {});
+        hasTrackedStartRef.current = true;
+
+        trackEvent('company creation wizard started', {
+            ...getTrackingProps(),
+        });
+    }, [open, draft]);
+
     const countryOptions = useMemo(
         () => COUNTRIES.map((item) => item.name),
         []
     );
 
     const handleClose = () => {
+        const hadAnyInput = hasMeaningfulInput();
+
         onDraftChange?.({
             ...formData,
             logoPreview: logoPreview ?? undefined,
         });
+
+        if (trackingContext?.entryPoint !== 'onboarding') {
+            trackEvent('company creation wizard exited to draft', {
+                ...getTrackingProps(),
+                had_any_input: hadAnyInput,
+            });
+        }
 
         onClose({ completed: false });
     };
@@ -202,6 +266,18 @@ export function CompanyWizard({
 
         try {
             const created = await createCompany(formData, logoFile);
+
+            trackEvent('company page published', {
+                ...getTrackingProps(),
+                company_id: created.id,
+            });
+
+            if (trackingContext?.isFirstCompanyPublish) {
+                trackEvent('first company page published', {
+                    ...getTrackingProps(),
+                    company_id: created.id,
+                });
+            }
 
             onClose({
                 completed: true,
@@ -547,7 +623,6 @@ export function CompanyWizard({
                                                 mb: 2
                                             }} />
 
-
                                         <TextField
                                             label="Short Description"
                                             fullWidth
@@ -560,7 +635,23 @@ export function CompanyWizard({
                                                     description: e.target.value
                                                 })
                                             }
-                                            placeholder="Brief description of your organization..." />
+                                            placeholder="Brief description of your organization..."
+                                            sx={{ mb: 2 }}
+                                        />
+
+                                        <TextField
+                                            label="Company Email"
+                                            type="email"
+                                            fullWidth
+                                            value={formData.companyEmail}
+                                            onChange={(e) =>
+                                                updateFormData({
+                                                    ...formData,
+                                                    companyEmail: e.target.value
+                                                })
+                                            }
+                                            placeholder="e.g. hello@company.com"
+                                        />
 
                                     </Grid>
                                 </Grid>
@@ -896,6 +987,7 @@ async function createCompany(
 
     body.append("name", formData.name);
     body.append("description", formData.description);
+    body.append("companyEmail", formData.companyEmail);
     body.append("primaryGeography", formData.primaryGeography);
     body.append("roles", JSON.stringify(formData.roles));
     body.append("serviceCategories", JSON.stringify(formData.serviceCategories));

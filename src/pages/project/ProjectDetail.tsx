@@ -22,7 +22,6 @@ type ProjectReadOnlyPageProps = {
     isSaved?: boolean;
     onToggleSave?: () => void;
     onBack?: () => void;
-    onShare?: () => void;
 };
 
 export type ProjectAccess = {
@@ -36,8 +35,7 @@ export function ProjectDetail({
     currentUserRole: externalCurrentUserRole = null,
     isSaved: externalIsSaved = false,
     onToggleSave,
-    onBack,
-    onShare,
+    onBack
 }: ProjectReadOnlyPageProps) {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
@@ -52,6 +50,62 @@ export function ProjectDetail({
     const [isSaved, setIsSaved] = React.useState<boolean>(externalIsSaved);
     const [loading, setLoading] = React.useState<boolean>(!externalProject);
     const [error, setError] = React.useState<string | null>(null);
+
+    const [shareAnchorEl, setShareAnchorEl] = React.useState<HTMLElement | null>(null);
+    const [projectShareUrl, setProjectShareUrl] = React.useState('');
+
+    const REGISTRY_STATUS_OPTIONS = [
+        'Not Started',
+        'PDD Submitted',
+        'PDD Approved',
+        'Credits Issued',
+    ] as const;
+
+    function normalizeRegistryStatus(value: unknown): string | null {
+        const raw = typeof value === 'string' ? value.trim() : '';
+        if (!raw) return 'Not Started';
+
+        return REGISTRY_STATUS_OPTIONS.includes(raw as (typeof REGISTRY_STATUS_OPTIONS)[number])
+            ? raw
+            : 'Not Started';
+    }
+
+    function sanitizeEstimatedAnnualRemoval(value: unknown): string | null {
+        if (value == null) return null;
+
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+
+            if (!trimmed) return null;
+            if (trimmed === '{}' || trimmed === '{"value":"{}"}') return null;
+
+            try {
+                const parsed = JSON.parse(trimmed);
+
+                if (parsed == null) return null;
+
+                if (typeof parsed === 'string') {
+                    const nested = parsed.trim();
+                    return nested && nested !== '{}' ? nested : null;
+                }
+
+                if (typeof parsed === 'object') {
+                    const nestedValue =
+                        typeof (parsed as any).value === 'string'
+                            ? (parsed as any).value.trim()
+                            : '';
+
+                    return nestedValue && nestedValue !== '{}' ? nestedValue : null;
+                }
+            } catch {
+                return trimmed;
+            }
+
+            return trimmed;
+        }
+
+        return String(value);
+    }
 
     const loadProject = React.useCallback(async () => {
         if (externalProject) {
@@ -90,6 +144,8 @@ export function ProjectDetail({
                 type: json.type ?? null,
                 description: json.description ?? null,
                 companyName: json.companyName ?? null,
+                companyId: json.companyId ?? null,
+                companyEmail: json.companyEmail ?? null,
                 country: json.country ?? null,
                 region: json.region ?? null,
                 coverImageUrl: json.coverImageUrl ?? null,
@@ -98,11 +154,11 @@ export function ProjectDetail({
                 storyApproach: json.storyApproach ?? null,
                 methodology: json.methodology ?? null,
                 registrationPlatform: json.registrationPlatform ?? null,
-                registryStatus: json.registryStatus ?? null,
+                registryStatus: normalizeRegistryStatus(json.registryStatus),
+                estimatedAnnualRemoval: sanitizeEstimatedAnnualRemoval(json.estimatedAnnualRemoval),
                 registryProjectUrl: json.registryProjectUrl ?? null,
                 registryId: json.registryId ?? null,
                 totalAreaHa: json.totalAreaHa ?? null,
-                estimatedAnnualRemoval: json.estimatedAnnualRemoval ?? null,
 
                 totalCreditsIssued: json.totalCreditsIssued ?? null,
                 annualEstimatedCredits: json.annualEstimatedCredits ?? null,
@@ -115,7 +171,16 @@ export function ProjectDetail({
 
                 readiness: json.readiness ?? [],
                 serviceProviders: json.serviceProviders ?? [],
-                opportunities: json.opportunities ?? [],
+                opportunities: (json.opportunities ?? []).map((item: any) => ({
+                    id: item.id,
+                    type: item.type ?? item.opportunity_type ?? '',
+                    description: item.description ?? null,
+                    urgent: item.urgent ?? item.is_priority ?? false,
+                    sortOrder: item.sortOrder ?? item.sort_order ?? 0,
+                    isActive: item.isActive ?? item.is_active ?? true,
+                    createdAt: item.createdAt ?? item.created_at ?? null,
+                    updatedAt: item.updatedAt ?? item.updated_at ?? null,
+                })),
                 updates: json.updates ?? [],
                 documents: json.documents ?? [],
                 media: json.media ?? [],
@@ -136,6 +201,11 @@ export function ProjectDetail({
     React.useEffect(() => {
         void loadProject();
     }, [loadProject]);
+
+    React.useEffect(() => {
+        setProjectShareUrl('');
+        setShareAnchorEl(null);
+    }, [id]);
 
     const fromParam = searchParams.get('from');
     const isMyProject = myRole === 'creator';
@@ -168,11 +238,77 @@ export function ProjectDetail({
             navigate('/projects', { replace: true });
         }
     };
-    
+
     const getBackLabel = () => {
         if (fromParam === 'profile') return 'My Profile';
         return isMyProject ? 'My Projects' : 'Projects';
     };
+
+    const resolveProjectShareUrl = React.useCallback(async () => {
+        if (!project?.id) {
+            throw new Error('Project not found');
+        }
+
+        return `${window.location.origin}/projects/${project.id}`;
+    }, [project?.id]);
+
+    function extractShareUrl(payload: any): string {
+        const candidates = [
+            payload?.share?.url,
+            payload?.share?.externalShareUrl,
+            payload?.share?.link,
+            payload?.data?.url,
+            payload?.data?.shareUrl,
+            payload?.url,
+            payload?.shareUrl,
+            payload?.link,
+        ];
+
+        const found = candidates.find(
+            (value) => typeof value === 'string' && value.trim()
+        );
+
+        if (!found) {
+            throw new Error('Share link was created but no URL was returned by the server');
+        }
+
+        return found;
+    }
+
+    const ensureProjectShareUrl = React.useCallback(async () => {
+        if (projectShareUrl.trim()) {
+            return projectShareUrl;
+        }
+
+        if (!project?.id) {
+            throw new Error('Project is not loaded yet');
+        }
+
+        const res = await fetch(`${API_BASE_URL}/share-links`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                entityType: 'project',
+                entityId: project.id,
+            }),
+        });
+
+        const data = await res.json().catch(() => null);
+
+        if (!res.ok) {
+            throw new Error(
+                data?.message || data?.error || 'Failed to create share link'
+            );
+        }
+
+        const nextUrl = extractShareUrl(data);
+        setProjectShareUrl(nextUrl);
+        return nextUrl;
+    }, [project?.id, projectShareUrl]);
 
     const handleToggleSave = React.useCallback(async () => {
         if (!project) return;
@@ -270,8 +406,10 @@ export function ProjectDetail({
             isSaved={isSaved}
             onToggleSave={handleToggleSave}
             onBack={handleBackNavigation}
-            shareUrl={`${window.location.origin}/projects/${project.id}`}
-            shareTitle={project.name}
+            shareAnchorEl={shareAnchorEl}
+            onOpenShare={setShareAnchorEl}
+            onCloseShare={() => setShareAnchorEl(null)}
+            resolveShareUrl={ensureProjectShareUrl}
             headerBar={{
                 backLabel: getBackLabel(),
                 contextLabel: project.companyName || null,

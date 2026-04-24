@@ -9,12 +9,10 @@ import {
     'react-router-dom';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { AppLayout } from './components/layout/AppLayout';
-import { ProjectsListWireframe } from './pages/ProjectsListWireframe';
-import { CompaniesListWireframe } from './pages/CompaniesListWireframe';
-import { CompanyDetailWireframe } from './pages/CompanyDetailWireframe';
+import { ProjectsList } from './pages/ProjectsList';
+import { CompaniesList } from './pages/CompaniesList';
 import { CompanyDetail } from './pages/company/CompanyDetail';
 import { OpportunitiesPage } from './pages/OpportunitiesPage';
-import { MyCompanyPage } from './pages/MyCompanyPage';
 import { MyCompany } from './pages/company/MyCompany';
 import { MyProject } from './pages/project/MyProject';
 import { ProjectDetail } from './pages/project/ProjectDetail';
@@ -362,7 +360,7 @@ export function App() {
                                 element={
                                     <ProtectedRoute>
                                         <LayoutWrapper>
-                                            <ProjectsListWireframe />
+                                            <ProjectsList />
                                         </LayoutWrapper>
                                     </ProtectedRoute>
                                 } />
@@ -402,7 +400,7 @@ export function App() {
                                 element={
                                     <ProtectedRoute>
                                         <LayoutWrapper>
-                                            <CompaniesListWireframe />
+                                            <CompaniesList />
                                         </LayoutWrapper>
                                     </ProtectedRoute>
                                 } />

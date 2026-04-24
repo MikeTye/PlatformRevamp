@@ -14,6 +14,7 @@ import BookmarkBorderRounded from '@mui/icons-material/BookmarkBorderRounded';
 import FolderRounded from '@mui/icons-material/FolderRounded';
 import WorkOutlineRounded from '@mui/icons-material/WorkOutlineRounded';
 import VerifiedIcon from '@mui/icons-material/Verified';
+import { CountryFlagLabel } from '../common/CountryFlagLabel';
 
 export type CompanyType = 'Project Developer' | 'Service Provider';
 
@@ -205,12 +206,13 @@ export function CompanyCard({
                             </Box>
 
                             <Box display="flex" alignItems="center" gap={0.75} flexWrap="wrap">
-                                <Typography fontSize="0.875rem">
-                                    {countryCode ? '🌍' : '🌍'}
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                    {country || '—'}
-                                </Typography>
+                                <CountryFlagLabel
+                                    country={country}
+                                    code={countryCode}
+                                    size="md"
+                                    textVariant="caption"
+                                    color="text.secondary"
+                                />
                             </Box>
                         </Box>
                     </Box>

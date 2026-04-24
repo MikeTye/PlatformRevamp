@@ -35,6 +35,8 @@ import { PROJECT_TYPE_OPTIONS } from '../constants/projectTypes';
 import { PROJECT_STAGE_OPTIONS } from '../constants/projectStages';
 import { COUNTRIES, getStatesForCountry } from '../constants/countries';
 
+import { trackEvent } from '../lib/analytics';
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
 
 const CREATION_SUCCESS_SCREEN_MS = 5000;
@@ -48,6 +50,12 @@ type CompanyOption = {
     name: string;
 };
 
+type ProjectWizardTrackingContext = {
+    entryPoint: 'onboarding' | 'sidebar_nav' | 'my_projects' | 'project_directory' | 'unknown';
+    draftOrigin?: 'onboarding' | 'project_drafts' | 'none' | 'unknown';
+    isFirstProjectPublish?: boolean;
+};
+
 type ProjectWizardProps = {
     open: boolean;
     hasCompanies: boolean;
@@ -56,6 +64,7 @@ type ProjectWizardProps = {
     onDraftChange?: (draft: Partial<ProjectFormData>) => void;
     preferredCompanyId?: string | null;
     isOnboarding?: boolean;
+    trackingContext?: ProjectWizardTrackingContext;
 };
 
 export type ProjectFormData = {
@@ -171,6 +180,7 @@ export function ProjectWizard({
     onDraftChange,
     preferredCompanyId,
     isOnboarding = false,
+    trackingContext,
 }: ProjectWizardProps) {
     const [activeStep, setActiveStep] = useState(0);
     const [formData, setFormData] = useState<ProjectFormData>(() =>
@@ -199,6 +209,50 @@ export function ProjectWizard({
         () => getStatesForCountry(formData.country),
         [formData.country]
     );
+
+    const hasTrackedStartRef = useRef(false);
+    const initialDraftSnapshotRef = useRef<string>('{}');
+
+    const getTrackingProps = () => ({
+        entry_point: trackingContext?.entryPoint ?? (isOnboarding ? 'onboarding' : 'unknown'),
+        draft_origin: trackingContext?.draftOrigin ?? 'unknown',
+        creation_context: isOnboarding ? 'onboarding' : 'standard',
+        active_step: activeStep,
+        active_step_name: steps[activeStep],
+        company_id_present: Boolean(formData.companyId),
+        name_present: Boolean(formData.name.trim()),
+        type_present: Boolean(formData.type),
+        stage: formData.stage,
+        visibility: formData.visibility,
+        country_present: Boolean(formData.country),
+        state_present: Boolean(formData.state.trim()),
+        coordinates_present: Boolean(
+            formData.coordinates.lat.trim() && formData.coordinates.lng.trim()
+        ),
+        story_present: Boolean(formData.story.trim()),
+        approach_present: Boolean(formData.approach.trim()),
+        cobenefit_count: formData.cobenefitItems.length,
+    });
+
+    const hasMeaningfulInput = () => {
+        return JSON.stringify(formData) !== initialDraftSnapshotRef.current;
+    };
+
+    useEffect(() => {
+        if (!open) {
+            hasTrackedStartRef.current = false;
+            return;
+        }
+
+        if (hasTrackedStartRef.current) return;
+
+        initialDraftSnapshotRef.current = JSON.stringify(draft ?? {});
+        hasTrackedStartRef.current = true;
+
+        trackEvent('project creation wizard started', {
+            ...getTrackingProps(),
+        });
+    }, [open, draft, isOnboarding]);
 
     useEffect(() => {
         if (!open) {
@@ -358,7 +412,17 @@ export function ProjectWizard({
     };
 
     const handleClose = () => {
+        const hadAnyInput = hasMeaningfulInput();
+
         onDraftChange?.(formData);
+
+        trackEvent('project creation wizard exited to draft', {
+            ...getTrackingProps(),
+            exit_step: activeStep + 1,
+            exit_step_name: steps[activeStep],
+            had_any_input: hadAnyInput,
+        });
+
         onClose({ completed: false });
     };
 
@@ -385,6 +449,20 @@ export function ProjectWizard({
 
         try {
             const createdProject = await createProject(formData);
+
+            trackEvent('project listing published', {
+                ...getTrackingProps(),
+                project_id: createdProject.id,
+                company_id: formData.companyId || null,
+            });
+
+            if (trackingContext?.isFirstProjectPublish) {
+                trackEvent('first project listing published', {
+                    ...getTrackingProps(),
+                    project_id: createdProject.id,
+                    company_id: formData.companyId || null,
+                });
+            }
 
             if (!createdProject.id) {
                 throw new Error('Project created but no project ID was returned.');

@@ -21,7 +21,10 @@ import type {
     AffiliationItem,
     CompanyOption,
     SaveAccountPayload,
+    UploadedProfilePhoto,
 } from './account.types';
+
+import { trackEvent } from '../../lib/analytics';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -55,10 +58,37 @@ const timezoneOptions: TimezoneOption[] = (rawCountries as CountryRecord[])
     )
     .sort((a, b) => a.label.localeCompare(b.label));
 
-type CountryItem = {
-    name: string;
-    states?: string[];
-};
+async function uploadProfilePhoto(file: File): Promise<UploadedProfilePhoto> {
+    const body = new FormData();
+    body.append('photo', file);
+
+    const response = await fetch(`${API_BASE_URL}/account/profile-photo`, {
+        method: 'POST',
+        credentials: 'include',
+        body,
+    });
+
+    if (!response.ok) {
+        let message = `Failed to upload profile photo: ${response.status}`;
+        try {
+            const payload = await response.json();
+            message = payload?.error || payload?.message || message;
+        } catch {
+            // ignore
+        }
+        throw new Error(message);
+    }
+
+    const payload = await response.json();
+
+    return {
+        tempKey: String(payload?.data?.tempKey ?? ''),
+        tempAssetUrl: String(payload?.data?.tempAssetUrl ?? ''),
+        contentType: String(payload?.data?.contentType ?? file.type),
+        originalName: String(payload?.data?.originalName ?? file.name),
+        sha256: typeof payload?.data?.sha256 === 'string' ? payload.data.sha256 : undefined,
+    };
+}
 
 const countryCodeOptions = buildPhoneCodeOptions(rawCountryCodes);
 
@@ -90,6 +120,8 @@ function emptyAccount(): AccountPayload {
             isPublic: true,
             showPhone: false,
             showContactEmail: false,
+            avatarUrl: '',
+            profilePhoto: undefined,
         },
         affiliations: [],
     };
@@ -148,6 +180,9 @@ export function AccountPage() {
     const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error'>('success');
     const [snackbarMessage, setSnackbarMessage] = useState('');
 
+    const [profilePhotoPreview, setProfilePhotoPreview] = useState<string>('');
+    const [profilePhotoUploading, setProfilePhotoUploading] = useState(false);
+
     const hasChanges = useMemo(() => {
         const left = {
             ...form,
@@ -170,6 +205,163 @@ export function AccountPage() {
         void loadPage();
         void loadCompanies();
     }, []);
+
+    useEffect(() => {
+        setProfilePhotoPreview(
+            form.profile.profilePhoto?.tempAssetUrl ||
+            form.profile.avatarUrl ||
+            ''
+        );
+    }, [form.profile.profilePhoto?.tempAssetUrl, form.profile.avatarUrl]);
+
+    const profileViewTrackedRef = React.useRef(false);
+
+    function getEntryPoint(): string {
+        return searchParams.get('from') || 'direct';
+    }
+
+    function getChangedProfileFields(
+        previous: AccountPayload,
+        next: AccountPayload
+    ): string[] {
+        const changed: string[] = [];
+
+        const prevProfile = previous.profile;
+        const nextProfile = next.profile;
+
+        const scalarFields: Array<keyof AccountPayload['profile']> = [
+            'fullName',
+            'phoneNumber',
+            'headline',
+            'jobTitle',
+            'bio',
+            'country',
+            'city',
+            'timezone',
+            'personalWebsite',
+            'linkedinUrl',
+            'portfolioUrl',
+            'avatarUrl',
+        ];
+
+        for (const field of scalarFields) {
+            const prevValue = String(prevProfile[field] ?? '').trim();
+            const nextValue = String(nextProfile[field] ?? '').trim();
+            if (prevValue !== nextValue) {
+                changed.push(String(field));
+            }
+        }
+
+        const arrayFields = [
+            'languages',
+            'expertiseTags',
+            'serviceOfferings',
+            'sectors',
+            'standards',
+        ] as const;
+
+        for (const field of arrayFields) {
+            const prevArray = [...(prevProfile[field] ?? [])];
+            const nextArray = [...(nextProfile[field] ?? [])];
+
+            const prevValue = JSON.stringify(prevArray.sort());
+            const nextValue = JSON.stringify(nextArray.sort());
+
+            if (prevValue !== nextValue) {
+                changed.push(field);
+            }
+        }
+
+        return changed;
+    }
+
+    function getAffiliationChangeType(
+        previous: AccountPayload,
+        next: AccountPayload
+    ): 'add' | 'remove' | 'update' | 'mixed' | 'none' {
+        const prev = previous.affiliations ?? [];
+        const curr = next.affiliations ?? [];
+
+        if (prev.length === curr.length) {
+            const prevNormalized = normalizeForCompare({ ...previous, profile: previous.profile });
+            const currNormalized = normalizeForCompare({ ...next, profile: next.profile });
+            return prevNormalized !== currNormalized ? 'update' : 'none';
+        }
+
+        if (curr.length > prev.length) return 'add';
+        if (curr.length < prev.length) return 'remove';
+
+        return 'mixed';
+    }
+
+    function trackProfileSaveEvents(previous: AccountPayload, next: AccountPayload) {
+        const changedFields = getChangedProfileFields(previous, next);
+
+        const identityFields = changedFields.filter((field) =>
+            [
+                'avatarUrl',
+                'fullName',
+                'phoneNumber',
+                'headline',
+                'jobTitle',
+                'bio',
+                'languages',
+                'country',
+                'city',
+                'timezone',
+                'personalWebsite',
+                'linkedinUrl',
+                'portfolioUrl',
+            ].includes(field)
+        );
+
+        const professionalFields = changedFields.filter((field) =>
+            ['expertiseTags', 'serviceOfferings', 'sectors', 'standards'].includes(field)
+        );
+
+        if (identityFields.length > 0) {
+            trackEvent('User profile identity updated', {
+                fields_updated: identityFields,
+                updated_field_count: identityFields.length,
+                page: 'user_profile',
+                profile_type: 'own',
+            });
+        }
+
+        if (professionalFields.length > 0) {
+            trackEvent('User professional profile updated', {
+                fields_updated: professionalFields,
+                updated_field_count: professionalFields.length,
+                page: 'user_profile',
+                profile_type: 'own',
+            });
+        }
+
+        const affiliationChangeType = getAffiliationChangeType(previous, next);
+        if (affiliationChangeType !== 'none') {
+            trackEvent('User company affiliations updated', {
+                change_type: affiliationChangeType,
+                affiliation_count_before: previous.affiliations.length,
+                affiliation_count_after: next.affiliations.length,
+                page: 'user_profile',
+                profile_type: 'own',
+            });
+        }
+    }
+
+    useEffect(() => {
+        if (loading) return;
+        if (profileViewTrackedRef.current) return;
+
+        profileViewTrackedRef.current = true;
+
+        trackEvent('User profile viewed', {
+            profile_type: 'own',
+            entry_point: getEntryPoint(),
+            page: 'user_profile',
+            tab,
+        });
+    }, [loading, tab, searchParams]);
 
     function syncCountryCodeFromPhone(phoneNumber: string) {
         const match = countryCodeOptions.find((c) => phoneNumber.startsWith(c.dialCode));
@@ -217,6 +409,8 @@ export function AccountPage() {
                     permission: a.permission ?? 'viewer',
                 })),
             };
+
+            trackProfileSaveEvents(initialData, hydrated);
 
             setInitialData(hydrated);
             setForm(hydrated);
@@ -314,13 +508,75 @@ export function AccountPage() {
         syncCountryCodeFromPhone(initialData.profile.phoneNumber);
     }
 
+    async function handleProfilePhotoUpload(file: File) {
+        if (!file.type.startsWith('image/')) {
+            showSnackbar('error', 'Profile photo must be an image');
+            return;
+        }
+
+        if (file.size > 1 * 1024 * 1024) {
+            showSnackbar('error', 'Profile photo must be 1MB or smaller');
+            return;
+        }
+
+        setProfilePhotoUploading(true);
+
+        try {
+            const localPreview = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+
+            setProfilePhotoPreview(localPreview);
+
+            const uploaded = await uploadProfilePhoto(file);
+
+            setForm((prev) => ({
+                ...prev,
+                profile: {
+                    ...prev.profile,
+                    avatarUrl: uploaded.tempAssetUrl,
+                    profilePhoto: uploaded,
+                },
+            }));
+
+            setProfilePhotoPreview(uploaded.tempAssetUrl);
+            showSnackbar('success', 'Profile photo uploaded');
+        } catch (error) {
+            console.error(error);
+            setProfilePhotoPreview(
+                form.profile.profilePhoto?.tempAssetUrl || form.profile.avatarUrl || ''
+            );
+            showSnackbar('error', error instanceof Error ? error.message : 'Failed to upload profile photo');
+        } finally {
+            setProfilePhotoUploading(false);
+        }
+    }
+
+    function handleRemoveProfilePhoto() {
+        setProfilePhotoPreview('');
+
+        setForm((prev) => ({
+            ...prev,
+            profile: {
+                ...prev.profile,
+                avatarUrl: '',
+                profilePhoto: undefined,
+            },
+        }));
+    }
+
     async function handleSave() {
         try {
             setSaving(true);
 
+            const { profilePhoto, ...profileWithoutNestedUpload } = form.profile;
+
             const payload: SaveAccountPayload = {
                 profile: {
-                    ...form.profile,
+                    ...profileWithoutNestedUpload,
                     phoneNumber: form.profile.phoneNumber.trim(),
                     fullName: form.profile.fullName.trim(),
                     headline: form.profile.headline.trim(),
@@ -334,22 +590,28 @@ export function AccountPage() {
                     personalWebsite: form.profile.personalWebsite.trim(),
                     linkedinUrl: form.profile.linkedinUrl.trim(),
                     portfolioUrl: form.profile.portfolioUrl.trim(),
+                    avatarUrl: form.profile.avatarUrl?.trim() || "",
+                    profilePhotoTempKey: profilePhoto?.tempKey || "",
+                    profilePhotoContentType: profilePhoto?.contentType || "",
+                    profilePhotoOriginalName: profilePhoto?.originalName || "",
+                    profilePhotoSha256: profilePhoto?.sha256 || "",
                 },
-                affiliations: form.affiliations
-                    .map((a) => ({
-                        id: a.id,
-                        companyId: a.companyId,
-                        role: a.role.trim(),
-                        permission: a.permission,
-                    }))
-                    .filter((a) => a.companyId),
+                affiliations: []
+                // affiliations: form.affiliations
+                //     .map((a) => ({
+                //         id: a.id,
+                //         companyId: a.companyId,
+                //         role: a.role.trim(),
+                //         permission: a.permission,
+                //     }))
+                //     .filter((a) => a.companyId),
             };
 
             const response = await fetch(`${API_BASE_URL}/account`, {
-                method: 'PUT',
-                credentials: 'include',
+                method: "PUT",
+                credentials: "include",
                 headers: {
-                    'Content-Type': 'application/json',
+                    "Content-Type": "application/json",
                 },
                 body: JSON.stringify(payload),
             });
@@ -359,30 +621,36 @@ export function AccountPage() {
                 throw new Error(text || `Failed to save account (${response.status})`);
             }
 
-            const saved = (await response.json()) as AccountPayload;
+            const data = (await response.json()) as AccountPayload;
+
             const hydrated = {
                 ...emptyAccount(),
-                ...saved,
+                ...data,
                 profile: {
                     ...emptyAccount().profile,
-                    ...saved.profile,
+                    ...data.profile,
                 },
-                affiliations: (saved.affiliations ?? []).map((a) => ({
+                affiliations: (data.affiliations ?? []).map((a) => ({
                     id: a.id,
                     companyId: a.companyId ?? null,
-                    companyName: a.companyName ?? '',
-                    role: a.role ?? '',
-                    permission: a.permission ?? 'viewer',
+                    companyName: a.companyName ?? "",
+                    role: a.role ?? "",
+                    permission: a.permission ?? "viewer",
                 })),
             };
 
             setInitialData(hydrated);
             setForm(hydrated);
+            setProfilePhotoPreview(hydrated.profile.avatarUrl || "");
             syncCountryCodeFromPhone(hydrated.profile.phoneNumber);
-            showSnackbar('success', 'Account updated');
+
+            showSnackbar("success", "Account updated successfully");
         } catch (error) {
             console.error(error);
-            showSnackbar('error', 'Failed to save account');
+            showSnackbar(
+                "error",
+                error instanceof Error ? error.message : "Failed to save account"
+            );
         } finally {
             setSaving(false);
         }
@@ -399,6 +667,11 @@ export function AccountPage() {
                 const text = await response.text();
                 throw new Error(text || `Failed to delete account (${response.status})`);
             }
+
+            trackEvent('Account deleted', {
+                page: 'user_profile',
+                profile_type: 'own',
+            });
 
             logout();
             navigate('/login');
@@ -421,13 +694,28 @@ export function AccountPage() {
     if (loading) {
         return (
             <Box minHeight="100vh" bgcolor="white">
-                <Box bgcolor="white" borderBottom={1} borderColor="grey.200" px={3} py={2}>
-                    <Typography variant="h5" fontWeight="bold" color="text.primary">
-                        Account
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                        Manage your account details and workspace
-                    </Typography>
+                <Box bgcolor="white" borderBottom={1} borderColor="grey.200" flexShrink={0}>
+                    <Box px={3} pt={2} pb={1}>
+                        <Typography variant="h5" fontWeight="bold" color="text.primary">
+                            My Profile
+                        </Typography>
+                    </Box>
+
+                    <Box px={3}>
+                        <Tabs
+                            value={tab}
+                            onChange={handleTabChange}
+                            textColor="primary"
+                            indicatorColor="primary"
+                            sx={{ minHeight: 48 }}
+                        >
+                            <Tab
+                                label="Profile"
+                                value="profile"
+                                sx={{ textTransform: 'none', fontWeight: 500, minHeight: 48 }}
+                            />
+                        </Tabs>
+                    </Box>
                 </Box>
 
                 <Box p={3} display="flex" justifyContent="center">
@@ -439,22 +727,43 @@ export function AccountPage() {
 
     return (
         <Box minHeight="100vh" bgcolor="white">
-            <Box bgcolor="white" borderBottom={1} borderColor="grey.200" px={3} py={2}>
-                <Typography variant="h5" fontWeight="bold" color="text.primary">
-                    Account
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                    Manage your account details and workspace
-                </Typography>
-            </Box>
+            <Box bgcolor="white" borderBottom={1} borderColor="grey.200" flexShrink={0}>
+                <Box px={3} pt={2} pb={1}>
+                    <Typography variant="h5" fontWeight="bold" color="text.primary">
+                        My Profile
+                    </Typography>
+                </Box>
 
-            <Box px={3} pt={2} borderBottom={1} borderColor="grey.200">
-                <Tabs value={tab} onChange={handleTabChange}>
-                    <Tab label="Profile" value="profile" />
-                    {/* <Tab label="Companies" value="companies" />
-                    <Tab label="Projects" value="projects" />
-                    <Tab label="Opportunities" value="opportunities" /> */}
-                </Tabs>
+                <Box px={3}>
+                    <Tabs
+                        value={tab}
+                        onChange={handleTabChange}
+                        textColor="primary"
+                        indicatorColor="primary"
+                        sx={{ minHeight: 48 }}
+                    >
+                        <Tab
+                            label="Profile"
+                            value="profile"
+                            sx={{ textTransform: 'none', fontWeight: 500, minHeight: 48 }}
+                        />
+                        {/* <Tab
+                        label="My Companies"
+                        value="companies"
+                        sx={{ textTransform: 'none', fontWeight: 500, minHeight: 48 }}
+                    />
+                    <Tab
+                        label="My Projects"
+                        value="projects"
+                        sx={{ textTransform: 'none', fontWeight: 500, minHeight: 48 }}
+                    />
+                    <Tab
+                        label="My Opportunities"
+                        value="opportunities"
+                        sx={{ textTransform: 'none', fontWeight: 500, minHeight: 48 }}
+                    /> */}
+                    </Tabs>
+                </Box>
             </Box>
 
             <Box p={3}>
@@ -483,10 +792,20 @@ export function AccountPage() {
                         onCancel={handleCancel}
                         onSave={handleSave}
                         onLogout={() => {
+                            trackEvent('User logged out', {
+                                page: 'user_profile',
+                                profile_type: 'own',
+                            });
                             logout();
                             navigate('/login');
                         }}
-                        onDeleteDialogOpen={() => setDeleteDialogOpen(true)}
+                        onDeleteDialogOpen={() => {
+                            trackEvent('Delete account button clicked', {
+                                page: 'user_profile',
+                                profile_type: 'own',
+                            });
+                            setDeleteDialogOpen(true);
+                        }}
                         onDeleteDialogClose={() => {
                             setDeleteDialogOpen(false);
                             setDeleteConfirmText('');
@@ -494,6 +813,10 @@ export function AccountPage() {
                         onDeleteConfirmTextChange={setDeleteConfirmText}
                         onDeleteAccount={handleDeleteAccount}
                         onSnackbarClose={() => setSnackbarOpen(false)}
+                        profilePhotoPreview={profilePhotoPreview}
+                        profilePhotoUploading={profilePhotoUploading}
+                        onProfilePhotoUpload={handleProfilePhotoUpload}
+                        onRemoveProfilePhoto={handleRemoveProfilePhoto}
                     />
                 )}
 
@@ -503,4 +826,71 @@ export function AccountPage() {
             </Box>
         </Box>
     );
+
+    // return (
+    //     <Box minHeight="100vh" bgcolor="white">
+    //         <Box bgcolor="white" borderBottom={1} borderColor="grey.200" px={3} py={2}>
+    //             <Typography variant="h5" fontWeight="bold" color="text.primary">
+    //                 Account
+    //             </Typography>
+    //             <Typography variant="body2" color="text.secondary">
+    //                 Manage your account details and workspace
+    //             </Typography>
+    //         </Box>
+
+    //         <Box px={3} pt={2} borderBottom={1} borderColor="grey.200">
+    //             <Tabs value={tab} onChange={handleTabChange}>
+    //                 <Tab label="Profile" value="profile" />
+    //                 {/* <Tab label="Companies" value="companies" />
+    //                 <Tab label="Projects" value="projects" />
+    //                 <Tab label="Opportunities" value="opportunities" /> */}
+    //             </Tabs>
+    //         </Box>
+
+    //         <Box p={3}>
+    //             {tab === 'profile' && (
+    //                 <ProfileTab
+    //                     form={form}
+    //                     initialData={initialData}
+    //                     hasChanges={hasChanges}
+    //                     saving={saving}
+    //                     companiesLoading={companiesLoading}
+    //                     companyOptions={companyOptions}
+    //                     countryCode={countryCode}
+    //                     countryFlag={countryFlag}
+    //                     timezoneOptions={timezoneOptions}
+    //                     countryCodeOptions={countryCodeOptions}
+    //                     deleteDialogOpen={deleteDialogOpen}
+    //                     deleteConfirmText={deleteConfirmText}
+    //                     snackbarOpen={snackbarOpen}
+    //                     snackbarSeverity={snackbarSeverity}
+    //                     snackbarMessage={snackbarMessage}
+    //                     onUpdateProfile={updateProfile}
+    //                     onHandlePhoneCodeChange={handlePhoneCodeChange}
+    //                     onAddAffiliation={handleAddAffiliation}
+    //                     onRemoveAffiliation={handleRemoveAffiliation}
+    //                     onAffiliationChange={handleAffiliationChange}
+    //                     onCancel={handleCancel}
+    //                     onSave={handleSave}
+    //                     onLogout={() => {
+    //                         logout();
+    //                         navigate('/login');
+    //                     }}
+    //                     onDeleteDialogOpen={() => setDeleteDialogOpen(true)}
+    //                     onDeleteDialogClose={() => {
+    //                         setDeleteDialogOpen(false);
+    //                         setDeleteConfirmText('');
+    //                     }}
+    //                     onDeleteConfirmTextChange={setDeleteConfirmText}
+    //                     onDeleteAccount={handleDeleteAccount}
+    //                     onSnackbarClose={() => setSnackbarOpen(false)}
+    //                 />
+    //             )}
+
+    //             {tab === 'companies' && <CompaniesTab />}
+    //             {tab === 'projects' && <ProjectsTab />}
+    //             {tab === 'opportunities' && <OpportunitiesTab />}
+    //         </Box>
+    //     </Box>
+    // );
 }

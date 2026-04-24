@@ -131,3 +131,26 @@ export function clearAllAccessContext() {
     clearInviteContext();
     clearShareContext();
 }
+
+export function getStoredShareContext(): SharePreview | null {
+    const redirectTo = sessionStorage.getItem(KEYS.shareRedirectTo)?.trim() ?? '';
+    const entityType = sessionStorage.getItem(KEYS.shareEntityType)?.trim() as
+        | 'company'
+        | 'project'
+        | '';
+    const entityId = sessionStorage.getItem(KEYS.shareEntityId)?.trim() ?? '';
+    const entitySlug = sessionStorage.getItem(KEYS.shareEntitySlug)?.trim() ?? '';
+    const title = sessionStorage.getItem(KEYS.shareTitle)?.trim() ?? '';
+
+    if (!redirectTo && !entityType && !entityId && !entitySlug && !title) {
+        return null;
+    }
+
+    return {
+        ...(redirectTo ? { redirectTo } : {}),
+        ...(entityType ? { entityType } : {}),
+        ...(entityId ? { entityId } : {}),
+        ...(entitySlug ? { entitySlug } : {}),
+        ...(title ? { title } : {}),
+    };
+}

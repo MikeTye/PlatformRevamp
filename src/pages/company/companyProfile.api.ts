@@ -1,5 +1,5 @@
 import type { CompanyProfile } from './companyProfile.types';
-import { ExistingUserOption } from './CompanySidebarEditor';
+import { ExistingUserOption } from './CompanySidebar/CompanySidebarEditor';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -73,6 +73,7 @@ export function normalizeCompanyDetail(raw: any): CompanyProfile {
             raw.primaryCountry ??
             null,
         countryCode: raw.countryCode ?? raw.country_code ?? null,
+        companyEmail: raw.companyEmail ?? raw.company_email ?? raw.email ?? '', // add this
         description: raw.description ?? raw.function_description ?? '',
         fullDescription: raw.fullDescription ?? raw.full_description ?? '',
         website: raw.website ?? raw.website_url ?? '',

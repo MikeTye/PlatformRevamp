@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Box,
@@ -16,17 +16,47 @@ import {
     ListItemText,
     Tabs,
     Tab,
-    CircularProgress
+    CircularProgress,
+    Dialog,
+    DialogContent,
+    DialogTitle,
+    Stack,
+    Divider
 } from '@mui/material';
 import SearchRounded from '@mui/icons-material/SearchRounded';
 import CloseRounded from '@mui/icons-material/CloseRounded';
+
+import BookmarkRounded from '@mui/icons-material/BookmarkRounded';
+import BookmarkBorderRounded from '@mui/icons-material/BookmarkBorderRounded';
+import EmailRounded from '@mui/icons-material/EmailRounded';
+import AttachMoneyRounded from '@mui/icons-material/AttachMoneyRounded';
+import TrendingUpRounded from '@mui/icons-material/TrendingUpRounded';
+import PeopleRounded from '@mui/icons-material/PeopleRounded';
+import BarChartRounded from '@mui/icons-material/BarChartRounded';
+import ShieldRounded from '@mui/icons-material/ShieldRounded';
+import BusinessRounded from '@mui/icons-material/BusinessRounded';
+
 import {
     OpportunityCard,
     OpportunityType
 } from '../components/cards/OpportunityCard';
-import { ProjectStage } from '../components/ProjectStageIndicator';
+import { ProjectStage, ProjectStageIndicator } from '../components/ProjectStageIndicator';
 import { MobileFilterSheet } from '../components/MobileFilterSheet';
-import countryCodes from '../data/countrycode.json';
+import {
+    CountryFlagLabel,
+    resolveCountryCode
+} from '../components/common/CountryFlagLabel';
+
+import {
+    trackBookmarkedItemRemoved,
+    trackFirstOpportunityPostViewedInDetail,
+    trackOpportunitiesDirectoryRefined,
+    trackOpportunitiesDirectoryViewed,
+    trackOpportunityContactClicked,
+    trackOpportunityPostBookmarked,
+    trackOpportunityPostViewedInDetail,
+    type OpportunityTrackingEntryPoint,
+} from '../lib/analytics';
 
 type BackendProjectListItem = {
     id: string;
@@ -121,6 +151,7 @@ type SavedItemsResponse = {
 type Opportunity = {
     id: string;
     projectId: string;
+    companyId?: string;
     type: OpportunityType;
     description: string;
     projectName: string;
@@ -156,17 +187,12 @@ const FALLBACK_STAGES: ProjectStage[] = [
     'Closed'
 ];
 
-type CountryCodeEntry = {
-    country: string;
-    code: string;
-    iso: string;
-};
-
 type BackendOpportunityListItem = {
     id: string;
     projectId: string;
     projectName: string;
     projectUpid?: string | null;
+    companyId?: string | null;
     type: string;
     description: string | null;
     urgent: boolean;
@@ -179,19 +205,6 @@ type BackendOpportunityListItem = {
 type BackendListProjectOpportunitiesResponse = {
     items: BackendOpportunityListItem[];
 };
-
-const COUNTRY_CODE_MAP = new Map(
-    (countryCodes as CountryCodeEntry[]).map((item) => [
-        item.country.trim().toLowerCase(),
-        item.iso.trim().toUpperCase()
-    ])
-);
-
-function toCountryCode(country: string | null | undefined, fallback?: string | null) {
-    if (fallback && fallback.trim()) return fallback.trim().toUpperCase();
-    if (!country) return '';
-    return COUNTRY_CODE_MAP.get(country.trim().toLowerCase()) ?? country.slice(0, 2).toUpperCase();
-}
 
 function asOpportunityType(value: string): OpportunityType | null {
     const allowed: OpportunityType[] = [
@@ -286,7 +299,7 @@ function mapSavedOpportunityToOpportunity(row: SavedOpportunityRow): Opportunity
         developer: row.opportunity.developer || 'Unknown developer',
         stage,
         country: row.opportunity.country || '',
-        countryCode: toCountryCode(
+        countryCode: resolveCountryCode(
             row.opportunity.country,
             row.opportunity.countryCode
         ),
@@ -328,6 +341,25 @@ function matchesFilters(
     return true;
 }
 
+function getOpportunityTypeIcon(type: OpportunityType) {
+    const iconSx = { fontSize: 24 };
+
+    switch (type) {
+        case 'Financing':
+            return <AttachMoneyRounded sx={iconSx} />;
+        case 'Technical Advisor':
+            return <TrendingUpRounded sx={iconSx} />;
+        case 'Buyers':
+            return <PeopleRounded sx={iconSx} />;
+        case 'MRV Provider':
+            return <BarChartRounded sx={iconSx} />;
+        case 'Insurance':
+            return <ShieldRounded sx={iconSx} />;
+        default:
+            return <BusinessRounded sx={iconSx} />;
+    }
+}
+
 export function OpportunitiesPage() {
     const navigate = useNavigate();
 
@@ -351,6 +383,90 @@ export function OpportunitiesPage() {
     const [availableTypes, setAvailableTypes] = useState<OpportunityType[]>(FALLBACK_OPPORTUNITY_TYPES);
     const [availableStages, setAvailableStages] = useState<ProjectStage[]>(FALLBACK_STAGES);
     const [availableCountries, setAvailableCountries] = useState<string[]>([]);
+
+    const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
+
+    const hasTrackedDirectoryViewRef = useRef(false);
+    const hasTrackedSearchRef = useRef(false);
+    const hasTrackedTabRef = useRef(false);
+    const hasTrackedTypeFilterRef = useRef(false);
+    const hasTrackedStageFilterRef = useRef(false);
+    const hasTrackedCountryFilterRef = useRef(false);
+
+    const isPageLoading = loading || loadingSaved;
+
+    const getDirectoryEntryPoint = (): OpportunityTrackingEntryPoint =>
+        activeTab === 'saved'
+            ? 'bookmarks_opportunities_tab'
+            : 'opportunities_directory';
+
+    const handleOpenOpportunityDetail = (
+        opportunity: Opportunity,
+        entryPoint: OpportunityTrackingEntryPoint
+    ) => {
+        trackOpportunityPostViewedInDetail({
+            opportunityId: opportunity.id,
+            projectId: opportunity.projectId,
+            projectName: opportunity.projectName,
+            opportunityType: opportunity.type,
+            entryPoint,
+            urgent: opportunity.urgent,
+        });
+
+        trackFirstOpportunityPostViewedInDetail({
+            opportunityId: opportunity.id,
+            projectId: opportunity.projectId,
+            projectName: opportunity.projectName,
+            opportunityType: opportunity.type,
+            entryPoint,
+            urgent: opportunity.urgent,
+        });
+
+        setSelectedOpportunity(opportunity);
+    };
+
+    const handleContactOpportunity = (
+        opportunity: Opportunity,
+        entryPoint: OpportunityTrackingEntryPoint,
+        e?: React.MouseEvent
+    ) => {
+        e?.stopPropagation();
+
+        trackOpportunityContactClicked({
+            opportunityId: opportunity.id,
+            projectId: opportunity.projectId,
+            projectName: opportunity.projectName,
+            opportunityType: opportunity.type,
+            entryPoint,
+            urgent: opportunity.urgent,
+        });
+    };
+
+    const handleClearRefinements = () => {
+        const hadSearch = Boolean(searchQuery.trim());
+        const hadFilters =
+            typeFilter.length > 0 ||
+            stageFilter.length > 0 ||
+            countryFilter.length > 0;
+
+        if (!hadSearch && !hadFilters) return;
+
+        trackOpportunitiesDirectoryRefined({
+            refinementType: 'clear_filters',
+            tab: activeTab,
+            searchQuery: searchQuery.trim() || undefined,
+            filterValues: [
+                ...typeFilter.map((value) => `type:${value}`),
+                ...stageFilter.map((value) => `stage:${value}`),
+                ...countryFilter.map((value) => `country:${value}`),
+            ],
+        });
+
+        setSearchQuery('');
+        setTypeFilter([]);
+        setStageFilter([]);
+        setCountryFilter([]);
+    };
 
     useEffect(() => {
         const timer = window.setTimeout(() => {
@@ -417,6 +533,7 @@ export function OpportunitiesPage() {
                         return {
                             id: item.id,
                             projectId: item.projectId,
+                            companyId: item.companyId ?? undefined,
                             type,
                             description:
                                 item.description?.trim() ||
@@ -426,7 +543,7 @@ export function OpportunitiesPage() {
                             developer: item.developer || 'Unknown developer',
                             stage,
                             country: item.country || '',
-                            countryCode: toCountryCode(item.country),
+                            countryCode: resolveCountryCode(item.country),
                             urgent: Boolean(item.urgent),
                             isSaved: savedOpportunityIds.has(item.id),
                             isMine: false
@@ -455,9 +572,90 @@ export function OpportunitiesPage() {
         return () => {
             cancelled = true;
         };
-    }, [debouncedSearch, typeFilter, stageFilter, countryFilter, savedOpportunityIds]);
+    }, [savedOpportunityIds]);
 
-    const handleToggleSave = async (opportunity: Opportunity, e: React.MouseEvent) => {
+    useEffect(() => {
+        if (hasTrackedDirectoryViewRef.current) return;
+        if (isPageLoading) return;
+
+        trackOpportunitiesDirectoryViewed({ tab: activeTab });
+        hasTrackedDirectoryViewRef.current = true;
+    }, [activeTab, isPageLoading]);
+
+    useEffect(() => {
+        if (!hasTrackedSearchRef.current) {
+            hasTrackedSearchRef.current = true;
+            return;
+        }
+
+        if (!debouncedSearch) return;
+
+        trackOpportunitiesDirectoryRefined({
+            refinementType: 'search',
+            tab: activeTab,
+            searchQuery: debouncedSearch,
+        });
+    }, [debouncedSearch, activeTab]);
+
+    useEffect(() => {
+        if (!hasTrackedTabRef.current) {
+            hasTrackedTabRef.current = true;
+            return;
+        }
+
+        trackOpportunitiesDirectoryRefined({
+            refinementType: 'tab',
+            tab: activeTab,
+        });
+    }, [activeTab]);
+
+    useEffect(() => {
+        if (!hasTrackedTypeFilterRef.current) {
+            hasTrackedTypeFilterRef.current = true;
+            return;
+        }
+
+        trackOpportunitiesDirectoryRefined({
+            refinementType: 'filter',
+            tab: activeTab,
+            filterName: 'type',
+            filterValues: typeFilter,
+        });
+    }, [typeFilter, activeTab]);
+
+    useEffect(() => {
+        if (!hasTrackedStageFilterRef.current) {
+            hasTrackedStageFilterRef.current = true;
+            return;
+        }
+
+        trackOpportunitiesDirectoryRefined({
+            refinementType: 'filter',
+            tab: activeTab,
+            filterName: 'stage',
+            filterValues: stageFilter,
+        });
+    }, [stageFilter, activeTab]);
+
+    useEffect(() => {
+        if (!hasTrackedCountryFilterRef.current) {
+            hasTrackedCountryFilterRef.current = true;
+            return;
+        }
+
+        trackOpportunitiesDirectoryRefined({
+            refinementType: 'filter',
+            tab: activeTab,
+            filterName: 'country',
+            filterValues: countryFilter,
+        });
+    }, [countryFilter, activeTab]);
+
+    const handleToggleSave = async (
+        opportunity: Opportunity,
+        e: React.MouseEvent,
+        occurrencePoint: OpportunityTrackingEntryPoint = getDirectoryEntryPoint()
+    ) => {
         e.stopPropagation();
 
         if (savingIds.has(opportunity.id)) return;
@@ -469,6 +667,15 @@ export function OpportunitiesPage() {
         try {
             if (wasSaved) {
                 await apiDelete(`/saved-items/opportunity/${opportunity.id}`);
+
+                trackBookmarkedItemRemoved({
+                    entityType: 'opportunity',
+                    itemId: opportunity.id,
+                    occurrencePoint,
+                    projectId: opportunity.projectId,
+                    projectName: opportunity.projectName,
+                    itemType: opportunity.type,
+                });
 
                 setSavedOpportunityIds((prev) => {
                     const next = new Set(prev);
@@ -489,6 +696,15 @@ export function OpportunitiesPage() {
                 await apiPost('/saved-items', {
                     entityType: 'opportunity',
                     entityId: opportunity.id
+                });
+
+                trackOpportunityPostBookmarked({
+                    opportunityId: opportunity.id,
+                    projectId: opportunity.projectId,
+                    projectName: opportunity.projectName,
+                    opportunityType: opportunity.type,
+                    occurrencePoint,
+                    urgent: opportunity.urgent,
                 });
 
                 const savedVersion: Opportunity = {
@@ -555,8 +771,6 @@ export function OpportunitiesPage() {
 
     const activeFiltersCount =
         typeFilter.length + stageFilter.length + countryFilter.length;
-
-    const isPageLoading = loading || loadingSaved;
 
     return (
         <Box
@@ -702,12 +916,7 @@ export function OpportunitiesPage() {
                         >
                             <MobileFilterSheet
                                 activeCount={activeFiltersCount}
-                                onClear={() => {
-                                    setSearchQuery('');
-                                    setTypeFilter([]);
-                                    setStageFilter([]);
-                                    setCountryFilter([]);
-                                }}
+                                onClear={handleClearRefinements}
                             >
                                 <FormControl size="small" fullWidth>
                                     <InputLabel sx={{ fontSize: '0.875rem' }}>Type</InputLabel>
@@ -857,12 +1066,7 @@ export function OpportunitiesPage() {
                             {(activeFiltersCount > 0 || searchQuery) && (
                                 <Button
                                     size="small"
-                                    onClick={() => {
-                                        setSearchQuery('');
-                                        setTypeFilter([]);
-                                        setStageFilter([]);
-                                        setCountryFilter([]);
-                                    }}
+                                    onClick={handleClearRefinements}
                                     sx={{
                                         textTransform: 'none',
                                         color: 'text.secondary'
@@ -917,13 +1121,19 @@ export function OpportunitiesPage() {
                                             countryCode={opp.countryCode}
                                             urgent={opp.urgent}
                                             isSaved={savedOpportunityIds.has(opp.id)}
-                                            onToggleSave={(e) => handleToggleSave(opp, e)}
+                                            onClick={() => handleOpenOpportunityDetail(opp, getDirectoryEntryPoint())}
+                                            onToggleSave={(e) => handleToggleSave(opp, e, getDirectoryEntryPoint())}
+                                            onContactClick={(e) => {
+                                                handleContactOpportunity(opp, getDirectoryEntryPoint(), e);
+                                            }}
                                             onProjectClick={(e) => {
                                                 e.stopPropagation();
                                                 navigate(`/projects/${opp.projectId}`);
                                             }}
-                                            onContactClick={(e) => {
+                                            onDeveloperClick={(e) => {
                                                 e.stopPropagation();
+                                                if (!opp.companyId) return;
+                                                navigate(`/companies/${opp.companyId}`);
                                             }}
                                         />
                                     </Box>
@@ -939,6 +1149,221 @@ export function OpportunitiesPage() {
                             </Typography>
                         </Box>
                     )}
+
+                    <Dialog
+                        open={!!selectedOpportunity}
+                        onClose={() => setSelectedOpportunity(null)}
+                        maxWidth="sm"
+                        fullWidth
+                        PaperProps={{
+                            sx: {
+                                borderRadius: 2
+                            }
+                        }}
+                    >
+                        {selectedOpportunity && (
+                            <>
+                                <DialogTitle
+                                    sx={{
+                                        pb: 0,
+                                        pr: 6
+                                    }}
+                                >
+                                    <Box display="flex" alignItems="flex-start" gap={2}>
+                                        <Box
+                                            sx={{
+                                                width: 44,
+                                                height: 44,
+                                                borderRadius: 1.5,
+                                                bgcolor: 'grey.100',
+                                                color: 'grey.700',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                flexShrink: 0
+                                            }}
+                                        >
+                                            {getOpportunityTypeIcon(selectedOpportunity.type)}
+                                        </Box>
+
+                                        <Box flex={1}>
+                                            <Box display="flex" alignItems="center" gap={1.5} flexWrap="wrap">
+                                                <Typography variant="h6" fontWeight="bold" lineHeight={1.3}>
+                                                    {selectedOpportunity.type}
+                                                </Typography>
+
+                                                {selectedOpportunity.urgent && (
+                                                    <Chip
+                                                        label="Urgent"
+                                                        size="small"
+                                                        color="warning"
+                                                        sx={{
+                                                            height: 22,
+                                                            fontSize: '0.7rem',
+                                                            fontWeight: 600
+                                                        }}
+                                                    />
+                                                )}
+                                            </Box>
+
+                                            {selectedOpportunity.urgent && (
+                                                <Typography
+                                                    variant="caption"
+                                                    color="warning.main"
+                                                    fontWeight="bold"
+                                                >
+                                                    Priority
+                                                </Typography>
+                                            )}
+                                        </Box>
+
+                                        <Box display="flex" alignItems="center" gap={0.5} flexShrink={0}>
+                                            <IconButton
+                                                size="small"
+                                                onClick={(e) =>
+                                                    handleToggleSave(selectedOpportunity, e, 'opportunity_detailed_view')
+                                                }
+                                                sx={{
+                                                    color: savedOpportunityIds.has(selectedOpportunity.id)
+                                                        ? 'primary.main'
+                                                        : 'grey.400'
+                                                }}
+                                            >
+                                                {savedOpportunityIds.has(selectedOpportunity.id) ? (
+                                                    <BookmarkRounded />
+                                                ) : (
+                                                    <BookmarkBorderRounded />
+                                                )}
+                                            </IconButton>
+
+                                            <IconButton
+                                                size="small"
+                                                onClick={() => setSelectedOpportunity(null)}
+                                                sx={{ color: 'grey.500' }}
+                                            >
+                                                <CloseRounded />
+                                            </IconButton>
+                                        </Box>
+                                    </Box>
+                                </DialogTitle>
+
+                                <DialogContent sx={{ pt: 2 }}>
+                                    <Typography
+                                        variant="body1"
+                                        color="text.secondary"
+                                        sx={{
+                                            lineHeight: 1.6,
+                                            mb: 3
+                                        }}
+                                    >
+                                        {selectedOpportunity.description}
+                                    </Typography>
+
+                                    <Divider sx={{ mb: 2.5 }} />
+
+                                    <Box mb={2.5}>
+                                        <Typography
+                                            variant="caption"
+                                            color="text.disabled"
+                                            fontWeight={600}
+                                            sx={{
+                                                textTransform: 'uppercase',
+                                                letterSpacing: 0.5,
+                                                mb: 1,
+                                                display: 'block'
+                                            }}
+                                        >
+                                            Project
+                                        </Typography>
+
+                                        <Typography
+                                            variant="subtitle1"
+                                            fontWeight="medium"
+                                            color="text.primary"
+                                            sx={{
+                                                cursor: 'pointer',
+                                                '&:hover': {
+                                                    textDecoration: 'underline'
+                                                },
+                                                mb: 0.5
+                                            }}
+                                            onClick={() => {
+                                                setSelectedOpportunity(null);
+                                                navigate(`/projects/${selectedOpportunity.projectId}`);
+                                            }}
+                                        >
+                                            {selectedOpportunity.projectName}
+                                        </Typography>
+
+                                        <Typography
+                                            variant="body2"
+                                            color="text.secondary"
+                                            sx={{
+                                                cursor: selectedOpportunity.companyId ? 'pointer' : 'default',
+                                                '&:hover': selectedOpportunity.companyId
+                                                    ? { textDecoration: 'underline' }
+                                                    : undefined
+                                            }}
+                                            onClick={() => {
+                                                if (!selectedOpportunity.companyId) return;
+                                                setSelectedOpportunity(null);
+                                                navigate(`/companies/${selectedOpportunity.companyId}`);
+                                            }}
+                                        >
+                                            {selectedOpportunity.developer}
+                                        </Typography>
+
+                                        {!!selectedOpportunity.projectUpid && (
+                                            <Typography variant="caption" color="text.disabled">
+                                                {selectedOpportunity.projectUpid}
+                                            </Typography>
+                                        )}
+                                    </Box>
+
+                                    <Stack
+                                        direction="row"
+                                        spacing={1.5}
+                                        alignItems="center"
+                                        flexWrap="wrap"
+                                        mb={3}
+                                    >
+                                        <ProjectStageIndicator stage={selectedOpportunity.stage} />
+
+                                        {!!selectedOpportunity.country && (
+                                            <CountryFlagLabel
+                                                country={selectedOpportunity.country}
+                                                code={selectedOpportunity.countryCode}
+                                                size="md"
+                                                textVariant="body2"
+                                                color="text.secondary"
+                                            />
+                                        )}
+                                    </Stack>
+
+                                    <Button
+                                        variant="outlined"
+                                        fullWidth
+                                        startIcon={<EmailRounded />}
+                                        sx={{
+                                            textTransform: 'none',
+                                            borderColor: 'grey.300',
+                                            color: 'text.primary',
+                                            py: 1.25
+                                        }}
+                                        onClick={(e) => {
+                                            handleContactOpportunity(
+                                                selectedOpportunity,
+                                                'opportunity_detailed_view',
+                                                e
+                                            );
+                                        }}
+                                    >
+                                        Contact Developer
+                                    </Button>
+                                </DialogContent>
+                            </>
+                        )}
+                    </Dialog>
                 </Paper>
             </Box>
         </Box>

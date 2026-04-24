@@ -14,7 +14,7 @@ import {
 } from '@mui/material';
 import DescriptionRounded from '@mui/icons-material/DescriptionRounded';
 
-import type { ProjectDocument } from '../ProjectProfileView';
+import type { ProjectDocument } from '../projectProfile.types';
 
 type UploadState = {
     busy: boolean;

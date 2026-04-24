@@ -12,7 +12,7 @@ import {
     Typography,
 } from '@mui/material';
 
-import type { ProjectOpportunity } from '../ProjectProfileView';
+import type { ProjectOpportunity } from '../projectProfile.types';
 
 export interface ProjectOpportunitiesSectionProps {
     items: ProjectOpportunity[];

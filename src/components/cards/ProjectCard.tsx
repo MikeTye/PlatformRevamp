@@ -19,6 +19,14 @@ import VerifiedRounded from '@mui/icons-material/VerifiedRounded';
 
 import { ProjectStageIndicator, type ProjectStage } from '../ProjectStageIndicator';
 import { ReportingFreshness, type FreshnessStatus } from '../ReportingFreshness';
+import { CountryFlagLabel } from '../common/CountryFlagLabel';
+import ScienceRounded from '@mui/icons-material/ScienceRounded';
+import PrecisionManufacturingRounded from '@mui/icons-material/PrecisionManufacturingRounded';
+import GrainRounded from '@mui/icons-material/GrainRounded';
+import BoltRounded from '@mui/icons-material/BoltRounded';
+import RecyclingRounded from '@mui/icons-material/RecyclingRounded';
+import HomeRounded from '@mui/icons-material/HomeRounded';
+import NatureRounded from '@mui/icons-material/NatureRounded';
 
 export interface ProjectCardProps {
     upid?: string | null;
@@ -54,12 +62,95 @@ export interface ProjectCardProps {
     variant?: 'default' | 'compact';
 }
 
-const typeIconMap: Record<string, React.ElementType> = {
-    ARR: ParkRounded,
-    'REDD+': ForestRounded,
-    IFM: ForestRounded,
-    'Blue Carbon': WaterRounded,
-    'Regenerative Agriculture': AgricultureRounded,
+const typeIconMap: Record<
+    string,
+    {
+        icon: React.ElementType;
+        color: string;
+        bg: string;
+    }
+> = {
+    arr: {
+        icon: ParkRounded,
+        color: '#558b2f',
+        bg: '#f1f8e9',
+    },
+    redd: {
+        icon: ForestRounded,
+        color: '#388e3c',
+        bg: '#e8f5e9',
+    },
+    'regenerative-ag': {
+        icon: AgricultureRounded,
+        color: '#8d6e63',
+        bg: '#f5f0e6',
+    },
+    ifm: {
+        icon: ForestRounded,
+        color: '#2e7d32',
+        bg: '#e8f5e9',
+    },
+    'blue-carbon': {
+        icon: WaterRounded,
+        color: '#0277bd',
+        bg: '#e1f5fe',
+    },
+    biochar: {
+        icon: ScienceRounded,
+        color: '#5d4037',
+        bg: '#efebe9',
+    },
+    dac: {
+        icon: PrecisionManufacturingRounded,
+        color: '#546e7a',
+        bg: '#eceff1',
+    },
+    erw: {
+        icon: GrainRounded,
+        color: '#6d4c41',
+        bg: '#efebe9',
+    },
+    beccs: {
+        icon: PrecisionManufacturingRounded,
+        color: '#455a64',
+        bg: '#eceff1',
+    },
+    'renewable-energy': {
+        icon: BoltRounded,
+        color: '#f9a825',
+        bg: '#fff8e1',
+    },
+    'waste-management': {
+        icon: RecyclingRounded,
+        color: '#00897b',
+        bg: '#e0f2f1',
+    },
+    'household-devices': {
+        icon: HomeRounded,
+        color: '#6d4c41',
+        bg: '#efebe9',
+    },
+    awd: {
+        icon: AgricultureRounded,
+        color: '#2e7d32',
+        bg: '#e8f5e9',
+    },
+};
+
+const PROJECT_TYPE_LABEL_MAP: Record<string, string> = {
+    arr: 'ARR',
+    redd: 'REDD+',
+    'regenerative-ag': 'Regenerative Agriculture',
+    ifm: 'IFM',
+    'blue-carbon': 'Blue Carbon',
+    biochar: 'Biochar',
+    dac: 'DAC',
+    erw: 'ERW',
+    beccs: 'BECCS',
+    'renewable-energy': 'Renewable Energy',
+    'waste-management': 'Waste Management',
+    'household-devices': 'Household Devices',
+    awd: 'AWD',
 };
 
 function formatUpid(id?: string | null) {
@@ -71,7 +162,11 @@ function formatUpid(id?: string | null) {
 }
 
 function MediaStub({ type, name }: { type: string; name: string }) {
-    const Icon = typeIconMap[type] ?? ParkRounded;
+    const config = typeIconMap[type];
+    const Icon = config?.icon ?? NatureRounded;
+    const iconColor = config?.color ?? '#757575';
+    const bgColor = config?.bg ?? 'grey.100';
+    const typeLabel = PROJECT_TYPE_LABEL_MAP[type] ?? type;
 
     return (
         <Box
@@ -80,21 +175,41 @@ function MediaStub({ type, name }: { type: string; name: string }) {
                 height: '100%',
                 minHeight: 120,
                 display: 'flex',
-                flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                bgcolor: 'grey.100',
-                color: 'text.secondary',
-                gap: 1,
-                px: 2,
+                bgcolor: bgColor,
+                px: 1,
                 textAlign: 'center',
             }}
             aria-label={`${name} media placeholder`}
         >
-            <Icon sx={{ fontSize: 28 }} />
-            <Typography variant="caption" color="text.secondary">
-                Media coming soon
-            </Typography>
+            <Box
+                display="flex"
+                flexDirection="column"
+                alignItems="center"
+                gap={0.5}
+            >
+                <Icon
+                    sx={{
+                        fontSize: 32,
+                        color: iconColor,
+                    }}
+                />
+
+                <Typography
+                    variant="caption"
+                    sx={{
+                        fontSize: '0.6rem',
+                        color: iconColor,
+                        fontWeight: 500,
+                        textAlign: 'center',
+                        px: 0.5,
+                        lineHeight: 1.2,
+                    }}
+                >
+                    {typeLabel}
+                </Typography>
+            </Box>
         </Box>
     );
 }
@@ -161,6 +276,11 @@ export function ProjectCard({
     variant = 'default',
 }: ProjectCardProps) {
     const imageUrl = thumbUrl || photoUrl || null;
+
+    const normalizedType = type;
+    const typeConfig = typeIconMap[normalizedType];
+    const typeLabel = PROJECT_TYPE_LABEL_MAP[normalizedType] ?? normalizedType;
+
 
     if (variant === 'compact') {
         return (
@@ -315,12 +435,21 @@ export function ProjectCard({
                     >
                         <ProjectStageIndicator stage={stage} />
                         <Chip
-                            label={type}
+                            label={typeLabel}
                             size="small"
+                            icon={
+                                typeConfig ? (
+                                    <typeConfig.icon style={{ fontSize: 16 }} />
+                                ) : undefined
+                            }
                             sx={{
                                 height: 24,
                                 fontSize: '0.75rem',
-                                bgcolor: 'grey.100',
+                                bgcolor: typeConfig?.bg ?? 'grey.100',
+                                color: typeConfig?.color ?? 'text.primary',
+                                '& .MuiChip-icon': {
+                                    color: typeConfig?.color ?? 'inherit',
+                                },
                             }}
                         />
                     </Stack>
@@ -339,14 +468,13 @@ export function ProjectCard({
                             flexWrap: 'wrap',
                         }}
                     >
-                        <Box display="flex" alignItems="center" gap={0.75}>
-                            <Typography fontSize="0.875rem">
-                                {countryCode || '🏳️'}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                                {country || 'Unknown'}
-                            </Typography>
-                        </Box>
+                        <CountryFlagLabel
+                            country={country}
+                            code={countryCode}
+                            size="md"
+                            textVariant="caption"
+                            color="text.secondary"
+                        />
 
                         {Boolean(hectares) && (
                             <Box display="flex" alignItems="center" gap={0.75}>
@@ -517,9 +645,22 @@ export function ProjectCard({
                 <Stack direction="row" spacing={0.5} sx={{ mt: 1, mb: 1, flexShrink: 0 }}>
                     <ProjectStageIndicator stage={stage} />
                     <Chip
-                        label={type}
+                        label={typeLabel}
                         size="small"
-                        sx={{ height: 24, fontSize: '0.75rem', bgcolor: 'grey.100' }}
+                        icon={
+                            typeConfig ? (
+                                <typeConfig.icon style={{ fontSize: 16 }} />
+                            ) : undefined
+                        }
+                        sx={{
+                            height: 24,
+                            fontSize: '0.75rem',
+                            bgcolor: typeConfig?.bg ?? 'grey.100',
+                            color: typeConfig?.color ?? 'text.primary',
+                            '& .MuiChip-icon': {
+                                color: typeConfig?.color ?? 'inherit',
+                            },
+                        }}
                     />
                 </Stack>
 

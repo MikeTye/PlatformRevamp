@@ -27,6 +27,7 @@ import {
     getShareRedirectPath,
     clearAllAccessContext,
 } from '../../utils/authAccessContext';
+import { trackEvent } from '../../lib/analytics';
 
 type OnboardingStatus = 'not_started' | 'in_progress' | 'completed' | 'skipped';
 
@@ -178,6 +179,14 @@ export function OnboardingPage() {
     const handleContinueFromRoles = async () => {
         if (selectedRoles.length === 0) return;
 
+        trackEvent('onboarding use case submitted', {
+            ...getOnboardingTrackingProps(),
+            step_name: 'use_cases',
+            selected_roles: selectedRoles,
+            selected_role_count: selectedRoles.length,
+            selected_just_exploring: isJustExploring,
+        });
+
         if (isJustExploring) {
             await persistOnboarding(
                 buildPayload({
@@ -185,6 +194,12 @@ export function OnboardingPage() {
                     onboardingStatus: 'completed',
                 })
             );
+
+            trackEvent('onboarding completed via just exploring path', {
+                ...getOnboardingTrackingProps(),
+                completion_path: 'just_exploring',
+            });
+
             navigate('/dashboard');
             return;
         }
@@ -206,6 +221,12 @@ export function OnboardingPage() {
         }
 
         if (activeStep === 1) {
+            trackEvent('company setup skipped on setup organization page', {
+                ...getOnboardingTrackingProps(),
+                step_name: 'company_setup',
+                skip_type: 'skip_current_step',
+            });
+
             await persistOnboarding(
                 buildPayload({
                     onboardingStatus: 'completed',
@@ -228,6 +249,18 @@ export function OnboardingPage() {
     };
 
     const handleSkipAll = async () => {
+
+        trackEvent(
+            activeStep === 0
+                ? 'onboarding skipped on use case page'
+                : 'company setup skipped on setup organization page',
+            {
+                ...getOnboardingTrackingProps(),
+                step_name: activeStep === 0 ? 'use_cases' : 'company_setup',
+                skip_type: 'skip_all',
+            }
+        );
+
         await persistOnboarding(
             buildPayload({
                 onboardingStatus: 'skipped',
@@ -255,7 +288,27 @@ export function OnboardingPage() {
     }, []);
 
     const handleCompanyWizardClose = async (result?: WizardCloseResult) => {
+
+        const latestCompanyDraft = onboardingDraft?.companyWizard ?? {};
+        const initialCompanyDraft = companyWizardInitialDraftRef.current || '{}';
+        const currentCompanyDraft = JSON.stringify(latestCompanyDraft);
+        const hadAnyInput =
+            currentCompanyDraft !== '{}' &&
+            currentCompanyDraft !== initialCompanyDraft;
+
         if (!result?.completed) {
+
+            trackEvent(
+                hadAnyInput
+                    ? 'onboarding company setup exited to draft'
+                    : 'onboarding company setup abandoned with no input',
+                {
+                    ...getOnboardingTrackingProps(),
+                    step_name: 'company_wizard',
+                    had_any_input: hadAnyInput,
+                }
+            );
+
             setIsCompanyWizardOpen(false);
             scheduleSave(buildPayload());
             return;
@@ -288,6 +341,13 @@ export function OnboardingPage() {
             localStorage.removeItem(storageKey);
 
             if (createdCompanyId) {
+
+                trackEvent('onboarding company created and published', {
+                    ...getOnboardingTrackingProps(),
+                    step_name: 'company_wizard',
+                    company_id: createdCompanyId,
+                });
+
                 navigate(`/my-company/${createdCompanyId}`, { replace: true });
                 return;
             }
@@ -330,6 +390,47 @@ export function OnboardingPage() {
             setIsTransitioning(false);
         }
     };
+
+    const hasTrackedOnboardingStartRef = useRef(false);
+    const hasTrackedCompanySetupEntryRef = useRef(false);
+    const companyWizardInitialDraftRef = useRef<string>('');
+    const projectWizardInitialDraftRef = useRef<string>('');
+
+    const getOnboardingTrackingProps = () => ({
+        page: 'onboarding',
+        onboarding_email: onboardingEmail !== 'anonymous' ? onboardingEmail : null,
+        active_step: activeStep,
+        visible_steps: getVisibleSteps(),
+        selectedRoles,
+        selected_role_count: selectedRoles.length,
+        company_created: companyCreated,
+        project_created: projectCreated,
+        is_fresh_signup: isFreshSignup,
+    });
+
+    useEffect(() => {
+        if (loading || hasTrackedOnboardingStartRef.current) return;
+
+        trackEvent('onboarding started', {
+            ...getOnboardingTrackingProps(),
+            step_name: 'use_cases',
+        });
+
+        hasTrackedOnboardingStartRef.current = true;
+    }, [loading]);
+
+    useEffect(() => {
+        if (loading) return;
+        if (activeStep !== 1) return;
+        if (hasTrackedCompanySetupEntryRef.current) return;
+
+        trackEvent('entered onboarding company setup path', {
+            ...getOnboardingTrackingProps(),
+            step_name: 'company_setup',
+        });
+
+        hasTrackedCompanySetupEntryRef.current = true;
+    }, [loading, activeStep, selectedRoles]);
 
     useEffect(() => {
         if (hasPendingAccessRedirect) {
@@ -720,7 +821,15 @@ export function OnboardingPage() {
                                             variant="contained"
                                             size="large"
                                             fullWidth
-                                            onClick={() => setIsCompanyWizardOpen(true)}
+                                            onClick={() => {
+                                                companyWizardInitialDraftRef.current = JSON.stringify(onboardingDraft?.companyWizard ?? {});
+                                                trackEvent('onboarding company creation wizard started', {
+                                                    ...getOnboardingTrackingProps(),
+                                                    step_name: 'company_setup',
+                                                    action: companyCreated ? 'edit_company' : 'add_company',
+                                                });
+                                                setIsCompanyWizardOpen(true);
+                                            }}
                                             endIcon={<ArrowForwardRounded sx={{ fontSize: 20 }} />}
                                             sx={{ py: 1.5 }}
                                         >
@@ -821,6 +930,16 @@ export function OnboardingPage() {
                         : undefined
                 }
                 onDraftChange={handleCompanyDraftChange}
+                trackingContext={{
+                    entryPoint: 'onboarding',
+                    draftOrigin:
+                        onboardingDraft?.companyWizard &&
+                            Object.keys(onboardingDraft.companyWizard as Record<string, unknown>).length > 0
+                            ? 'onboarding'
+                            : 'none',
+                    // only pass true if you know this is definitely their first company
+                    isFirstCompanyPublish: !companyCreated,
+                }}
             />
 
             {/* <ProjectWizard

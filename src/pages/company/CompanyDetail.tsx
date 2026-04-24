@@ -9,6 +9,7 @@ import {
 } from './companyProfile.types';
 import { getCompanyDetail } from './companyProfile.api';
 import { canViewCompanySection } from './companyProfile.access';
+import { trackEvent } from '../../lib/analytics';
 
 export function CompanyDetail() {
     const { id } = useParams<{ id: string }>();
@@ -55,6 +56,21 @@ export function CompanyDetail() {
 
     const isMyCompany = company?.isMyCompany ?? false;
     const fromParam = searchParams.get('from');
+
+    const hasTrackedPageViewRef = React.useRef(false);
+
+    React.useEffect(() => {
+        if (!company?.id || hasTrackedPageViewRef.current) return;
+
+        trackEvent('Company page viewed', {
+            company_id: company.id,
+            company_name: company.displayName,
+            is_own_company: Boolean(company.isMyCompany),
+            entry_point: fromParam ?? 'direct',
+        });
+
+        hasTrackedPageViewRef.current = true;
+    }, [company, fromParam]);
 
     const handleBackNavigation = () => {
         if (fromParam === 'profile') {
@@ -135,6 +151,10 @@ export function CompanyDetail() {
             onOpenShare={setShareAnchorEl}
             onCloseShare={() => setShareAnchorEl(null)}
             canViewPrivateSection={canViewPrivateSection}
+            trackingContext={{
+                entryPoint: fromParam ?? 'direct',
+                isOwnCompany: Boolean(company.isMyCompany),
+            }}
         />
     );
 }

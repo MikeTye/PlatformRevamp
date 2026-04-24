@@ -1,5 +1,6 @@
 import type {
-    ProjectCompletenessRule,
+    ProjectProfileData,
+    ProjectSectionKey,
     ProjectStage,
 } from './projectProfile.types';
 
@@ -33,200 +34,387 @@ export const stageDescriptions: Record<ProjectStage, string> = {
         'The project is no longer active.',
 };
 
-export const STAGE_COMPLETENESS_RULES: Record<ProjectStage, ProjectCompletenessRule[]> = {
-    Exploration: [
-        {
-            id: 'location',
-            label: 'Identify project area or asset',
-            description: 'Add country, region, or location context.',
-            section: 'location',
-            isComplete: (project) => Boolean(project.country || project.region),
-        },
-        {
-            id: 'story',
-            label: 'Define initial project context',
-            description: 'Describe the problem, context, or early project approach.',
-            section: 'story',
-            isComplete: (project) =>
-                Boolean(project.storyProblem || project.storyApproach || project.description),
-        },
-        {
-            id: 'team',
-            label: 'Map stakeholders and collaborators',
-            description: 'Add internal team members or service providers.',
-            section: 'team',
-            isComplete: (project) =>
-                Boolean(project.team?.length || project.serviceProviders?.length),
-        },
-    ],
-    Concept: [
-        {
-            id: 'story-concept',
-            label: 'Define project scope and concept',
-            description: 'Add project story and intended pathway.',
-            section: 'story',
-            isComplete: (project) =>
-                Boolean(project.storyProblem && project.storyApproach),
-        },
-        {
-            id: 'registry-method',
-            label: 'Select standard or methodology',
-            description: 'Add registry or methodology details.',
-            section: 'registry',
-            isComplete: (project) =>
-                Boolean(project.registrationPlatform  || project.methodology),
-        },
-        {
-            id: 'documents-concept',
-            label: 'Prepare concept note or supporting documentation',
-            description: 'Upload concept note, PIN, or related materials.',
-            section: 'documents',
-            isComplete: (project) => Boolean(project.documents?.length),
-        },
-    ],
-    Design: [
-        {
-            id: 'documents-design',
-            label: 'Add design-stage documents',
-            description: 'Upload PDD, plans, assessments, or similar materials.',
-            section: 'documents',
-            isComplete: (project) => Boolean(project.documents?.length),
-        },
-        {
-            id: 'readiness-design',
-            label: 'Track design readiness',
-            description:
-                'Add readiness items for monitoring, baseline, and implementation progress.',
-            section: 'readiness',
-            isComplete: (project) => Boolean(project.readiness?.length),
-        },
-        {
-            id: 'media-design',
-            label: 'Add media or supporting evidence',
-            description: 'Upload site photos, diagrams, or visual material.',
-            section: 'media',
-            isComplete: (project) => Boolean(project.media?.length),
-        },
-    ],
-    Listed: [
-        {
-            id: 'registry-listed',
-            label: 'Add registry submission details',
-            description: 'Record registry platform, status, or project ID.',
-            section: 'registry',
-            isComplete: (project) =>
-                Boolean(project.registrationPlatform  && (project.registryStatus || project.registryId)),
-        },
-        {
-            id: 'documents-listed',
-            label: 'Upload listing-related documents',
-            description: 'Include materials submitted for listing or review.',
-            section: 'documents',
-            isComplete: (project) => Boolean(project.documents?.length),
-        },
-        {
-            id: 'updates-listed',
-            label: 'Post listing progress update',
-            description: 'Add an update once the project enters formal review.',
-            section: 'updates',
-            isComplete: (project) => Boolean(project.updates?.length),
-        },
-    ],
-    Validation: [
-        {
-            id: 'registry-validation',
-            label: 'Track validation status',
-            description: 'Keep registry status current during validation.',
-            section: 'registry',
-            isComplete: (project) => Boolean(project.registryStatus),
-        },
-        {
-            id: 'readiness-validation',
-            label: 'Track validation readiness',
-            description: 'Record validation, audit, or corrective-action progress.',
-            section: 'readiness',
-            isComplete: (project) => Boolean(project.readiness?.length),
-        },
-        {
-            id: 'updates-validation',
-            label: 'Post validation update',
-            description: 'Share validation milestones or review progress.',
-            section: 'updates',
-            isComplete: (project) => Boolean(project.updates?.length),
-        },
-    ],
-    Registered: [
-        {
-            id: 'registry-registered',
-            label: 'Complete registration details',
-            description:
-                'Registry platform, status, and project identifier should be present.',
-            section: 'registry',
-            isComplete: (project) =>
-                Boolean(
-                    project.registrationPlatform  &&
-                    project.registryStatus &&
-                    project.registryId,
-                ),
-        },
-        {
-            id: 'impact-registered',
-            label: 'Add project impact metrics',
-            description:
-                'Include area, estimated removals, or similar credit-related figures.',
-            section: 'impact',
-            isComplete: (project) =>
-                Boolean(project.totalAreaHa || project.estimatedAnnualRemoval),
-        },
-        {
-            id: 'readiness-registered',
-            label: 'Show operational readiness',
-            description: 'Add monitoring or reporting readiness details.',
-            section: 'readiness',
-            isComplete: (project) => Boolean(project.documents?.length),
-        },
-    ],
-    Issued: [
-        {
-            id: 'registry-issued',
-            label: 'Show issued credit status',
-            description: 'Keep issuance-related registry details current.',
-            section: 'registry',
-            isComplete: (project) =>
-                Boolean(project.registrationPlatform  && project.registryStatus),
-        },
-        {
-            id: 'impact-issued',
-            label: 'Add issued-project metrics',
-            description:
-                'Show area, annual estimate, or similar impact information.',
-            section: 'impact',
-            isComplete: (project) =>
-                Boolean(project.totalAreaHa || project.estimatedAnnualRemoval),
-        },
-        {
-            id: 'updates-issued',
-            label: 'Post issuance update',
-            description: 'Add an update when credits have been issued.',
-            section: 'updates',
-            isComplete: (project) => Boolean(project.updates?.length),
-        },
-    ],
-    Closed: [
-        {
-            id: 'updates-closed',
-            label: 'Document closure outcome',
-            description: 'Add a final update or closure summary.',
-            section: 'updates',
-            isComplete: (project) => Boolean(project.updates?.length),
-        },
-        {
-            id: 'documents-closed',
-            label: 'Upload final records',
-            description:
-                'Store final reports, lessons learned, or supporting materials.',
-            section: 'documents',
-            isComplete: (project) => Boolean(project.documents?.length),
-        },
-    ],
+import type { CompletenessItem } from '../../components/ProfileCompleteness';
+
+export type ChecklistStageColumn =
+    | 'Exploration'
+    | 'Concept'
+    | 'Design'
+    | 'Listed'
+    | 'Validation'
+    | 'Registered'
+    | 'Issued';
+
+export type ProjectChecklistDefinition = {
+    id: string;
+    label: string;
+    description?: string;
+    section: ProjectSectionKey | 'cover' | 'settings';
+    stages: ChecklistStageColumn[];
+    isComplete: (project: ProjectProfileData) => boolean;
 };
+
+function hasText(value: unknown): boolean {
+    return typeof value === 'string' ? value.trim().length > 0 : false;
+}
+
+function hasValidUrl(value: unknown): boolean {
+    if (!hasText(value)) return false;
+
+    try {
+        new URL(String(value).trim());
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function normalizeText(value: unknown): string {
+    return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function getDocumentSearchBlob(document: unknown): string {
+    if (!document || typeof document !== 'object') return '';
+
+    const doc = document as Record<string, unknown>;
+    const metadata =
+        doc.metadata && typeof doc.metadata === 'object'
+            ? (doc.metadata as Record<string, unknown>)
+            : {};
+
+    return [
+        doc.type,
+        doc.documentType,
+        doc.kind,
+        doc.category,
+        doc.title,
+        doc.name,
+        doc.label,
+        metadata.type,
+        metadata.documentType,
+        metadata.kind,
+        metadata.category,
+        metadata.title,
+        metadata.name,
+    ]
+        .map(normalizeText)
+        .filter(Boolean)
+        .join(' ');
+}
+
+function getDocumentStatus(document: unknown): string {
+    if (!document || typeof document !== 'object') return '';
+
+    const doc = document as Record<string, unknown>;
+    const metadata =
+        doc.metadata && typeof doc.metadata === 'object'
+            ? (doc.metadata as Record<string, unknown>)
+            : {};
+
+    return normalizeText(
+        doc.status ??
+            doc.documentStatus ??
+            metadata.status ??
+            metadata.documentStatus
+    );
+}
+
+function projectHasDocument(
+    project: ProjectProfileData,
+    typeMatchers: string[],
+    status?: 'draft' | 'final'
+): boolean {
+    return (project.documents ?? []).some((document) => {
+        const blob = getDocumentSearchBlob(document);
+        const docStatus = getDocumentStatus(document);
+
+        const matchesType = typeMatchers.some((matcher) => blob.includes(matcher));
+        if (!matchesType) return false;
+
+        if (!status) return true;
+        return docStatus === status;
+    });
+}
+
+export function getChecklistStageColumn(stage: ProjectStage | string | null | undefined): ChecklistStageColumn | null {
+    const normalized = typeof stage === 'string' ? stage.trim().toLowerCase() : '';
+
+    switch (normalized) {
+        case 'exploration':
+            return 'Exploration';
+        case 'concept':
+            return 'Concept';
+        case 'design':
+            return 'Design';
+        case 'listed':
+            return 'Listed';
+        case 'validation':
+            return 'Validation';
+        case 'registered':
+            return 'Registered';
+        case 'issued':
+            return 'Issued';
+        default:
+            return null;
+    }
+}
+
+export const PROJECT_CHECKLIST_DEFINITIONS: ProjectChecklistDefinition[] = [
+    {
+        id: 'developer-organization',
+        label: 'Add the developer organization',
+        section: 'overview',
+        stages: ['Exploration', 'Concept', 'Design', 'Listed', 'Validation', 'Registered', 'Issued'],
+        isComplete: (project) => hasText(project.companyName),
+    },
+    {
+        id: 'project-name',
+        label: 'Add the project name',
+        section: 'overview',
+        stages: ['Exploration', 'Concept', 'Design', 'Listed', 'Validation', 'Registered', 'Issued'],
+        isComplete: (project) => hasText(project.name),
+    },
+    {
+        id: 'short-description',
+        label: 'Add a short tagline to your project',
+        description: 'Input 1 or more characters',
+        section: 'overview',
+        stages: ['Exploration', 'Concept', 'Design', 'Listed', 'Validation', 'Registered', 'Issued'],
+        isComplete: (project) => hasText(project.description),
+    },
+    {
+        id: 'project-type',
+        label: 'Select the project type',
+        section: 'overview',
+        stages: ['Exploration', 'Concept', 'Design', 'Listed', 'Validation', 'Registered', 'Issued'],
+        isComplete: (project) => hasText(project.type),
+    },
+    {
+        id: 'current-stage',
+        label: 'Set the current stage',
+        section: 'overview',
+        stages: ['Exploration', 'Concept', 'Design', 'Listed', 'Validation', 'Registered', 'Issued'],
+        isComplete: (project) => hasText(project.stage),
+    },
+    {
+        id: 'visibility',
+        label: 'Set the project visibility',
+        section: 'settings',
+        stages: ['Exploration', 'Concept', 'Design', 'Listed', 'Validation', 'Registered', 'Issued'],
+        isComplete: (project) => hasText(project.projectVisibility),
+    },
+    {
+        id: 'country',
+        label: 'Add the project country',
+        section: 'overview',
+        stages: ['Exploration', 'Concept', 'Design', 'Listed', 'Validation', 'Registered', 'Issued'],
+        isComplete: (project) => hasText(project.country),
+    },
+    {
+        id: 'region',
+        label: 'Add the state or region',
+        section: 'overview',
+        stages: ['Exploration', 'Concept', 'Design', 'Listed', 'Validation', 'Registered', 'Issued'],
+        isComplete: (project) => hasText(project.region),
+    },
+    {
+        id: 'problem-context',
+        label: 'Share the problem and context of your project',
+        description: 'Input 1 or more characters',
+        section: 'story',
+        stages: ['Exploration', 'Concept', 'Design', 'Listed', 'Validation', 'Registered', 'Issued'],
+        isComplete: (project) => hasText(project.storyProblem),
+    },
+    {
+        id: 'project-approach',
+        label: 'Share the approach of your project',
+        description: 'Input 1 or more characters',
+        section: 'story',
+        stages: ['Exploration', 'Concept', 'Design', 'Listed', 'Validation', 'Registered', 'Issued'],
+        isComplete: (project) => hasText(project.storyApproach),
+    },
+    {
+        id: 'project-cover',
+        label: 'Add a project cover',
+        description: 'Upload an image for project cover',
+        section: 'cover',
+        stages: ['Exploration', 'Concept', 'Design', 'Listed', 'Validation', 'Registered', 'Issued'],
+        isComplete: (project) => hasText(project.coverImageUrl),
+    },
+    {
+        id: 'updates',
+        label: 'Share an update about your project',
+        description: 'Post first project update',
+        section: 'updates',
+        stages: ['Concept', 'Design', 'Listed', 'Validation', 'Registered', 'Issued'],
+        isComplete: (project) => (project.updates?.length ?? 0) > 0,
+    },
+    {
+        id: 'media',
+        label: 'Add some media to showcase your project',
+        description: 'Upload 1 or more media (not including project cover)',
+        section: 'media',
+        stages: ['Concept', 'Design', 'Listed', 'Validation', 'Registered', 'Issued'],
+        isComplete: (project) => (project.media?.length ?? 0) > 0,
+    },
+    {
+        id: 'concept-note',
+        label: 'Share your project concept note',
+        description: 'Upload a document with Document Type = Concept Note',
+        section: 'documents',
+        stages: ['Concept'],
+        isComplete: (project) => projectHasDocument(project, ['concept note']),
+    },
+    {
+        id: 'feasibility-study',
+        label: 'Share your project’s feasibility study',
+        description: 'Upload a document with Document Type = Feasibility Study',
+        section: 'documents',
+        stages: ['Design'],
+        isComplete: (project) => projectHasDocument(project, ['feasibility study']),
+    },
+    {
+        id: 'pdd-draft',
+        label: 'Share your Project Design Document (PDD) draft',
+        description: 'Upload a document with Document Type = PDD and Status = Draft',
+        section: 'documents',
+        stages: ['Design', 'Listed', 'Validation'],
+        isComplete: (project) => projectHasDocument(project, ['pdd', 'project design document'], 'draft'),
+    },
+    {
+        id: 'project-partners',
+        label: 'Share who your project partners are',
+        description: 'List 1 or more project partners',
+        section: 'team',
+        stages: ['Design', 'Listed', 'Validation', 'Registered', 'Issued'],
+        isComplete: (project) => (project.team?.length ?? 0) > 0,
+    },
+    {
+        id: 'registry-platform',
+        label: 'Share which registry your project is listed on',
+        description: 'Select an option',
+        section: 'registry',
+        stages: ['Listed', 'Validation', 'Registered', 'Issued'],
+        isComplete: (project) => hasText(project.registrationPlatform),
+    },
+    {
+        id: 'registry-id',
+        label: 'Share your project’s official registry ID',
+        description: 'Input 1 or more characters',
+        section: 'registry',
+        stages: ['Listed', 'Validation', 'Registered', 'Issued'],
+        isComplete: (project) => hasText(project.registryId),
+    },
+    {
+        id: 'registry-listing-url',
+        label: 'Share your project’s official registry link',
+        description: 'Input a valid URL',
+        section: 'registry',
+        stages: ['Listed', 'Validation', 'Registered', 'Issued'],
+        isComplete: (project) => hasValidUrl(project.registryProjectUrl),
+    },
+    {
+        id: 'registry-status',
+        label: 'Share your project’s current registry status',
+        description: 'Select an option',
+        section: 'registry',
+        stages: ['Listed', 'Validation', 'Registered', 'Issued'],
+        isComplete: (project) =>
+            hasText(project.registryStatus) &&
+            normalizeText(project.registryStatus) !== 'not started',
+    },
+    {
+        id: 'methodology',
+        label: 'Share your project’s methodology',
+        description: 'Input 1 or more characters',
+        section: 'registry',
+        stages: ['Listed', 'Validation', 'Registered', 'Issued'],
+        isComplete: (project) => hasText(project.methodology),
+    },
+    {
+        id: 'validation-report-awaiting-approval',
+        label: 'Share your validation report awaiting approval',
+        description: 'Upload a document with Document Type = Validation Report',
+        section: 'documents',
+        stages: ['Validation'],
+        isComplete: (project) => projectHasDocument(project, ['validation report']),
+    },
+    {
+        id: 'validation-report-final',
+        label: 'Share your approved validation report',
+        description: 'Upload a document with Document Type = Validation Report and Status = Final',
+        section: 'documents',
+        stages: ['Registered', 'Issued'],
+        isComplete: (project) => projectHasDocument(project, ['validation report'], 'final'),
+    },
+    {
+        id: 'pdd-final',
+        label: 'Share your finalized Project Design Document (PDD)',
+        description: 'Upload a document with Document Type = PDD and Status = Final',
+        section: 'documents',
+        stages: ['Registered', 'Issued'],
+        isComplete: (project) => projectHasDocument(project, ['pdd', 'project design document'], 'final'),
+    },
+    {
+        id: 'total-credits-issued',
+        label: 'Share your project’s total credits issued',
+        description: 'Input numerical value more than 1',
+        section: 'impact',
+        stages: ['Registered', 'Issued'],
+        isComplete: (project) =>
+            typeof project.totalCreditsIssued === 'number' && project.totalCreditsIssued > 1,
+    },
+    {
+        id: 'annual-estimate',
+        label: 'Share your project’s estimated annual carbon impact',
+        description: 'Input 1 or more characters',
+        section: 'impact',
+        stages: ['Registered', 'Issued'],
+        isComplete: (project) =>
+            hasText(project.annualEstimatedCredits) || hasText(project.estimatedAnnualRemoval),
+    },
+    {
+        id: 'crediting-period',
+        label: 'Share your project’s crediting period',
+        description: 'Input valid dates for Crediting Start and Crediting End',
+        section: 'impact',
+        stages: ['Registered', 'Issued'],
+        isComplete: (project) => Boolean(project.creditingStart && project.creditingEnd),
+    },
+    {
+        id: 'monitoring-report',
+        label: 'Share your monitoring report',
+        description: 'Upload a document with Document Type = Monitoring Report',
+        section: 'documents',
+        stages: ['Issued'],
+        isComplete: (project) => projectHasDocument(project, ['monitoring report']),
+    },
+    {
+        id: 'verification-report',
+        label: 'Share your verification report',
+        description: 'Upload a document with Document Type = Verification Report',
+        section: 'documents',
+        stages: ['Issued'],
+        isComplete: (project) => projectHasDocument(project, ['verification report']),
+    },
+];
+
+export function getProjectCompletenessItems(project: ProjectProfileData): CompletenessItem[] {
+    const stageColumn = getChecklistStageColumn(project.stage);
+
+    if (!stageColumn) return [];
+
+    return PROJECT_CHECKLIST_DEFINITIONS
+        .filter((item) => item.stages.length === 1
+            ? item.stages[0] === stageColumn
+            : item.stages.includes(stageColumn)
+        )
+        .map((item) => ({
+            id: item.id,
+            label: item.label,
+            description: item.description,
+            isComplete: item.isComplete(project),
+            section: item.section,
+            requiredForStage: project.stage,
+        }));
+}

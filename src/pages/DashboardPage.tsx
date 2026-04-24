@@ -40,6 +40,11 @@ import {
     type ProjectStage,
 } from '../components/ProjectStageIndicator';
 
+import {
+    trackDashboardNavigationClicked,
+    trackDashboardViewed,
+} from '../lib/analytics';
+
 import countryCodes from '../data/countrycode.json';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
@@ -391,10 +396,28 @@ async function loadDashboardData(): Promise<Omit<DashboardState, 'loading' | 'er
     if (projectsResult.status === 'fulfilled' && projectsResult.value) {
         const payload = projectsResult.value;
         const { items, total, counts } = extractListPayload(payload);
+        const metrics = payload?.metrics ?? null;
 
         next.metrics.totalProjects = total;
         next.savedProjectsCount =
             typeof counts?.saved === 'number' ? counts.saved : 0;
+
+        next.metrics.totalProjects = total;
+        next.savedProjectsCount =
+            typeof counts?.saved === 'number' ? counts.saved : 0;
+
+        next.metrics.totalCredits =
+            typeof metrics?.totalCredits === 'number' ? metrics.totalCredits : 0;
+
+        next.metrics.totalOpportunities =
+            typeof metrics?.totalOpportunities === 'number'
+                ? metrics.totalOpportunities
+                : 0;
+
+        next.metrics.urgentOpportunitiesLabel =
+            typeof metrics?.urgentOpportunities === 'number' && metrics.urgentOpportunities > 0
+                ? `${metrics.urgentOpportunities} urgent`
+                : null;
 
         next.recentProjects = items.slice(0, 5).map((project: any) => ({
             id: String(project.id),
@@ -483,12 +506,6 @@ async function loadDashboardData(): Promise<Omit<DashboardState, 'loading' | 'er
             desc: String(opportunity.description ?? 'No description provided'),
             urgent: Boolean(opportunity.urgent),
         }));
-
-        next.metrics.totalOpportunities = items.length;
-
-        const urgentCount = items.filter((item) => item.urgent).length;
-        next.metrics.urgentOpportunitiesLabel =
-            urgentCount > 0 ? `${urgentCount} urgent` : null;
     } else {
         next.activeOpportunities = [];
         next.metrics.totalOpportunities = 0;
@@ -528,6 +545,34 @@ export function DashboardPage() {
     const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
     const [selectedUpdate, setSelectedUpdate] = useState<ProjectUpdate | null>(null);
 
+    const navigateFromDashboard = (input: {
+        path: string;
+        destinationType:
+        | 'project_directory'
+        | 'company_directory'
+        | 'opportunities_directory'
+        | 'company_page'
+        | 'project_listing'
+        | 'bookmarks';
+        sourceSection: string;
+        itemId?: string;
+        itemName?: string;
+        itemType?: string;
+        tab?: string;
+    }) => {
+        trackDashboardNavigationClicked({
+            destinationType: input.destinationType,
+            destinationPath: input.path,
+            sourceSection: input.sourceSection,
+            itemId: input.itemId,
+            itemName: input.itemName,
+            itemType: input.itemType,
+            tab: input.tab,
+        });
+
+        navigate(input.path);
+    };
+
     useEffect(() => {
         let active = true;
 
@@ -560,6 +605,10 @@ export function DashboardPage() {
         return () => {
             active = false;
         };
+    }, []);
+
+    useEffect(() => {
+        trackDashboardViewed();
     }, []);
 
     const {
@@ -666,7 +715,13 @@ export function DashboardPage() {
                 >
                     <Paper
                         variant="outlined"
-                        onClick={() => navigate('/projects')}
+                        onClick={() =>
+                            navigateFromDashboard({
+                                path: '/projects',
+                                destinationType: 'project_directory',
+                                sourceSection: 'metric_card_total_projects',
+                            })
+                        }
                         sx={{
                             p: { xs: 1.5, sm: 2 },
                             borderRadius: 2,
@@ -716,7 +771,13 @@ export function DashboardPage() {
 
                     <Paper
                         variant="outlined"
-                        onClick={() => navigate('/companies')}
+                        onClick={() =>
+                            navigateFromDashboard({
+                                path: '/companies',
+                                destinationType: 'company_directory',
+                                sourceSection: 'metric_card_total_companies',
+                            })
+                        }
                         sx={{
                             p: { xs: 1.5, sm: 2 },
                             borderRadius: 2,
@@ -790,13 +851,7 @@ export function DashboardPage() {
                                     <TrendingUpRounded sx={{ fontSize: 10 }} />
                                     {metrics.creditsChangeLabel}
                                 </Typography>
-                            ) : (
-                                <Chip
-                                    label="Stub"
-                                    size="small"
-                                    sx={{ height: 18, fontSize: '0.625rem' }}
-                                />
-                            )}
+                            ) : null}
                         </Box>
                         <Box>
                             <Typography
@@ -808,7 +863,7 @@ export function DashboardPage() {
                                     lineHeight: 1.2,
                                 }}
                             >
-                                {metrics.totalCredits ?? '—'}
+                                {metrics.totalCredits ?? 0}
                             </Typography>
                             <Typography variant="caption" color="text.secondary">
                                 Credits (tCO2e)
@@ -818,7 +873,13 @@ export function DashboardPage() {
 
                     <Paper
                         variant="outlined"
-                        onClick={() => navigate('/opportunities')}
+                        onClick={() =>
+                            navigateFromDashboard({
+                                path: '/opportunities',
+                                destinationType: 'opportunities_directory',
+                                sourceSection: 'metric_card_total_opportunities',
+                            })
+                        }
                         sx={{
                             p: { xs: 1.5, sm: 2 },
                             borderRadius: 2,
@@ -846,13 +907,7 @@ export function DashboardPage() {
                                         '& .MuiChip-label': { px: 0.75 },
                                     }}
                                 />
-                            ) : (
-                                <Chip
-                                    label="Stub"
-                                    size="small"
-                                    sx={{ height: 18, fontSize: '0.625rem' }}
-                                />
-                            )}
+                            ) : null}
                         </Box>
                         <Box>
                             <Typography
@@ -899,7 +954,13 @@ export function DashboardPage() {
                                 <Button
                                     size="small"
                                     endIcon={<ArrowForwardRounded sx={{ fontSize: 14 }} />}
-                                    onClick={() => navigate('/opportunities')}
+                                    onClick={() =>
+                                        navigateFromDashboard({
+                                            path: '/opportunities',
+                                            destinationType: 'opportunities_directory',
+                                            sourceSection: 'active_opportunities_view_all',
+                                        })
+                                    }
                                     sx={{ textTransform: 'none', color: 'text.secondary', fontSize: '0.75rem' }}
                                 >
                                     View all
@@ -917,7 +978,14 @@ export function DashboardPage() {
                                         <Box
                                             key={opp.id}
                                             onClick={() =>
-                                                navigate(`/projects?opportunity=${encodeURIComponent(opp.type)}`)
+                                                navigateFromDashboard({
+                                                    path: `/projects?opportunity=${encodeURIComponent(opp.type)}`,
+                                                    destinationType: 'project_directory',
+                                                    sourceSection: 'active_opportunities_item',
+                                                    itemId: opp.id,
+                                                    itemName: opp.project,
+                                                    itemType: opp.type,
+                                                })
                                             }
                                             sx={{
                                                 p: 2,
@@ -991,7 +1059,13 @@ export function DashboardPage() {
                                 <Button
                                     size="small"
                                     endIcon={<ArrowForwardRounded sx={{ fontSize: 14 }} />}
-                                    onClick={() => navigate('/projects')}
+                                    onClick={() =>
+                                        navigateFromDashboard({
+                                            path: '/projects',
+                                            destinationType: 'project_directory',
+                                            sourceSection: 'recent_projects_view_all',
+                                        })
+                                    }
                                     sx={{ textTransform: 'none', color: 'text.secondary', fontSize: '0.75rem' }}
                                 >
                                     View all
@@ -1008,7 +1082,16 @@ export function DashboardPage() {
                                     recentProjects.map((project, i) => (
                                         <Box
                                             key={project.id}
-                                            onClick={() => navigate(`/projects/${project.id}`)}
+                                            onClick={() =>
+                                                navigateFromDashboard({
+                                                    path: `/projects/${project.id}`,
+                                                    destinationType: 'project_listing',
+                                                    sourceSection: 'recent_projects_item',
+                                                    itemId: project.id,
+                                                    itemName: project.name,
+                                                    itemType: 'project',
+                                                })
+                                            }
                                             sx={{
                                                 p: 2,
                                                 borderBottom: i < recentProjects.length - 1 ? 1 : 0,
@@ -1150,7 +1233,13 @@ export function DashboardPage() {
                                 <Button
                                     size="small"
                                     endIcon={<ArrowForwardRounded sx={{ fontSize: 14 }} />}
-                                    onClick={() => navigate('/projects')}
+                                    onClick={() =>
+                                        navigateFromDashboard({
+                                            path: '/projects',
+                                            destinationType: 'project_directory',
+                                            sourceSection: 'project_locations_view_all',
+                                        })
+                                    }
                                     sx={{ textTransform: 'none', color: 'text.secondary', fontSize: '0.75rem' }}
                                 >
                                     View all projects
@@ -1198,7 +1287,16 @@ export function DashboardPage() {
                                                         size="small"
                                                         variant="outlined"
                                                         fullWidth
-                                                        onClick={() => navigate(`/projects/${pin.id}`)}
+                                                        onClick={() =>
+                                                            navigateFromDashboard({
+                                                                path: `/projects/${pin.id}`,
+                                                                destinationType: 'project_listing',
+                                                                sourceSection: 'project_locations_map_popup',
+                                                                itemId: pin.id,
+                                                                itemName: pin.name,
+                                                                itemType: pin.type,
+                                                            })
+                                                        }
                                                         sx={{ fontSize: '0.75rem', py: 0.5 }}
                                                     >
                                                         View details
@@ -1232,7 +1330,13 @@ export function DashboardPage() {
                                 <Button
                                     size="small"
                                     endIcon={<ArrowForwardRounded sx={{ fontSize: 14 }} />}
-                                    onClick={() => navigate('/companies')}
+                                    onClick={() =>
+                                        navigateFromDashboard({
+                                            path: '/companies',
+                                            destinationType: 'company_directory',
+                                            sourceSection: 'new_companies_view_all',
+                                        })
+                                    }
                                     sx={{ textTransform: 'none', color: 'text.secondary', fontSize: '0.75rem' }}
                                 >
                                     View all
@@ -1249,7 +1353,16 @@ export function DashboardPage() {
                                     newCompanies.map((company, i) => (
                                         <Box
                                             key={company.id}
-                                            onClick={() => navigate(`/companies/${company.id}`)}
+                                            onClick={() =>
+                                                navigateFromDashboard({
+                                                    path: `/companies/${company.id}`,
+                                                    destinationType: 'company_page',
+                                                    sourceSection: 'new_companies_item',
+                                                    itemId: company.id,
+                                                    itemName: company.name,
+                                                    itemType: company.type,
+                                                })
+                                            }
                                             sx={{
                                                 p: 2,
                                                 borderBottom: i < newCompanies.length - 1 ? 1 : 0,
@@ -1316,7 +1429,14 @@ export function DashboardPage() {
                                         cursor: 'pointer',
                                         '&:hover': { bgcolor: 'grey.100' },
                                     }}
-                                    onClick={() => navigate('/projects?scope=saved')}
+                                    onClick={() =>
+                                        navigateFromDashboard({
+                                            path: '/projects?scope=saved',
+                                            destinationType: 'bookmarks',
+                                            sourceSection: 'saved_items_projects',
+                                            tab: 'projects',
+                                        })
+                                    }
                                 >
                                     <Box display="flex" alignItems="center" gap={1.5}>
                                         <FolderRounded sx={{ fontSize: 16, color: 'grey.500' }} />
@@ -1347,7 +1467,14 @@ export function DashboardPage() {
                                         cursor: 'pointer',
                                         '&:hover': { bgcolor: 'grey.100' },
                                     }}
-                                    onClick={() => navigate('/companies?scope=saved')}
+                                    onClick={() =>
+                                        navigateFromDashboard({
+                                            path: '/companies?scope=saved',
+                                            destinationType: 'bookmarks',
+                                            sourceSection: 'saved_items_companies',
+                                            tab: 'companies',
+                                        })
+                                    }
                                 >
                                     <Box display="flex" alignItems="center" gap={1.5}>
                                         <BusinessRounded sx={{ fontSize: 16, color: 'grey.500' }} />
@@ -1461,7 +1588,16 @@ export function DashboardPage() {
                             <Button
                                 variant="contained"
                                 startIcon={<AddRounded />}
-                                onClick={() => navigate(`/projects/${selectedUpdate.projectId}`)}
+                                onClick={() =>
+                                    navigateFromDashboard({
+                                        path: `/projects/${selectedUpdate.projectId}`,
+                                        destinationType: 'project_listing',
+                                        sourceSection: 'project_update_dialog',
+                                        itemId: selectedUpdate.projectId,
+                                        itemName: selectedUpdate.project,
+                                        itemType: selectedUpdate.type,
+                                    })
+                                }
                                 sx={{ textTransform: 'none' }}
                             >
                                 View project

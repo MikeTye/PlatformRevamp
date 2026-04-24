@@ -44,6 +44,8 @@ import { CompanyWizard } from '../CompanyWizard';
 import { useAuth } from '../../context/AuthContext';
 import { UpdateWizard, type UpdateWizardCloseResult } from '../UpdateWizard';
 
+import { trackEvent } from '../../lib/analytics';
+
 interface AppLayoutProps {
     children: React.ReactNode;
 }
@@ -168,8 +170,14 @@ export function AppLayout({ children }: AppLayoutProps) {
         handleMenuClose();
     };
     const handleSignOut = () => {
+        trackEvent('User logged out', {
+            source: 'app_layout',
+            page: location.pathname,
+        });
+
         logout();
         handleMenuClose();
+        setIsMobileMenuOpen(false);
         navigate('/login');
     };
     // Create button handlers
@@ -488,30 +496,41 @@ export function AppLayout({ children }: AppLayoutProps) {
             {/* User Profile Section with Menu */}
             <Box p={1} borderTop={1} borderColor="grey.100" position="relative">
                 {/* Dropdown Menu - positioned absolutely above the user card */}
-                {!collapsed &&
+                {!collapsed && (
                     <ClickAwayListener onClickAway={handleMenuClose}>
-                        <Box>
-                            <Fade in={isMenuOpen}>
+                        <Box
+                            sx={{
+                                position: 'absolute',
+                                left: 8,
+                                right: 8,
+                                bottom: '100%',
+                                mb: 1,
+                                zIndex: 1300,
+                                pointerEvents: isMenuOpen ? 'auto' : 'none'
+                            }}
+                        >
+                            <Fade in={isMenuOpen} unmountOnExit>
                                 <Paper
                                     elevation={8}
                                     sx={{
-                                        position: 'absolute',
-                                        bottom: '100%',
-                                        left: 8,
-                                        right: 8,
-                                        mb: 1,
                                         borderRadius: 2,
-                                        overflow: 'hidden',
-                                        display: isMenuOpen ? 'block' : 'none',
-                                        zIndex: 1300
-                                    }}>
-
-                                    {/* User Info Header */}
+                                        overflow: 'hidden'
+                                    }}
+                                >
                                     <Box px={2} py={1.5} borderBottom={1} borderColor="grey.100">
-                                        <Typography variant="subtitle2" fontWeight="bold">
+                                        <Typography variant="subtitle2" fontWeight="bold" noWrap>
                                             {user?.name || 'User'}
                                         </Typography>
-                                        <Typography variant="caption" color="text.secondary">
+                                        <Typography
+                                            variant="caption"
+                                            color="text.secondary"
+                                            noWrap
+                                            sx={{
+                                                display: 'block',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis'
+                                            }}
+                                        >
                                             {user?.email || 'user@example.com'}
                                         </Typography>
                                     </Box>
@@ -519,108 +538,15 @@ export function AppLayout({ children }: AppLayoutProps) {
                                     <List disablePadding>
                                         <ListItemButton
                                             onClick={() => handleMenuNavigate('/account')}
-                                            sx={{
-                                                py: 1
-                                            }}>
-
-                                            <ListItemIcon
-                                                sx={{
-                                                    minWidth: 36
-                                                }}>
-
-                                                <PersonOutlineRoundedIcon
-                                                    sx={{
-                                                        fontSize: 20
-                                                    }} />
-
+                                            sx={{ py: 1 }}
+                                        >
+                                            <ListItemIcon sx={{ minWidth: 36 }}>
+                                                <PersonOutlineRoundedIcon sx={{ fontSize: 20 }} />
                                             </ListItemIcon>
                                             <ListItemText
-                                                primary="Profile"
-                                                primaryTypographyProps={{
-                                                    variant: 'body2'
-                                                }} />
-
-                                        </ListItemButton>
-                                        <ListItemButton
-                                            onClick={() => handleMenuNavigate('/account')}
-                                            sx={{
-                                                py: 1
-                                            }}>
-
-                                            <ListItemIcon
-                                                sx={{
-                                                    minWidth: 36
-                                                }}>
-
-                                                <SettingsRoundedIcon
-                                                    sx={{
-                                                        fontSize: 20
-                                                    }} />
-
-                                            </ListItemIcon>
-                                            <ListItemText
-                                                primary="Settings"
-                                                primaryTypographyProps={{
-                                                    variant: 'body2'
-                                                }} />
-
-                                        </ListItemButton>
-                                    </List>
-
-                                    <Divider />
-
-                                    <List disablePadding>
-                                        <ListItemButton
-                                            onClick={() =>
-                                                handleMenuNavigate('/account?tab=companies')
-                                            }
-                                            sx={{
-                                                py: 1
-                                            }}>
-
-                                            <ListItemIcon
-                                                sx={{
-                                                    minWidth: 36
-                                                }}>
-
-                                                <BusinessRoundedIcon
-                                                    sx={{
-                                                        fontSize: 20
-                                                    }} />
-
-                                            </ListItemIcon>
-                                            <ListItemText
-                                                primary="My Companies"
-                                                primaryTypographyProps={{
-                                                    variant: 'body2'
-                                                }} />
-
-                                        </ListItemButton>
-                                        <ListItemButton
-                                            onClick={() =>
-                                                handleMenuNavigate('/account?tab=projects')
-                                            }
-                                            sx={{
-                                                py: 1
-                                            }}>
-
-                                            <ListItemIcon
-                                                sx={{
-                                                    minWidth: 36
-                                                }}>
-
-                                                <FolderRoundedIcon
-                                                    sx={{
-                                                        fontSize: 20
-                                                    }} />
-
-                                            </ListItemIcon>
-                                            <ListItemText
-                                                primary="My Projects"
-                                                primaryTypographyProps={{
-                                                    variant: 'body2'
-                                                }} />
-
+                                                primary="Account"
+                                                primaryTypographyProps={{ variant: 'body2' }}
+                                            />
                                         </ListItemButton>
                                     </List>
 
@@ -629,34 +555,22 @@ export function AppLayout({ children }: AppLayoutProps) {
                                     <List disablePadding>
                                         <ListItemButton
                                             onClick={handleSignOut}
-                                            sx={{
-                                                py: 1
-                                            }}>
-
-                                            <ListItemIcon
-                                                sx={{
-                                                    minWidth: 36
-                                                }}>
-
-                                                <LogoutRoundedIcon
-                                                    sx={{
-                                                        fontSize: 20
-                                                    }} />
-
+                                            sx={{ py: 1 }}
+                                        >
+                                            <ListItemIcon sx={{ minWidth: 36 }}>
+                                                <LogoutRoundedIcon sx={{ fontSize: 20 }} />
                                             </ListItemIcon>
                                             <ListItemText
                                                 primary="Sign out"
-                                                primaryTypographyProps={{
-                                                    variant: 'body2'
-                                                }} />
-
+                                                primaryTypographyProps={{ variant: 'body2' }}
+                                            />
                                         </ListItemButton>
                                     </List>
                                 </Paper>
                             </Fade>
                         </Box>
                     </ClickAwayListener>
-                }
+                )}
 
                 {/* User Card */}
                 <Box
@@ -665,7 +579,8 @@ export function AppLayout({ children }: AppLayoutProps) {
                         alignItems: 'center',
                         borderRadius: 1,
                         px: collapsed ? 1 : 1.5,
-                        py: 1
+                        py: 1,
+                        minWidth: 0
                     }}>
 
                     {/* User info - clickable to go to profile */}
@@ -675,6 +590,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                             display: 'flex',
                             alignItems: 'center',
                             flex: 1,
+                            minWidth: 0,
                             cursor: 'pointer',
                             borderRadius: 1,
                             '&:hover': {
@@ -699,26 +615,44 @@ export function AppLayout({ children }: AppLayoutProps) {
                             {userInitials}
                         </Avatar>
                         {!collapsed &&
-                            <Box flex={1} minWidth={0}>
+                            <Box
+                                sx={{
+                                    flex: 1,
+                                    minWidth: 0,
+                                    overflow: 'hidden'
+                                }}
+                            >
                                 <Typography
                                     variant="caption"
                                     fontWeight="bold"
                                     display="block"
-                                    noWrap>
-
-                                    {userName}
-                                </Typography>
-                                <Typography
-                                    variant="caption"
-                                    color="text.secondary"
-                                    display="block"
                                     noWrap
                                     sx={{
-                                        fontSize: '0.625rem'
-                                    }}>
-
-                                    {user?.email || 'sarah@borneocarbon.com'}
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
+                                    }}
+                                >
+                                    {userName}
                                 </Typography>
+
+                                <Tooltip title={user?.email || 'sarah@borneocarbon.com'} arrow>
+                                    <Typography
+                                        variant="caption"
+                                        color="text.secondary"
+                                        display="block"
+                                        noWrap
+                                        sx={{
+                                            fontSize: '0.625rem',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            whiteSpace: 'nowrap',
+                                            maxWidth: '100%'
+                                        }}
+                                    >
+                                        {user?.email || 'sarah@borneocarbon.com'}
+                                    </Typography>
+                                </Tooltip>
                             </Box>
                         }
                     </Box>
@@ -883,78 +817,86 @@ export function AppLayout({ children }: AppLayoutProps) {
                                 my: 1
                             }} />
 
-                        <Box
-                            px={2}
-                            py={1.5}
-                            display="flex"
-                            alignItems="center"
-                            gap={1.5}
-                            onClick={() => navigate('/account')}
-                            sx={{
-                                cursor: 'pointer'
-                            }}>
-
-                            <Box
-                                sx={{
-                                    width: 32,
-                                    height: 32,
-                                    bgcolor: 'grey.200',
-                                    borderRadius: '50%',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center'
-                                }}>
-
-                                <PersonOutlineRoundedIcon
-                                    sx={{
-                                        fontSize: 18,
-                                        color: 'grey.600'
-                                    }} />
-
-                            </Box>
-                            <Box>
-                                <Typography variant="body2" fontWeight="medium">
-                                    {user?.name || 'User'}
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                    {user?.email || 'user@example.com'}
-                                </Typography>
-                            </Box>
+                        <Box px={2} py={1.5}>
+                            <Typography variant="body2" fontWeight="medium">
+                                {user?.name || 'User'}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                                {user?.email || 'user@example.com'}
+                            </Typography>
                         </Box>
+
                         <Divider
                             sx={{
                                 my: 1
                             }} />
 
-                        <ListItem disablePadding>
-                            <ListItemButton
-                                onClick={handleSignOut}
-                                sx={{
-                                    borderRadius: 1,
-                                    color: 'error.main'
-                                }}>
-
-                                <ListItemIcon
+                        <List disablePadding>
+                            <ListItem disablePadding>
+                                <ListItemButton
+                                    onClick={() => {
+                                        navigate('/account');
+                                        setIsMobileMenuOpen(false);
+                                    }}
                                     sx={{
-                                        minWidth: 32,
+                                        borderRadius: 1
+                                    }}>
+
+                                    <ListItemIcon
+                                        sx={{
+                                            minWidth: 32
+                                        }}>
+
+                                        <PersonOutlineRoundedIcon
+                                            sx={{
+                                                fontSize: 20
+                                            }} />
+
+                                    </ListItemIcon>
+                                    <ListItemText
+                                        primary="Account"
+                                        primaryTypographyProps={{
+                                            variant: 'body2',
+                                            fontWeight: 500
+                                        }} />
+
+                                </ListItemButton>
+                            </ListItem>
+
+                            <ListItem disablePadding>
+                                <ListItemButton
+                                    onClick={handleSignOut}
+                                    sx={{
+                                        borderRadius: 1,
                                         color: 'error.main'
                                     }}>
 
-                                    <LogoutRoundedIcon
+                                    <ListItemIcon
                                         sx={{
-                                            fontSize: 20
+                                            minWidth: 32,
+                                            color: 'error.main'
+                                        }}>
+
+                                        <LogoutRoundedIcon
+                                            sx={{
+                                                fontSize: 20
+                                            }} />
+
+                                    </ListItemIcon>
+                                    <ListItemText
+                                        primary="Sign out"
+                                        primaryTypographyProps={{
+                                            variant: 'body2',
+                                            fontWeight: 500
                                         }} />
 
-                                </ListItemIcon>
-                                <ListItemText
-                                    primary="Sign out"
-                                    primaryTypographyProps={{
-                                        variant: 'body2',
-                                        fontWeight: 500
-                                    }} />
-
-                            </ListItemButton>
-                        </ListItem>
+                                </ListItemButton>
+                            </ListItem>
+                        </List>
+                        <Divider
+                            sx={{
+                                my: 1
+                            }} />
                     </Box>
                 </Drawer>
 
@@ -1099,11 +1041,19 @@ export function AppLayout({ children }: AppLayoutProps) {
                     open={isProjectWizardOpen}
                     onClose={handleProjectWizardClose}
                     hasCompanies={true}
+                    trackingContext={{
+                        entryPoint: 'sidebar_nav',
+                        draftOrigin: 'none',
+                    }}
                 />
 
                 <CompanyWizard
                     open={isCompanyWizardOpen}
                     onClose={handleCompanyWizardClose}
+                    trackingContext={{
+                        entryPoint: 'sidebar_nav',
+                        draftOrigin: 'none',
+                    }}
                 />
 
             </Box>);
@@ -1180,11 +1130,19 @@ export function AppLayout({ children }: AppLayoutProps) {
                 open={isProjectWizardOpen}
                 onClose={handleProjectWizardClose}
                 hasCompanies={true}
+                trackingContext={{
+                    entryPoint: 'sidebar_nav',
+                    draftOrigin: 'none',
+                }}
             />
 
             <CompanyWizard
                 open={isCompanyWizardOpen}
                 onClose={handleCompanyWizardClose}
+                trackingContext={{
+                    entryPoint: 'sidebar_nav',
+                    draftOrigin: 'none',
+                }}
             />
 
             <UpdateWizard

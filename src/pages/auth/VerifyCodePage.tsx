@@ -19,6 +19,8 @@ import {
     getStoredShareToken,
 } from '../../utils/authAccessContext';
 
+import { trackEvent } from '../../lib/analytics';
+
 type AuthIntent = 'login' | 'signup';
 
 type ApiErrorResponse = {
@@ -72,6 +74,14 @@ export function VerifyCodePage() {
     const isComplete = code.every((digit) => digit !== '');
     const joinedCode = code.join('');
 
+    const getVerifyTrackingProps = () => ({
+        page: 'verify_code',
+        intent,
+        has_company_invite_token: Boolean(companyInviteToken),
+        has_share_token: Boolean(shareToken),
+        email_domain: email.includes('@') ? email.split('@')[1].toLowerCase() : null,
+    });
+
     useEffect(() => {
         if (!email) {
             navigate('/login', { replace: true });
@@ -89,6 +99,12 @@ export function VerifyCodePage() {
         lastAutoVerifiedCodeRef.current = joinedCode;
         void handleVerify(joinedCode);
     }, [isComplete, isVerifying, joinedCode]);
+
+    useEffect(() => {
+        if (!email) return;
+
+        trackEvent('verify code page viewed', getVerifyTrackingProps());
+    }, [email, intent, companyInviteToken, shareToken]);
 
     const resetMessages = () => {
         setError('');
@@ -170,6 +186,12 @@ export function VerifyCodePage() {
             setIsVerifying(true);
             resetMessages();
 
+            trackEvent('verification code submitted', {
+                ...getVerifyTrackingProps(),
+                code_length: codeToVerify.length,
+                submission_method: 'auto_after_6_digits',
+            });
+
             const resp = await fetch(`${API_BASE_URL}/auth/email/verify-code`, {
                 method: 'POST',
                 headers: {
@@ -194,10 +216,35 @@ export function VerifyCodePage() {
             }
 
             if (!resp.ok) {
+                trackEvent('verification failed', {
+                    ...getVerifyTrackingProps(),
+                    error_code: verifyData?.code ?? null,
+                    error_message: verifyData?.message ?? verifyData?.error ?? null,
+                });
                 throw new Error(verifyData?.error || verifyData?.message || 'Failed to verify code');
             }
 
             await refreshSession();
+
+            if (intent === 'signup') {
+                trackEvent('sign up completed', {
+                    ...getVerifyTrackingProps(),
+                    signup_method: 'email',
+                });
+
+                if (companyInviteToken) {
+                    trackEvent('Invited team member joined company', {
+                        ...getVerifyTrackingProps(),
+                        signup_method: 'email',
+                        joined_via: 'company_invite',
+                    });
+                }
+            } else {
+                trackEvent('login successful', {
+                    ...getVerifyTrackingProps(),
+                    login_method: 'email',
+                });
+            }
 
             if (intent === 'signup') {
                 sessionStorage.setItem('tce_onboarding_email', email.toLowerCase());
@@ -287,6 +334,8 @@ export function VerifyCodePage() {
             setIsResending(true);
             resetMessages();
 
+            trackEvent('verification code resend requested', getVerifyTrackingProps());
+
             const resp = await fetch(`${API_BASE_URL}/auth/email/request-code`, {
                 method: 'POST',
                 headers: {
@@ -330,6 +379,8 @@ export function VerifyCodePage() {
             }
 
             resetCode();
+
+            trackEvent('verification code resent', getVerifyTrackingProps());
             setInfoMessage('A new verification code has been sent.');
             inputRefs.current[0]?.focus();
         } catch (err) {
@@ -343,6 +394,8 @@ export function VerifyCodePage() {
         const params = new URLSearchParams();
         if (companyInviteToken) params.set('companyInvite', companyInviteToken);
         if (shareToken) params.set('share', shareToken);
+
+        trackEvent('use different email clicked on verify page', getVerifyTrackingProps());
 
         if (intent === 'signup') {
             navigate(params.toString() ? `/signup?${params.toString()}` : '/signup');

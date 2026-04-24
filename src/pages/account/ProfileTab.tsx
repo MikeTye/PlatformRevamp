@@ -13,6 +13,7 @@ import {
     DialogTitle,
     Divider,
     FormControl,
+    FormControlLabel,
     IconButton,
     InputLabel,
     MenuItem,
@@ -21,9 +22,11 @@ import {
     Slide,
     Snackbar,
     Stack,
+    Switch,
     TextField,
     Typography,
 } from '@mui/material';
+import Grid from '@mui/material/Grid';
 import PersonOutlineRounded from '@mui/icons-material/PersonOutlineRounded';
 import AddRounded from '@mui/icons-material/AddRounded';
 import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded';
@@ -75,7 +78,69 @@ type Props = {
     onDeleteConfirmTextChange: (value: string) => void;
     onDeleteAccount: () => void;
     onSnackbarClose: () => void;
+
+    profilePhotoPreview: string;
+    profilePhotoUploading: boolean;
+    onProfilePhotoUpload: (file: File) => void | Promise<void>;
+    onRemoveProfilePhoto: () => void;
 };
+
+function SectionCard({
+    title,
+    subtitle,
+    children,
+}: {
+    title: string;
+    subtitle?: string;
+    children: React.ReactNode;
+}) {
+    return (
+        <Paper variant="outlined" sx={{ p: 3, mb: 3, borderRadius: 2 }}>
+            <Typography variant="h6" fontWeight="bold" mb={subtitle ? 0.5 : 2}>
+                {title}
+            </Typography>
+            {subtitle ? (
+                <Typography variant="body2" color="text.secondary" mb={2.5}>
+                    {subtitle}
+                </Typography>
+            ) : null}
+            {children}
+        </Paper>
+    );
+}
+
+function TagAutocomplete({
+    value,
+    options,
+    placeholder,
+    onChange,
+}: {
+    value: string[];
+    options: string[];
+    placeholder: string;
+    onChange: (value: string[]) => void;
+}) {
+    return (
+        <Autocomplete
+            multiple
+            freeSolo
+            options={options}
+            value={value}
+            onChange={(_, newValue) => onChange(newValue)}
+            renderTags={(tags, getTagProps) =>
+                tags.map((option, index) => (
+                    <Chip
+                        variant="outlined"
+                        label={option}
+                        {...getTagProps({ index })}
+                        key={`${option}-${index}`}
+                    />
+                ))
+            }
+            renderInput={(params) => <TextField {...params} placeholder={placeholder} />}
+        />
+    );
+}
 
 export default function ProfileTab(props: Props) {
     const {
@@ -93,6 +158,10 @@ export default function ProfileTab(props: Props) {
         snackbarOpen,
         snackbarSeverity,
         snackbarMessage,
+        profilePhotoPreview,
+        profilePhotoUploading,
+        onProfilePhotoUpload,
+        onRemoveProfilePhoto,
         onUpdateProfile,
         onHandlePhoneCodeChange,
         onAddAffiliation,
@@ -108,127 +177,428 @@ export default function ProfileTab(props: Props) {
         onSnackbarClose,
     } = props;
 
-    return (
-        <Box maxWidth={800} pb={hasChanges ? 10 : 0}>
-            <Paper variant="outlined" sx={{ p: 3, mb: 3, borderRadius: 2 }}>
-                <Typography variant="h6" fontWeight="bold" mb={3}>
-                    Personal Information
-                </Typography>
+    const profile = form.profile;
 
-                <Box display="flex" gap={3} mb={3}>
+    return (
+        <Box maxWidth={900} pb={hasChanges ? 10 : 0}>
+            <Paper variant="outlined" sx={{ p: 3, mb: 3, borderRadius: 2 }}>
+                <Box
+                    display="flex"
+                    gap={3}
+                    flexDirection={{ xs: 'column', sm: 'row' }}
+                    alignItems={{ xs: 'flex-start', sm: 'center' }}
+                >
                     <Box display="flex" flexDirection="column" alignItems="center" gap={1.5}>
-                        <Avatar sx={{ width: 88, height: 88, bgcolor: 'grey.200', color: 'grey.500' }}>
-                            <PersonOutlineRounded sx={{ fontSize: 40 }} />
-                        </Avatar>
+                        <Box
+                            component="label"
+                            sx={{
+                                width: 96,
+                                height: 96,
+                                borderRadius: '50%',
+                                border: '2px dashed',
+                                borderColor: 'grey.300',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: profilePhotoUploading ? 'default' : 'pointer',
+                                bgcolor: 'grey.50',
+                                overflow: 'hidden',
+                                position: 'relative',
+                                '&:hover': {
+                                    bgcolor: profilePhotoUploading ? 'grey.50' : 'grey.100',
+                                    borderColor: profilePhotoUploading ? 'grey.300' : 'grey.400',
+                                },
+                            }}
+                        >
+                            <input
+                                hidden
+                                type="file"
+                                accept="image/*"
+                                disabled={profilePhotoUploading}
+                                onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    void onProfilePhotoUpload(file);
+                                    e.target.value = '';
+                                }}
+                            />
+
+                            {profilePhotoPreview ? (
+                                <>
+                                    <Avatar
+                                        src={profilePhotoPreview}
+                                        alt={profile.fullName || 'Profile photo'}
+                                        sx={{ width: 96, height: 96 }}
+                                    />
+                                    <IconButton
+                                        size="small"
+                                        onClick={(event) => {
+                                            event.preventDefault();
+                                            event.stopPropagation();
+                                            onRemoveProfilePhoto();
+                                        }}
+                                        sx={{
+                                            position: 'absolute',
+                                            top: 4,
+                                            right: 4,
+                                            bgcolor: 'rgba(255,255,255,0.9)',
+                                            '&:hover': {
+                                                bgcolor: 'rgba(255,255,255,1)',
+                                            },
+                                        }}
+                                    >
+                                        <DeleteOutlineRounded sx={{ fontSize: 16 }} />
+                                    </IconButton>
+                                </>
+                            ) : (
+                                <Avatar
+                                    sx={{
+                                        width: 96,
+                                        height: 96,
+                                        bgcolor: 'grey.200',
+                                        color: 'grey.500',
+                                    }}
+                                >
+                                    <PersonOutlineRounded sx={{ fontSize: 42 }} />
+                                </Avatar>
+                            )}
+                        </Box>
 
                         <Button
+                            component="label"
                             variant="outlined"
                             size="small"
                             startIcon={<CloudUploadRounded sx={{ fontSize: 16 }} />}
                             sx={{ textTransform: 'none', fontSize: '0.75rem' }}
-                            disabled
+                            disabled={profilePhotoUploading}
                         >
-                            Upload
+                            {profilePhotoUploading ? 'Uploading...' : profilePhotoPreview ? 'Change Photo' : 'Upload'}
+                            <input
+                                hidden
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    void onProfilePhotoUpload(file);
+                                    e.target.value = '';
+                                }}
+                            />
                         </Button>
+
+                        {profilePhotoPreview ? (
+                            <Button
+                                size="small"
+                                color="inherit"
+                                onClick={onRemoveProfilePhoto}
+                                sx={{ textTransform: 'none', fontSize: '0.75rem' }}
+                            >
+                                Remove
+                            </Button>
+                        ) : null}
                     </Box>
 
-                    <Box flex={1}>
-                        <Stack spacing={2.5}>
-                            <TextField
-                                fullWidth
-                                label="Full Name"
-                                value={form.profile.fullName}
-                                onChange={(e) => onUpdateProfile('fullName', e.target.value)}
-                                required
-                            />
+                    <Box flex={1} minWidth={0}>
+                        <Typography variant="h5" fontWeight="bold" color="text.primary" mb={0.5}>
+                            {profile.fullName?.trim() || 'Your name'}
+                        </Typography>
 
-                            <TextField
-                                fullWidth
-                                label="Email"
-                                value={form.user.email}
-                                disabled
-                                helperText="Email is managed by authentication"
-                            />
+                        <Typography variant="body1" color="text.secondary" mb={1}>
+                            {profile.jobTitle?.trim() || profile.headline?.trim() || 'Add your role or headline'}
+                        </Typography>
 
-                            <Box display="flex" gap={1.5}>
-                                <FormControl sx={{ minWidth: 170 }}>
-                                    <InputLabel>Code</InputLabel>
-                                    <Select
-                                        value={countryCode}
-                                        label="Code"
-                                        onChange={(e) => onHandlePhoneCodeChange(String(e.target.value))}
-                                        renderValue={() => (
-                                            <Box display="flex" alignItems="center" gap={1}>
-                                                <span>{countryFlag}</span>
-                                                <span>{countryCode}</span>
-                                            </Box>
-                                        )}
-                                    >
-                                        {countryCodeOptions.map((item) => (
-                                            <MenuItem key={`${item.iso}-${item.code}`} value={item.dialCode}>
-                                                <Box display="flex" alignItems="center" gap={1.5} width="100%">
-                                                    <span style={{ fontSize: '1.1rem' }}>{item.flag}</span>
-                                                    <span>{item.country}</span>
-                                                    <Typography variant="body2" color="text.secondary" sx={{ ml: 'auto' }}>
-                                                        {item.dialCode}
-                                                    </Typography>
-                                                </Box>
-                                            </MenuItem>
-                                        ))}
-                                    </Select>
-                                </FormControl>
-
-                                <TextField
-                                    fullWidth
-                                    label="Phone"
-                                    value={form.profile.phoneNumber}
-                                    onChange={(e) => onUpdateProfile('phoneNumber', e.target.value)}
-                                    placeholder="+60 12-345 6789"
+                        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                            {profile.roleType ? (
+                                <Chip size="small" label={profile.roleType} variant="outlined" />
+                            ) : null}
+                            {profile.country ? (
+                                <Chip
+                                    size="small"
+                                    label={
+                                        profile.city
+                                            ? `${profile.city}, ${profile.country}`
+                                            : profile.country
+                                    }
+                                    variant="outlined"
                                 />
-                            </Box>
-
-                            <TextField
-                                fullWidth
-                                label="Headline"
-                                value={form.profile.headline}
-                                onChange={(e) => onUpdateProfile('headline', e.target.value)}
-                            />
-
-                            <TextField
-                                fullWidth
-                                label="Job Title"
-                                value={form.profile.jobTitle}
-                                onChange={(e) => onUpdateProfile('jobTitle', e.target.value)}
-                            />
+                            ) : null}
+                            {profile.timezone ? (
+                                <Chip size="small" label={profile.timezone} variant="outlined" />
+                            ) : null}
+                            {profile.contactEmail ? (
+                                <Chip size="small" label={profile.contactEmail} variant="outlined" />
+                            ) : null}
                         </Stack>
                     </Box>
                 </Box>
             </Paper>
 
-            <Paper variant="outlined" sx={{ p: 3, mb: 3, borderRadius: 2 }}>
-                <Typography variant="h6" fontWeight="bold" mb={1}>
-                    Professional Summary
-                </Typography>
-                <Typography variant="body2" color="text.secondary" mb={2}>
-                    Short professional summary to help collaborators understand your background and focus.
-                </Typography>
+            <SectionCard
+                title="Personal Information"
+                subtitle="Basic profile information shown across your account."
+            >
+                <Grid container spacing={2.5}>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                        <TextField
+                            fullWidth
+                            label="Full Name"
+                            value={profile.fullName}
+                            onChange={(e) => onUpdateProfile('fullName', e.target.value)}
+                            required
+                        />
+                    </Grid>
 
+                    <Grid size={{ xs: 12, md: 6 }}>
+                        <TextField
+                            fullWidth
+                            label="Email"
+                            value={form.user.email}
+                            disabled
+                            helperText="Email is managed by authentication"
+                        />
+                    </Grid>
+
+                    <Grid size={{ xs: 12, md: 6 }}>
+                        <TextField
+                            fullWidth
+                            label="Job Title"
+                            value={profile.jobTitle}
+                            onChange={(e) => onUpdateProfile('jobTitle', e.target.value)}
+                            placeholder="e.g. Head of Sustainability"
+                        />
+                    </Grid>
+
+                    <Grid size={{ xs: 12, md: 6 }}>
+                        <TextField
+                            fullWidth
+                            label="Headline"
+                            value={profile.headline}
+                            onChange={(e) => onUpdateProfile('headline', e.target.value)}
+                            placeholder="Short one-line introduction"
+                        />
+                    </Grid>
+
+                    <Grid size={{ xs: 12, md: 6 }}>
+                        <FormControl fullWidth>
+                            <InputLabel>Role Type</InputLabel>
+                            <Select
+                                value={profile.roleType || ''}
+                                label="Role Type"
+                                onChange={(e) => onUpdateProfile('roleType', String(e.target.value))}
+                            >
+                                {ROLE_OPTIONS.map((role) => (
+                                    <MenuItem key={role} value={role}>
+                                        {role}
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+                    </Grid>
+
+                    <Grid size={{ xs: 12, md: 6 }}>
+                        <Box display="flex" gap={1.5}>
+                            <FormControl sx={{ minWidth: 170 }}>
+                                <InputLabel>Code</InputLabel>
+                                <Select
+                                    value={countryCode}
+                                    label="Code"
+                                    onChange={(e) =>
+                                        onHandlePhoneCodeChange(String(e.target.value))
+                                    }
+                                    renderValue={() => (
+                                        <Box display="flex" alignItems="center" gap={1}>
+                                            <span>{countryFlag}</span>
+                                            <span>{countryCode}</span>
+                                        </Box>
+                                    )}
+                                >
+                                    {countryCodeOptions.map((item) => (
+                                        <MenuItem
+                                            key={`${item.iso}-${item.code}`}
+                                            value={item.dialCode}
+                                        >
+                                            <Box
+                                                display="flex"
+                                                alignItems="center"
+                                                gap={1.5}
+                                                width="100%"
+                                            >
+                                                <span style={{ fontSize: '1.1rem' }}>{item.flag}</span>
+                                                <span>{item.country}</span>
+                                                <Typography
+                                                    variant="body2"
+                                                    color="text.secondary"
+                                                    sx={{ ml: 'auto' }}
+                                                >
+                                                    {item.dialCode}
+                                                </Typography>
+                                            </Box>
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+
+                            <TextField
+                                fullWidth
+                                label="Phone Number"
+                                value={profile.phoneNumber}
+                                onChange={(e) => onUpdateProfile('phoneNumber', e.target.value)}
+                                placeholder="+60 12-345 6789"
+                            />
+                        </Box>
+                    </Grid>
+                </Grid>
+            </SectionCard>
+
+            <SectionCard
+                title="Professional Summary"
+                subtitle="Give people a quick sense of your background, expertise, and focus."
+            >
                 <TextField
                     fullWidth
                     multiline
                     minRows={4}
                     maxRows={8}
-                    value={form.profile.bio}
+                    value={profile.bio}
                     onChange={(e) => onUpdateProfile('bio', e.target.value)}
+                    placeholder="Write a short summary about your experience and areas of focus."
                 />
-            </Paper>
+            </SectionCard>
 
-            <Paper variant="outlined" sx={{ p: 3, mb: 3, borderRadius: 2 }}>
-                <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-                    <Typography variant="h6" fontWeight="bold">
-                        Company Affiliation
-                    </Typography>
+            <SectionCard
+                title="Location & Contact"
+                subtitle="Additional profile details for visibility and collaboration."
+            >
+                <Grid container spacing={2.5}>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                        <TextField
+                            fullWidth
+                            label="Country"
+                            value={profile.country}
+                            onChange={(e) => onUpdateProfile('country', e.target.value)}
+                        />
+                    </Grid>
 
+                    <Grid size={{ xs: 12, md: 6 }}>
+                        <TextField
+                            fullWidth
+                            label="City"
+                            value={profile.city}
+                            onChange={(e) => onUpdateProfile('city', e.target.value)}
+                        />
+                    </Grid>
+
+                    <Grid size={{ xs: 12, md: 6 }}>
+                        <FormControl fullWidth>
+                            <InputLabel>Timezone</InputLabel>
+                            <Select
+                                value={profile.timezone}
+                                label="Timezone"
+                                onChange={(e) => onUpdateProfile('timezone', String(e.target.value))}
+                            >
+                                {timezoneOptions.map((tz) => (
+                                    <MenuItem key={tz.value} value={tz.value}>
+                                        {tz.label}
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+                    </Grid>
+
+                    <Grid size={{ xs: 12, md: 6 }}>
+                        <TextField
+                            fullWidth
+                            label="Contact Email"
+                            value={profile.contactEmail}
+                            onChange={(e) => onUpdateProfile('contactEmail', e.target.value)}
+                            placeholder="Email shown on your profile"
+                        />
+                    </Grid>
+
+                    <Grid size={{ xs: 12, md: 4 }}>
+                        <FormControlLabel
+                            control={
+                                <Switch
+                                    checked={Boolean(profile.isPublic)}
+                                    onChange={(e) =>
+                                        onUpdateProfile('isPublic', e.target.checked)
+                                    }
+                                />
+                            }
+                            label="Public profile"
+                        />
+                    </Grid>
+
+                    <Grid size={{ xs: 12, md: 4 }}>
+                        <FormControlLabel
+                            control={
+                                <Switch
+                                    checked={Boolean(profile.showContactEmail)}
+                                    onChange={(e) =>
+                                        onUpdateProfile('showContactEmail', e.target.checked)
+                                    }
+                                />
+                            }
+                            label="Show contact email"
+                        />
+                    </Grid>
+
+                    <Grid size={{ xs: 12, md: 4 }}>
+                        <FormControlLabel
+                            control={
+                                <Switch
+                                    checked={Boolean(profile.showPhone)}
+                                    onChange={(e) =>
+                                        onUpdateProfile('showPhone', e.target.checked)
+                                    }
+                                />
+                            }
+                            label="Show phone number"
+                        />
+                    </Grid>
+                </Grid>
+            </SectionCard>
+
+            <SectionCard
+                title="Links"
+                subtitle="External profile and portfolio links."
+            >
+                <Grid container spacing={2.5}>
+                    <Grid size={{ xs: 12, md: 4 }}>
+                        <TextField
+                            fullWidth
+                            label="Personal Website"
+                            value={profile.personalWebsite}
+                            onChange={(e) => onUpdateProfile('personalWebsite', e.target.value)}
+                        />
+                    </Grid>
+
+                    <Grid size={{ xs: 12, md: 4 }}>
+                        <TextField
+                            fullWidth
+                            label="LinkedIn URL"
+                            value={profile.linkedinUrl}
+                            onChange={(e) => onUpdateProfile('linkedinUrl', e.target.value)}
+                        />
+                    </Grid>
+
+                    <Grid size={{ xs: 12, md: 4 }}>
+                        <TextField
+                            fullWidth
+                            label="Portfolio URL"
+                            value={profile.portfolioUrl}
+                            onChange={(e) => onUpdateProfile('portfolioUrl', e.target.value)}
+                        />
+                    </Grid>
+                </Grid>
+            </SectionCard>
+
+            <SectionCard
+                title="Company Affiliation"
+                subtitle="Current or past organizations you work with."
+            >
+                {/* <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                    <Box />
                     <Button
                         startIcon={<AddRounded />}
                         size="small"
@@ -238,231 +608,186 @@ export default function ProfileTab(props: Props) {
                     >
                         Add another
                     </Button>
-                </Box>
+                </Box> */}
 
                 <Stack spacing={2.5}>
                     {form.affiliations.map((affiliation, index) => (
-                        <Box key={`${affiliation.id ?? 'new'}-${index}`} display="flex" gap={1.5} alignItems="flex-start">
-                            <Autocomplete
-                                options={companyOptions}
-                                getOptionLabel={(option) => (typeof option === 'string' ? option : option.name)}
-                                isOptionEqualToValue={(option, value) => option.id === value.id}
-                                value={
-                                    affiliation.companyId
-                                        ? companyOptions.find((c) => c.id === affiliation.companyId) ?? null
-                                        : null
-                                }
-                                onChange={(_, newValue) =>
-                                    onAffiliationChange(index, {
-                                        companyId: newValue?.id ?? null,
-                                        companyName: newValue?.name ?? '',
-                                    })
-                                }
-                                sx={{ flex: 1 }}
-                                renderInput={(params) => <TextField {...params} label="Company" />}
-                            />
+                        // <Box
+                        //     key={`${affiliation.id ?? 'new'}-${index}`}
+                        //     display="flex"
+                        //     gap={1.5}
+                        //     alignItems="flex-start"
+                        //     flexDirection={{ xs: 'column', md: 'row' }}
+                        // >
+                        //     <Autocomplete
+                        //         options={companyOptions}
+                        //         getOptionLabel={(option) =>
+                        //             typeof option === 'string' ? option : option.name
+                        //         }
+                        //         isOptionEqualToValue={(option, value) => option.id === value.id}
+                        //         value={
+                        //             affiliation.companyId
+                        //                 ? companyOptions.find(
+                        //                     (c) => c.id === affiliation.companyId
+                        //                 ) ?? null
+                        //                 : null
+                        //         }
+                        //         onChange={(_, newValue) =>
+                        //             onAffiliationChange(index, {
+                        //                 companyId: newValue?.id ?? null,
+                        //                 companyName: newValue?.name ?? '',
+                        //             })
+                        //         }
+                        //         sx={{ flex: 1, width: '100%' }}
+                        //         renderInput={(params) => (
+                        //             <TextField {...params} label="Company" />
+                        //         )}
+                        //     />
 
-                            <Autocomplete
-                                freeSolo
-                                options={ROLE_OPTIONS}
-                                value={affiliation.role}
-                                onChange={(_, newValue) =>
-                                    onAffiliationChange(index, { role: String(newValue ?? '') })
-                                }
-                                onInputChange={(_, newInputValue) =>
-                                    onAffiliationChange(index, { role: newInputValue })
-                                }
-                                sx={{ flex: 1 }}
-                                renderInput={(params) => <TextField {...params} label="Role" />}
-                            />
+                        //     <Autocomplete
+                        //         freeSolo
+                        //         selectOnFocus
+                        //         clearOnBlur
+                        //         handleHomeEndKeys
+                        //         options={ROLE_OPTIONS}
+                        //         value={affiliation.role || ""}
+                        //         inputValue={affiliation.role || ""}
+                        //         onChange={(_, newValue) =>
+                        //             onAffiliationChange(index, {
+                        //                 role: typeof newValue === "string" ? newValue : String(newValue ?? ""),
+                        //             })
+                        //         }
+                        //         onInputChange={(_, newInputValue) =>
+                        //             onAffiliationChange(index, { role: newInputValue })
+                        //         }
+                        //         sx={{ flex: 1, width: "100%" }}
+                        //         renderInput={(params) => (
+                        //             <TextField
+                        //                 {...params}
+                        //                 label="Role"
+                        //                 placeholder="Select a role or type your own"
+                        //             />
+                        //         )}
+                        //     />
 
-                            <IconButton onClick={() => onRemoveAffiliation(index)} color="error" sx={{ mt: 1 }}>
-                                <DeleteOutlineRounded />
-                            </IconButton>
+                        //     <IconButton
+                        //         onClick={() => onRemoveAffiliation(index)}
+                        //         color="error"
+                        //         sx={{ mt: { xs: 0, md: 1 } }}
+                        //     >
+                        //         <DeleteOutlineRounded />
+                        //     </IconButton>
+                        // </Box>
+                        <Box
+                            key={`${affiliation.id ?? 'new'}-${index}`}
+                            display="flex"
+                            gap={1.5}
+                            flexDirection={{ xs: 'column', md: 'row' }}
+                            sx={{
+                                p: 1.5,
+                                borderRadius: 1,
+                                bgcolor: 'grey.50',
+                                border: '1px solid',
+                                borderColor: 'grey.200'
+                            }}
+                        >
+                            <Box flex={1}>
+                                <Typography variant="caption" color="text.secondary">
+                                    Company
+                                </Typography>
+                                <Typography variant="body2" fontWeight={500}>
+                                    {affiliation.companyName ||
+                                        companyOptions.find(c => c.id === affiliation.companyId)?.name ||
+                                        '-'}
+                                </Typography>
+                            </Box>
+
+                            <Box flex={1}>
+                                <Typography variant="caption" color="text.secondary">
+                                    Role
+                                </Typography>
+                                <Typography variant="body2" fontWeight={500}>
+                                    {affiliation.role || '-'}
+                                </Typography>
+                            </Box>
                         </Box>
                     ))}
-                </Stack>
-            </Paper>
 
-            <Paper variant="outlined" sx={{ p: 3, mb: 3, borderRadius: 2 }}>
-                <Typography variant="h6" fontWeight="bold" mb={2}>
-                    Expertise
-                </Typography>
-                <Autocomplete
-                    multiple
-                    freeSolo
-                    options={EXPERTISE_OPTIONS}
-                    value={form.profile.expertiseTags}
-                    onChange={(_, newValue) => onUpdateProfile('expertiseTags', newValue)}
-                    renderTags={(value, getTagProps) =>
-                        value.map((option, index) => (
-                            <Chip
-                                variant="outlined"
-                                label={option}
-                                {...getTagProps({ index })}
-                                key={`${option}-${index}`}
-                            />
-                        ))
-                    }
-                    renderInput={(params) => <TextField {...params} placeholder="Select or type to add..." />}
-                />
-            </Paper>
-
-            <Paper variant="outlined" sx={{ p: 3, mb: 3, borderRadius: 2 }}>
-                <Typography variant="h6" fontWeight="bold" mb={2}>
-                    Services You Can Support
-                </Typography>
-                <Autocomplete
-                    multiple
-                    freeSolo
-                    options={SERVICE_OPTIONS}
-                    value={form.profile.serviceOfferings}
-                    onChange={(_, newValue) => onUpdateProfile('serviceOfferings', newValue)}
-                    renderTags={(value, getTagProps) =>
-                        value.map((option, index) => (
-                            <Chip
-                                variant="outlined"
-                                label={option}
-                                {...getTagProps({ index })}
-                                key={`${option}-${index}`}
-                            />
-                        ))
-                    }
-                    renderInput={(params) => <TextField {...params} placeholder="Select or type to add..." />}
-                />
-            </Paper>
-
-            <Paper variant="outlined" sx={{ p: 3, mb: 3, borderRadius: 2 }}>
-                <Typography variant="h6" fontWeight="bold" mb={2}>
-                    Sectors of Focus
-                </Typography>
-                <Autocomplete
-                    multiple
-                    freeSolo
-                    options={SECTOR_OPTIONS}
-                    value={form.profile.sectors}
-                    onChange={(_, newValue) => onUpdateProfile('sectors', newValue)}
-                    renderTags={(value, getTagProps) =>
-                        value.map((option, index) => (
-                            <Chip
-                                variant="outlined"
-                                label={option}
-                                {...getTagProps({ index })}
-                                key={`${option}-${index}`}
-                            />
-                        ))
-                    }
-                    renderInput={(params) => <TextField {...params} placeholder="Select or type to add..." />}
-                />
-            </Paper>
-
-            <Paper variant="outlined" sx={{ p: 3, mb: 3, borderRadius: 2 }}>
-                <Typography variant="h6" fontWeight="bold" mb={2}>
-                    Standards and Methodologies
-                </Typography>
-                <Autocomplete
-                    multiple
-                    freeSolo
-                    options={STANDARD_OPTIONS}
-                    value={form.profile.standards}
-                    onChange={(_, newValue) => onUpdateProfile('standards', newValue)}
-                    renderTags={(value, getTagProps) =>
-                        value.map((option, index) => (
-                            <Chip
-                                variant="outlined"
-                                label={option}
-                                {...getTagProps({ index })}
-                                key={`${option}-${index}`}
-                            />
-                        ))
-                    }
-                    renderInput={(params) => <TextField {...params} placeholder="Select or type to add..." />}
-                />
-            </Paper>
-
-            <Paper variant="outlined" sx={{ p: 3, mb: 3, borderRadius: 2 }}>
-                <Typography variant="h6" fontWeight="bold" mb={2}>
-                    Languages
-                </Typography>
-                <Autocomplete
-                    multiple
-                    freeSolo
-                    options={LANGUAGE_OPTIONS}
-                    value={form.profile.languages}
-                    onChange={(_, newValue) => onUpdateProfile('languages', newValue)}
-                    renderTags={(value, getTagProps) =>
-                        value.map((option, index) => (
-                            <Chip
-                                variant="outlined"
-                                label={option}
-                                {...getTagProps({ index })}
-                                key={`${option}-${index}`}
-                            />
-                        ))
-                    }
-                    renderInput={(params) => <TextField {...params} placeholder="Search and select languages..." />}
-                />
-            </Paper>
-
-            <Paper variant="outlined" sx={{ p: 3, mb: 3, borderRadius: 2 }}>
-                <Typography variant="h6" fontWeight="bold" mb={2}>
-                    Additional Details
-                </Typography>
-
-                <Stack spacing={2.5}>
-                    <TextField
-                        fullWidth
-                        label="Country"
-                        value={form.profile.country}
-                        onChange={(e) => onUpdateProfile('country', e.target.value)}
-                    />
-
-                    <TextField
-                        fullWidth
-                        label="City"
-                        value={form.profile.city}
-                        onChange={(e) => onUpdateProfile('city', e.target.value)}
-                    />
-
-                    <FormControl fullWidth>
-                        <InputLabel>Timezone</InputLabel>
-                        <Select
-                            value={form.profile.timezone}
-                            label="Timezone"
-                            onChange={(e) => onUpdateProfile('timezone', String(e.target.value))}
+                    {form.affiliations.length === 0 ? (
+                        <Paper
+                            variant="outlined"
+                            sx={{
+                                p: 2,
+                                borderRadius: 2,
+                                bgcolor: 'grey.50',
+                                borderStyle: 'dashed',
+                            }}
                         >
-                            {timezoneOptions.map((tz) => (
-                                <MenuItem key={tz.value} value={tz.value}>
-                                    {tz.label}
-                                </MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
-
-                    <TextField
-                        fullWidth
-                        label="Personal Website"
-                        value={form.profile.personalWebsite}
-                        onChange={(e) => onUpdateProfile('personalWebsite', e.target.value)}
-                    />
-
-                    <TextField
-                        fullWidth
-                        label="LinkedIn URL"
-                        value={form.profile.linkedinUrl}
-                        onChange={(e) => onUpdateProfile('linkedinUrl', e.target.value)}
-                    />
-
-                    <TextField
-                        fullWidth
-                        label="Portfolio URL"
-                        value={form.profile.portfolioUrl}
-                        onChange={(e) => onUpdateProfile('portfolioUrl', e.target.value)}
-                    />
+                            <Typography variant="body2" color="text.secondary">
+                                No affiliations added yet.
+                            </Typography>
+                        </Paper>
+                    ) : null}
                 </Stack>
-            </Paper>
+            </SectionCard>
 
-            <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, borderColor: 'error.200', bgcolor: 'error.50' }}>
+            <SectionCard
+                title="Expertise"
+                subtitle="Add keywords to help projects and partners find you."
+            >
+                <TagAutocomplete
+                    value={profile.expertiseTags}
+                    options={EXPERTISE_OPTIONS}
+                    placeholder="Select or type to add..."
+                    onChange={(value) => onUpdateProfile('expertiseTags', value)}
+                />
+            </SectionCard>
+
+            <SectionCard title="Services You Can Support">
+                <TagAutocomplete
+                    value={profile.serviceOfferings}
+                    options={SERVICE_OPTIONS}
+                    placeholder="Select or type to add..."
+                    onChange={(value) => onUpdateProfile('serviceOfferings', value)}
+                />
+            </SectionCard>
+
+            <SectionCard title="Sectors of Focus">
+                <TagAutocomplete
+                    value={profile.sectors}
+                    options={SECTOR_OPTIONS}
+                    placeholder="Select or type to add..."
+                    onChange={(value) => onUpdateProfile('sectors', value)}
+                />
+            </SectionCard>
+
+            <SectionCard title="Standards and Methodologies">
+                <TagAutocomplete
+                    value={profile.standards}
+                    options={STANDARD_OPTIONS}
+                    placeholder="Select or type to add..."
+                    onChange={(value) => onUpdateProfile('standards', value)}
+                />
+            </SectionCard>
+
+            <SectionCard title="Languages">
+                <TagAutocomplete
+                    value={profile.languages}
+                    options={LANGUAGE_OPTIONS}
+                    placeholder="Search and select languages..."
+                    onChange={(value) => onUpdateProfile('languages', value)}
+                />
+            </SectionCard>
+
+            <Paper
+                variant="outlined"
+                sx={{
+                    p: 3,
+                    borderRadius: 2,
+                    borderColor: 'error.200',
+                    bgcolor: 'error.50',
+                }}
+            >
                 <Typography variant="h6" fontWeight="bold" color="error.main" mb={2}>
                     Danger Zone
                 </Typography>
@@ -557,7 +882,7 @@ export default function ProfileTab(props: Props) {
                 >
                     <Box
                         sx={{
-                            maxWidth: 800,
+                            maxWidth: 900,
                             width: '100%',
                             mx: 'auto',
                             display: 'flex',
@@ -576,7 +901,7 @@ export default function ProfileTab(props: Props) {
             </Slide>
 
             <Snackbar open={snackbarOpen} autoHideDuration={4000} onClose={onSnackbarClose}>
-                <Alert severity={snackbarSeverity} onClose={onSnackbarClose} variant="filled">
+                <Alert severity={snackbarSeverity} onClose={onSnackbarClose}>
                     {snackbarMessage}
                 </Alert>
             </Snackbar>

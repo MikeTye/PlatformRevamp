@@ -147,6 +147,21 @@ function getInitials(name: string): string {
     return safeName.substring(0, 2).toUpperCase();
 }
 
+function SectionPlaceholder({ text }: { text: string }) {
+    return (
+        <Typography
+            variant="body2"
+            color="text.disabled"
+            sx={{
+                fontStyle: 'italic',
+                lineHeight: 1.6,
+            }}
+        >
+            {text}
+        </Typography>
+    );
+}
+
 function normalizeProjectStage(stage: string): ProjectStage {
     const value = (stage || '').trim().toLowerCase();
 
@@ -645,26 +660,35 @@ export function UserProfilePage() {
                                     color="text.secondary"
                                     sx={{ lineHeight: 1.7 }}
                                 >
-                                    {user.summary || '—'}
+                                    <Box sx={{ lineHeight: 1.7 }}>
+                                        {user.summary ? (
+                                            <Typography variant="body2" color="text.secondary">
+                                                {user.summary}
+                                            </Typography>
+                                        ) : (
+                                            <SectionPlaceholder text="No professional summary added yet." />
+                                        )}
+                                    </Box>
                                 </Typography>
                             </Paper>
 
-                            {user.services.length > 0 && (
-                                <Paper
-                                    variant="outlined"
-                                    sx={{
-                                        p: 2.5,
-                                        borderRadius: 2,
-                                    }}
+                            <Paper
+                                variant="outlined"
+                                sx={{
+                                    p: 2.5,
+                                    borderRadius: 2,
+                                }}
+                            >
+                                <Typography
+                                    variant="subtitle2"
+                                    fontWeight="bold"
+                                    color="text.primary"
+                                    mb={1.5}
                                 >
-                                    <Typography
-                                        variant="subtitle2"
-                                        fontWeight="bold"
-                                        color="text.primary"
-                                        mb={1.5}
-                                    >
-                                        Services Supported
-                                    </Typography>
+                                    Services Supported
+                                </Typography>
+
+                                {user.services.length > 0 ? (
                                     <Box display="flex" flexWrap="wrap" gap={1}>
                                         {user.services.map((s) => (
                                             <Chip
@@ -681,25 +705,28 @@ export function UserProfilePage() {
                                             />
                                         ))}
                                     </Box>
-                                </Paper>
-                            )}
+                                ) : (
+                                    <SectionPlaceholder text="No services added yet." />
+                                )}
+                            </Paper>
 
-                            {user.expertise.length > 0 && (
-                                <Paper
-                                    variant="outlined"
-                                    sx={{
-                                        p: 2.5,
-                                        borderRadius: 2,
-                                    }}
+                            <Paper
+                                variant="outlined"
+                                sx={{
+                                    p: 2.5,
+                                    borderRadius: 2,
+                                }}
+                            >
+                                <Typography
+                                    variant="subtitle2"
+                                    fontWeight="bold"
+                                    color="text.primary"
+                                    mb={1.5}
                                 >
-                                    <Typography
-                                        variant="subtitle2"
-                                        fontWeight="bold"
-                                        color="text.primary"
-                                        mb={1.5}
-                                    >
-                                        Expertise Areas
-                                    </Typography>
+                                    Expertise Areas
+                                </Typography>
+
+                                {user.expertise.length > 0 ? (
                                     <Box display="flex" flexWrap="wrap" gap={1}>
                                         {user.expertise.map((e) => (
                                             <Chip
@@ -711,34 +738,36 @@ export function UserProfilePage() {
                                             />
                                         ))}
                                     </Box>
-                                </Paper>
-                            )}
+                                ) : (
+                                    <SectionPlaceholder text="No expertise areas added yet." />
+                                )}
+                            </Paper>
 
-                            {user.projects.length > 0 && (
-                                <Paper
-                                    variant="outlined"
-                                    sx={{
-                                        borderRadius: 2,
-                                        overflow: 'hidden',
-                                    }}
-                                >
-                                    <Box p={2} borderBottom={1} borderColor="grey.100">
+                            <Paper
+                                variant="outlined"
+                                sx={{
+                                    borderRadius: 2,
+                                    overflow: 'hidden',
+                                }}
+                            >
+                                <Box p={2} borderBottom={1} borderColor="grey.100">
+                                    <Typography
+                                        variant="subtitle2"
+                                        fontWeight="bold"
+                                        color="text.primary"
+                                    >
+                                        Projects{' '}
                                         <Typography
-                                            variant="subtitle2"
-                                            fontWeight="bold"
-                                            color="text.primary"
+                                            component="span"
+                                            color="text.disabled"
+                                            fontWeight="normal"
                                         >
-                                            Projects{' '}
-                                            <Typography
-                                                component="span"
-                                                color="text.disabled"
-                                                fontWeight="normal"
-                                            >
-                                                ({user.projects.length})
-                                            </Typography>
+                                            ({user.projects.length})
                                         </Typography>
-                                    </Box>
+                                    </Typography>
+                                </Box>
 
+                                {user.projects.length > 0 ? (
                                     <Stack spacing={0}>
                                         {user.projects.map((project, i) => (
                                             <Box
@@ -811,8 +840,12 @@ export function UserProfilePage() {
                                             </Box>
                                         ))}
                                     </Stack>
-                                </Paper>
-                            )}
+                                ) : (
+                                    <Box p={2}>
+                                        <SectionPlaceholder text="No projects added yet." />
+                                    </Box>
+                                )}
+                            </Paper>
                         </Stack>
                     </Box>
 
@@ -823,24 +856,24 @@ export function UserProfilePage() {
                         }}
                     >
                         <Stack spacing={2}>
-                            {canShowCompany && (
-                                <Paper
-                                    variant="outlined"
-                                    sx={{
-                                        p: 2,
-                                        borderRadius: 2,
-                                    }}
+                            <Paper
+                                variant="outlined"
+                                sx={{
+                                    p: 2,
+                                    borderRadius: 2,
+                                }}
+                            >
+                                <Typography
+                                    variant="caption"
+                                    fontWeight="bold"
+                                    color="text.primary"
+                                    display="block"
+                                    mb={1.5}
                                 >
-                                    <Typography
-                                        variant="caption"
-                                        fontWeight="bold"
-                                        color="text.primary"
-                                        display="block"
-                                        mb={1.5}
-                                    >
-                                        Company Affiliation
-                                    </Typography>
+                                    Company Affiliation
+                                </Typography>
 
+                                {canShowCompany ? (
                                     <Box
                                         display="flex"
                                         alignItems="center"
@@ -883,26 +916,29 @@ export function UserProfilePage() {
                                             </Typography>
                                         </Box>
                                     </Box>
-                                </Paper>
-                            )}
+                                ) : (
+                                    <SectionPlaceholder text="No company affiliation added yet." />
+                                )}
+                            </Paper>
 
-                            {user.sectors.length > 0 && (
-                                <Paper
-                                    variant="outlined"
-                                    sx={{
-                                        p: 2,
-                                        borderRadius: 2,
-                                    }}
+                            <Paper
+                                variant="outlined"
+                                sx={{
+                                    p: 2,
+                                    borderRadius: 2,
+                                }}
+                            >
+                                <Typography
+                                    variant="caption"
+                                    fontWeight="bold"
+                                    color="text.primary"
+                                    display="block"
+                                    mb={1.5}
                                 >
-                                    <Typography
-                                        variant="caption"
-                                        fontWeight="bold"
-                                        color="text.primary"
-                                        display="block"
-                                        mb={1.5}
-                                    >
-                                        Sectors of Focus
-                                    </Typography>
+                                    Sectors of Focus
+                                </Typography>
+
+                                {user.sectors.length > 0 ? (
                                     <Box display="flex" flexWrap="wrap" gap={0.75}>
                                         {user.sectors.map((s) => (
                                             <Chip
@@ -916,26 +952,29 @@ export function UserProfilePage() {
                                             />
                                         ))}
                                     </Box>
-                                </Paper>
-                            )}
+                                ) : (
+                                    <SectionPlaceholder text="No sectors added yet." />
+                                )}
+                            </Paper>
 
-                            {user.standards.length > 0 && (
-                                <Paper
-                                    variant="outlined"
-                                    sx={{
-                                        p: 2,
-                                        borderRadius: 2,
-                                    }}
+                            <Paper
+                                variant="outlined"
+                                sx={{
+                                    p: 2,
+                                    borderRadius: 2,
+                                }}
+                            >
+                                <Typography
+                                    variant="caption"
+                                    fontWeight="bold"
+                                    color="text.primary"
+                                    display="block"
+                                    mb={1.5}
                                 >
-                                    <Typography
-                                        variant="caption"
-                                        fontWeight="bold"
-                                        color="text.primary"
-                                        display="block"
-                                        mb={1.5}
-                                    >
-                                        Standards & Methodologies
-                                    </Typography>
+                                    Standards & Methodologies
+                                </Typography>
+
+                                {user.standards.length > 0 ? (
                                     <Box display="flex" flexWrap="wrap" gap={0.75}>
                                         {user.standards.map((s) => (
                                             <Chip
@@ -950,27 +989,29 @@ export function UserProfilePage() {
                                             />
                                         ))}
                                     </Box>
-                                </Paper>
-                            )}
+                                ) : (
+                                    <SectionPlaceholder text="No standards or methodologies added yet." />
+                                )}
+                            </Paper>
 
-                            {user.languages.length > 0 && (
-                                <Paper
-                                    variant="outlined"
-                                    sx={{
-                                        p: 2,
-                                        borderRadius: 2,
-                                    }}
+                            <Paper
+                                variant="outlined"
+                                sx={{
+                                    p: 2,
+                                    borderRadius: 2,
+                                }}
+                            >
+                                <Typography
+                                    variant="caption"
+                                    fontWeight="bold"
+                                    color="text.primary"
+                                    display="block"
+                                    mb={1.5}
                                 >
-                                    <Typography
-                                        variant="caption"
-                                        fontWeight="bold"
-                                        color="text.primary"
-                                        display="block"
-                                        mb={1.5}
-                                    >
-                                        Languages
-                                    </Typography>
+                                    Languages
+                                </Typography>
 
+                                {user.languages.length > 0 ? (
                                     <Stack spacing={0.75}>
                                         {user.languages.map((lang, i) => (
                                             <Box
@@ -1005,8 +1046,10 @@ export function UserProfilePage() {
                                             </Box>
                                         ))}
                                     </Stack>
-                                </Paper>
-                            )}
+                                ) : (
+                                    <SectionPlaceholder text="No languages added yet." />
+                                )}
+                            </Paper>
                         </Stack>
                     </Box>
                 </Box>

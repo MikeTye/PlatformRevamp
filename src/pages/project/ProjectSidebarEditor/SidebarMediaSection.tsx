@@ -10,7 +10,7 @@ import {
 } from '@mui/material';
 import ImageRounded from '@mui/icons-material/ImageRounded';
 
-import type { ProjectMediaItem } from '../ProjectProfileView';
+import type { ProjectMediaItem } from '../projectProfile.types';
 
 type UploadState = {
     busy: boolean;

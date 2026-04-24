@@ -6,7 +6,7 @@ import type {
     ProjectEditorTarget,
     ProjectMediaItem,
     SectionVisibility,
-} from './ProjectProfileView';
+} from './projectProfile.types';
 import { ProjectSectionCard } from './ProjectSectionCard';
 
 type Props = {

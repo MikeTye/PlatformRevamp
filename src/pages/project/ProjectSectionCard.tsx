@@ -17,7 +17,7 @@ import EditRounded from '@mui/icons-material/EditRounded';
 import LockRounded from '@mui/icons-material/LockRounded';
 import PublicRounded from '@mui/icons-material/PublicRounded';
 
-import type { SectionVisibility } from './ProjectProfileView';
+import type { SectionVisibility } from './projectProfile.types';
 
 export interface ProjectSectionCardProps {
     title: string;

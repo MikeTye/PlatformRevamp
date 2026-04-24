@@ -83,6 +83,7 @@ export interface CompanyProfile {
 
     displayName: string;
     type: CompanyType;
+    companyEmail?: string | null;
 
     roles?: string[];
     serviceTypes?: string[];

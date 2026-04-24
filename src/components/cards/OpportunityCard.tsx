@@ -20,6 +20,7 @@ import ShieldRounded from '@mui/icons-material/ShieldRounded';
 import BusinessRounded from '@mui/icons-material/BusinessRounded';
 import EmailRounded from '@mui/icons-material/EmailRounded';
 import { ProjectStageIndicator, ProjectStage } from '../ProjectStageIndicator';
+import { CountryFlagLabel } from '../common/CountryFlagLabel';
 export type OpportunityType =
     | 'Financing'
     | 'Technical Advisor'
@@ -42,6 +43,7 @@ export interface OpportunityCardProps {
     onToggleSave?: (e: React.MouseEvent) => void;
     onProjectClick?: (e: React.MouseEvent) => void;
     onContactClick?: (e: React.MouseEvent) => void;
+    onDeveloperClick?: (e: React.MouseEvent) => void;
 }
 export function OpportunityCard({
     id,
@@ -58,7 +60,8 @@ export function OpportunityCard({
     onClick,
     onToggleSave,
     onProjectClick,
-    onContactClick
+    onContactClick,
+    onDeveloperClick
 }: OpportunityCardProps) {
     const getIcon = (type: OpportunityType) => {
         switch (type) {
@@ -218,14 +221,16 @@ export function OpportunityCard({
                     color="text.secondary"
                     sx={{
                         display: '-webkit-box',
-                        WebkitLineClamp: 3,
+                        WebkitLineClamp: 2,
                         WebkitBoxOrient: 'vertical',
                         overflow: 'hidden',
+                        textOverflow: 'ellipsis',
                         lineHeight: 1.4,
                         mb: 1.5,
-                        flexGrow: 1
-                    }}>
-
+                        flexGrow: 1,
+                        minHeight: '2.8em'
+                    }}
+                >
                     {description}
                 </Typography>
 
@@ -258,11 +263,17 @@ export function OpportunityCard({
                         variant="caption"
                         color="text.secondary"
                         display="block"
-                        mb={1.5}>
-
-                        by {developer}
+                        mb={1.5}
+                        sx={{
+                            cursor: onDeveloperClick ? 'pointer' : 'default',
+                            '&:hover': onDeveloperClick
+                                ? { textDecoration: 'underline' }
+                                : undefined
+                        }}
+                        onClick={onDeveloperClick}
+                    >
+                        {developer}
                     </Typography>
-
                     <Stack
                         direction="row"
                         spacing={1}
@@ -270,15 +281,14 @@ export function OpportunityCard({
                         flexWrap="wrap"
                         gap={1}>
 
-                        <ProjectStageIndicator stage={stage} />
-                        <Box display="flex" alignItems="center" gap={0.5}>
-                            <Typography fontSize="1rem">
-                                {countryCode || '🏳️'}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                                {country}
-                            </Typography>
-                        </Box>
+                        <CountryFlagLabel
+                            country={country}
+                            code={countryCode}
+                            size="md"
+                            textVariant="caption"
+                            color="text.secondary"
+                            gap={0.5}
+                        />
                     </Stack>
 
                     {onContactClick &&

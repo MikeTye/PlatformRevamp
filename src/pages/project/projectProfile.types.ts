@@ -27,30 +27,16 @@ export type ProjectSectionKey =
     | 'media'
     | 'team';
 
-export interface ProjectTeamMember {
-    id: string;
-    memberType: CollaboratorEntityType;
-    memberId?: string | null;
-    userId?: string | null;
-    companyId?: string | null;
-
-    name: string;
-    role?: string | null;
-    companyName?: string;
-    avatarUrl?: string | null;
-    permission?: ProjectRole | null;
-
-    isPlatformMember?: boolean;
-    manualName?: string | null;
-    manualOrganization?: string | null;
-}
-
-export interface ProjectOpportunity {
+export type ProjectOpportunity = {
     id: string;
     type: string;
     description?: string | null;
     urgent?: boolean;
-}
+    sortOrder?: number;
+    isActive?: boolean;
+    createdAt?: string | null;
+    updatedAt?: string | null;
+};
 
 export type ProjectDocumentStatus = 'Draft' | 'Final';
 
@@ -111,6 +97,8 @@ export interface ProjectProfileData {
     type?: string | null;
     description?: string | null;
     companyName?: string | null;
+    companyId?: string | null;
+    companyEmail?: string | null;
     country?: string | null;
     region?: string | null;
     latitude?: number | null;
@@ -146,6 +134,7 @@ export interface ProjectProfileData {
     creditingStart?: string | null;
     creditingEnd?: string | null;
     tenureText?: string | null;
+    isProjectMember?: boolean;
 }
 
 export type ProjectCompletenessRule = {
@@ -155,3 +144,73 @@ export type ProjectCompletenessRule = {
     section: ProjectSectionKey;
     isComplete: (project: ProjectProfileData) => boolean;
 };
+
+export type ProjectPermissionRole = 'creator' | 'viewer';
+
+export type ProjectTeamUserMember = {
+    id: string;
+    memberType: 'user';
+    memberId?: string | null;
+    userId?: string | null;
+    companyId?: null;
+    name: string;
+    role?: string | null;
+    companyName?: string;
+    avatarUrl?: string | null;
+    permission?: ProjectPermissionRole | null;
+    isPlatformMember?: boolean;
+    manualName?: string | null;
+    manualOrganization?: string | null;
+};
+
+export type ProjectTeamCompanyMember = {
+    id: string;
+    memberType: 'company';
+    memberId?: string | null;
+    userId?: null;
+    companyId?: string | null;
+    name: string;
+    role?: string | null;
+    companyName?: string;
+    avatarUrl?: string | null;
+    permission?: null;
+    isPlatformMember?: boolean;
+    manualName?: string | null;
+    manualOrganization?: string | null;
+};
+
+export type ProjectTeamMember = ProjectTeamUserMember | ProjectTeamCompanyMember;
+
+export type ProjectTeamSaveUserMember = {
+    memberType: 'user';
+    memberId?: string | null;
+    userId?: string | null;
+    companyId?: null;
+    name?: string;
+    role?: string | null;
+    companyName?: string;
+    avatarUrl?: string | null;
+    permission?: ProjectPermissionRole | null;
+    isPlatformMember?: boolean;
+    manualName?: string | null;
+    manualOrganization?: string | null;
+};
+
+export type ProjectTeamSaveCompanyMember = {
+    memberType: 'company';
+    memberId?: string | null;
+    userId?: null;
+    companyId?: string | null;
+    name?: string;
+    role?: string | null;
+    companyName?: string;
+    avatarUrl?: string | null;
+    permission?: null;
+    isPlatformMember?: boolean;
+    manualName?: string | null;
+    manualOrganization?: string | null;
+};
+
+export type ProjectTeamSaveMember =
+    | ProjectTeamSaveUserMember
+    | ProjectTeamSaveCompanyMember;

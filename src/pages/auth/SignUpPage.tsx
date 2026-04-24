@@ -33,7 +33,10 @@ import {
     getShareRedirectPath,
     persistInviteContext,
     persistShareContext,
+    getStoredShareContext,
 } from '../../utils/authAccessContext';
+
+import { trackEvent } from '../../lib/analytics';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? '';
@@ -178,6 +181,51 @@ export function SignUpPage() {
         return errors.length > 0 ? errors[0] : '';
     };
 
+    const hasTrackedViewRef = useRef(false);
+    const latestFormDataRef = useRef(formData);
+    const latestInviteCompanyRef = useRef(inviteCompany);
+    const latestSharePreviewRef = useRef(sharePreview);
+
+    useEffect(() => {
+        latestFormDataRef.current = formData;
+    }, [formData]);
+
+    useEffect(() => {
+        latestInviteCompanyRef.current = inviteCompany;
+    }, [inviteCompany]);
+
+    useEffect(() => {
+        latestSharePreviewRef.current = sharePreview;
+    }, [sharePreview]);
+
+    const getSignupTrackingProps = () => ({
+        page: 'signup',
+        has_company_invite_token: Boolean(companyInviteToken),
+        has_share_token: Boolean(shareToken),
+        has_prefilled_email: Boolean(initialEmail?.trim()),
+        invite_company_id: inviteCompany?.id ?? null,
+        invite_company_name: inviteCompany?.displayName ?? null,
+        share_entity_type: sharePreview?.entityType ?? null,
+        share_entity_id: sharePreview?.entityId ?? null,
+        share_title: sharePreview?.title ?? null,
+    });
+
+    useEffect(() => {
+        if (hasTrackedViewRef.current) return;
+
+        trackEvent('sign up page viewed', getSignupTrackingProps());
+        hasTrackedViewRef.current = true;
+    }, [companyInviteToken, shareToken, initialEmail, inviteCompany, sharePreview]);
+
+    useEffect(() => {
+        if (!companyInviteToken || inviteLoading || inviteError) return;
+
+        trackEvent('Company invite link opened', {
+            ...getSignupTrackingProps(),
+            invite_token_present: true,
+        });
+    }, [companyInviteToken, inviteLoading, inviteError, inviteCompany, sharePreview]);
+
     useEffect(() => {
         if (!companyInviteToken) {
             clearInviteContext();
@@ -234,36 +282,44 @@ export function SignUpPage() {
             }
 
             if (shareToken) {
-                try {
-                    setShareLoading(true);
+                const storedShare = getStoredShareContext();
+
+                if (storedShare) {
+                    setSharePreview(storedShare);
                     setShareError('');
+                    setShareLoading(false);
+                } else {
+                    try {
+                        setShareLoading(true);
+                        setShareError('');
 
-                    const resp = await fetch(
-                        `${API_BASE_URL}/auth/share-links/preview?token=${encodeURIComponent(shareToken)}`,
-                        {
-                            method: 'GET',
-                            credentials: 'include',
-                            headers: { Accept: 'application/json' },
+                        const resp = await fetch(
+                            `${API_BASE_URL}/auth/share-links/preview?token=${encodeURIComponent(shareToken)}`,
+                            {
+                                method: 'GET',
+                                credentials: 'include',
+                                headers: { Accept: 'application/json' },
+                            }
+                        );
+
+                        const data = (await resp.json().catch(() => ({}))) as SharePreviewResponse;
+
+                        if (!resp.ok) {
+                            throw new Error(data.message || 'This shared link is invalid.');
                         }
-                    );
 
-                    const data = (await resp.json().catch(() => ({}))) as SharePreviewResponse;
-
-                    if (!resp.ok) {
-                        throw new Error(data.message || 'This shared link is invalid.');
+                        if (!cancelled) {
+                            setSharePreview(data.share ?? null);
+                            persistShareContext(shareToken, data.share ?? null);
+                        }
+                    } catch (err) {
+                        if (!cancelled) {
+                            setSharePreview(null);
+                            setShareError(err instanceof Error ? err.message : 'This shared link is invalid.');
+                        }
+                    } finally {
+                        if (!cancelled) setShareLoading(false);
                     }
-
-                    if (!cancelled) {
-                        setSharePreview(data.share ?? null);
-                        persistShareContext(shareToken, data.share ?? null);
-                    }
-                } catch (err) {
-                    if (!cancelled) {
-                        setSharePreview(null);
-                        setShareError(err instanceof Error ? err.message : 'This shared link is invalid.');
-                    }
-                } finally {
-                    if (!cancelled) setShareLoading(false);
                 }
             }
         };
@@ -293,6 +349,14 @@ export function SignUpPage() {
                 setIsLoading(true);
                 setFormError('');
 
+                trackEvent('sign up with google account selected', {
+                    ...getSignupTrackingProps(),
+                    signup_method: 'google',
+                    agreed_to_terms: formData.agreed,
+                    entered_name: Boolean(formData.name.trim()),
+                    entered_email: Boolean(formData.email.trim()),
+                });
+
                 const resp = await fetch(`${API_BASE_URL}/auth/google/sign-in`, {
                     method: 'POST',
                     headers: {
@@ -312,6 +376,19 @@ export function SignUpPage() {
 
                 if (resp.ok) {
                     await refreshSession();
+
+                    trackEvent('sign up completed', {
+                        ...getSignupTrackingProps(),
+                        signup_method: 'google',
+                    });
+
+                    if (companyInviteToken) {
+                        trackEvent('Invited team member joined company', {
+                            ...getSignupTrackingProps(),
+                            signup_method: 'google',
+                            joined_via: 'company_invite',
+                        });
+                    }
 
                     let googleEmail = formData.email.trim().toLowerCase();
 
@@ -338,14 +415,12 @@ export function SignUpPage() {
 
                     if (companyInviteToken) {
                         const inviteRedirectPath = getInviteRedirectPath(data);
-                        clearAllAccessContext();
                         navigate(inviteRedirectPath, { replace: true });
                         return;
                     }
 
                     if (shareToken) {
                         const shareRedirectPath = getShareRedirectPath(data);
-                        clearAllAccessContext();
                         navigate(shareRedirectPath, { replace: true });
                         return;
                     }
@@ -397,7 +472,7 @@ export function SignUpPage() {
             theme: 'outline',
             size: 'large',
             shape: 'rectangular',
-            width: 380,
+            width: Math.min(380, Math.max(220, googleButtonRef.current.offsetWidth)),
             text: 'continue_with',
         });
     }, [
@@ -421,6 +496,14 @@ export function SignUpPage() {
         try {
             setIsLoading(true);
             setFormError('');
+
+            trackEvent('sign up with email selected', {
+                ...getSignupTrackingProps(),
+                signup_method: 'email',
+                agreed_to_terms: formData.agreed,
+                entered_name: Boolean(formData.name.trim()),
+                entered_email: Boolean(formData.email.trim()),
+            });
 
             const resp = await fetch(`${API_BASE_URL}/auth/email/request-code`, {
                 method: 'POST',
@@ -752,6 +835,9 @@ export function SignUpPage() {
                                             }).toString()}`
                                             : '/login'
                                     }
+                                    onClick={() => {
+                                        trackEvent('Sign in on sign-up page clicked', getSignupTrackingProps());
+                                    }}
                                     fontWeight="medium"
                                     color="primary.main"
                                     underline="hover"

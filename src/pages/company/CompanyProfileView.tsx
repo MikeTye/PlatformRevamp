@@ -35,12 +35,16 @@ import { CompanySectionHeader } from './CompanyHeaderSection';
 import { CompanyMediaSection } from './CompanyMediaSection';
 import { CompanyDocumentsSection } from './CompanyDocumentSection';
 
+import { CountryFlagLabel } from '../../components/common/CountryFlagLabel';
+
 import {
     CompanyProfile,
     CompanyTeamMember,
     CompanySectionKey,
     CompanyDocument,
 } from './companyProfile.types';
+
+import { trackEvent } from '../../lib/analytics';
 
 type Mode = 'view' | 'edit';
 
@@ -59,6 +63,7 @@ interface CompanyProfileViewProps {
     shareAnchorEl: HTMLElement | null;
     onOpenShare: (el: HTMLElement) => void;
     onCloseShare: () => void;
+    resolveShareUrl?: () => Promise<string>;
 
     onEditSection?: (section: CompanySectionKey) => void;
     canViewPrivateSection?: (section: CompanySectionKey) => boolean;
@@ -77,6 +82,11 @@ interface CompanyProfileViewProps {
     renderTeamActions?: (member: CompanyTeamMember, index: number) => React.ReactNode;
     renderDocumentActions?: (doc: CompanyDocument, index: number) => React.ReactNode;
     onLogoUploadClick?: () => void;
+    trackingContext?: {
+        entryPoint?: string;
+        isOwnCompany?: boolean;
+    };
+    onShareClick?: () => void;
 }
 
 function defaultCanView() {
@@ -92,16 +102,6 @@ function getInitials(name: string) {
         .join('');
 }
 
-function getFlagEmoji(countryCode?: string | null) {
-    if (!countryCode) return '🌍';
-    const code = countryCode.trim().toUpperCase();
-    if (code.length !== 2) return '🌍';
-
-    return String.fromCodePoint(
-        ...[...code].map((char) => 127397 + char.charCodeAt(0))
-    );
-}
-
 export function CompanyProfileView({
     company,
     mode,
@@ -114,6 +114,7 @@ export function CompanyProfileView({
     shareAnchorEl,
     onOpenShare,
     onCloseShare,
+    resolveShareUrl,
     canViewPrivateSection = defaultCanView,
     onEditSection,
     onAddTeam,
@@ -124,6 +125,8 @@ export function CompanyProfileView({
     renderTeamActions,
     renderDocumentActions,
     onLogoUploadClick,
+    trackingContext,
+    onShareClick,
 }: CompanyProfileViewProps) {
     const isEditMode = mode === 'edit';
     const displayCompanyName =
@@ -137,7 +140,6 @@ export function CompanyProfileView({
     const shortDescription = company.description?.trim();
     const fullDescription = company.fullDescription?.trim();
     const countryLabel = company.country?.trim();
-    const countryFlag = getFlagEmoji(company.countryCode);
     const websiteHref =
         company.website && company.website.trim()
             ? company.website.startsWith('http')
@@ -241,6 +243,24 @@ export function CompanyProfileView({
             section: 'serviceCategories',
         },
     ];
+
+    const canSeePermissionsSection = React.useMemo(() => {
+        const currentPermission =
+            (company as any).currentUserPermission ??
+            (company as any).myPermission ??
+            (company as any).viewerPermission ??
+            (company as any).permission ??
+            null;
+
+        return Boolean(company.isMyCompany) || currentPermission === 'creator';
+    }, [company]);
+
+    const companyEmail =
+        (company as any).companyEmail?.trim() ||
+        (company as any).email?.trim() ||
+        null;
+
+    const contactHref = companyEmail ? `mailto:${companyEmail}` : null;
 
     return (
         <Box minHeight="100vh" bgcolor="grey.50">
@@ -444,10 +464,13 @@ export function CompanyProfileView({
                                         mb={1.5}
                                     >
                                         {countryLabel && (
-                                            <Box display="flex" alignItems="center" gap={0.75}>
-                                                <Typography fontSize="1rem">{countryFlag}</Typography>
-                                                <Typography variant="body2">{countryLabel}</Typography>
-                                            </Box>
+                                            <CountryFlagLabel
+                                                country={countryLabel}
+                                                code={company.countryCode}
+                                                size="md"
+                                                textVariant="body2"
+                                                color="text.primary"
+                                            />
                                         )}
 
                                         {company.website && websiteHref && (
@@ -459,6 +482,14 @@ export function CompanyProfileView({
                                                     href={websiteHref}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
+                                                    onClick={() =>
+                                                        trackEvent('Company external website clicked', {
+                                                            company_id: company.id,
+                                                            company_name: displayCompanyName,
+                                                            is_own_company: trackingContext?.isOwnCompany ?? Boolean(company.isMyCompany),
+                                                            entry_point: trackingContext?.entryPoint ?? 'direct',
+                                                        })
+                                                    }
                                                     sx={{
                                                         color: 'primary.main',
                                                         textDecoration: 'none',
@@ -522,12 +553,23 @@ export function CompanyProfileView({
                                 >
                                     Edit Company
                                 </Button>
-                            ) : canContact ? (
+                            ) : canContact && contactHref ? (
                                 <Button
                                     variant="contained"
                                     fullWidth
                                     startIcon={<EmailRounded sx={{ fontSize: 16 }} />}
+                                    component={contactHref ? 'a' : 'button'}
+                                    href={contactHref ?? undefined}
+                                    onClick={() =>
+                                        trackEvent('Company contact button clicked', {
+                                            company_id: company.id,
+                                            company_name: displayCompanyName,
+                                            is_own_company: trackingContext?.isOwnCompany ?? Boolean(company.isMyCompany),
+                                            entry_point: trackingContext?.entryPoint ?? 'direct',
+                                        })
+                                    }
                                     sx={{ textTransform: 'none' }}
+                                    disabled={!contactHref}
                                 >
                                     Contact
                                 </Button>
@@ -550,7 +592,17 @@ export function CompanyProfileView({
                                     variant="outlined"
                                     fullWidth
                                     startIcon={<ShareRounded sx={{ fontSize: 14 }} />}
-                                    onClick={(e) => onOpenShare(e.currentTarget)}
+                                    onClick={(e) => {
+                                        onShareClick?.();
+                                        trackEvent('Company share button clicked', {
+                                            company_id: company.id,
+                                            company_name: displayCompanyName,
+                                            is_own_company: trackingContext?.isOwnCompany ?? Boolean(company.isMyCompany),
+                                            entry_point: trackingContext?.entryPoint ?? 'direct',
+                                            share_to_type: 'menu_open',
+                                        });
+                                        onOpenShare(e.currentTarget);
+                                    }}
                                     sx={{
                                         borderColor: 'grey.200',
                                         color: 'text.secondary',
@@ -569,8 +621,15 @@ export function CompanyProfileView({
                                 anchorEl={shareAnchorEl}
                                 open={Boolean(shareAnchorEl)}
                                 onClose={onCloseShare}
-                                shareUrl={window.location.href}
                                 shareTitle={`${displayCompanyName} on The Carbon Economy`}
+                                resolveShareUrl={resolveShareUrl}
+                                trackingEventName="Company share button clicked"
+                                trackingPayload={{
+                                    company_id: company.id,
+                                    company_name: displayCompanyName,
+                                    is_own_company: trackingContext?.isOwnCompany ?? Boolean(company.isMyCompany),
+                                    entry_point: trackingContext?.entryPoint ?? 'direct',
+                                }}
                             />
                         </Box>
                     </Box>
@@ -936,70 +995,72 @@ export function CompanyProfileView({
                                 </Paper>
                             )}
 
-                            <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
-                                <CompanySectionHeader title="Permissions" onEdit={permissionsEdit} />
-                                <Box p={2}>
-                                    {company.permissions?.length ? (
-                                        <Stack spacing={1}>
-                                            {company.permissions.slice(0, 3).map((member, index) => (
-                                                <Box
-                                                    key={`${member.name}-${index}`}
-                                                    display="flex"
-                                                    alignItems="center"
-                                                    gap={1.5}
-                                                >
-                                                    <Avatar
+                            {canSeePermissionsSection && (
+                                <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
+                                    <CompanySectionHeader title="Permissions" onEdit={permissionsEdit} />
+                                    <Box p={2}>
+                                        {company.permissions?.length ? (
+                                            <Stack spacing={1}>
+                                                {company.permissions.slice(0, 3).map((member, index) => (
+                                                    <Box
+                                                        key={`${member.name}-${index}`}
+                                                        display="flex"
+                                                        alignItems="center"
+                                                        gap={1.5}
+                                                    >
+                                                        <Avatar
+                                                            sx={{
+                                                                width: 28,
+                                                                height: 28,
+                                                                bgcolor: 'grey.100',
+                                                                color: 'grey.600',
+                                                                fontSize: '0.65rem',
+                                                                fontWeight: 600,
+                                                            }}
+                                                        >
+                                                            {getInitials(member.name)}
+                                                        </Avatar>
+                                                        <Box flex={1} minWidth={0}>
+                                                            <Typography variant="body2" fontWeight={500} noWrap>
+                                                                {member.name}
+                                                            </Typography>
+                                                        </Box>
+                                                        <Chip
+                                                            label={(member as any).permission ?? (member as any).role ?? 'Viewer'}
+                                                            size="small"
+                                                            sx={{ height: 20, fontSize: '0.65rem', fontWeight: 600 }}
+                                                        />
+                                                    </Box>
+                                                ))}
+
+                                                {permissionsEdit && (
+                                                    <Button
+                                                        size="small"
+                                                        onClick={permissionsEdit}
                                                         sx={{
-                                                            width: 28,
-                                                            height: 28,
-                                                            bgcolor: 'grey.100',
-                                                            color: 'grey.600',
-                                                            fontSize: '0.65rem',
-                                                            fontWeight: 600,
+                                                            textTransform: 'none',
+                                                            color: 'text.secondary',
+                                                            justifyContent: 'flex-start',
+                                                            pl: 0,
+                                                            mt: 0.5,
                                                         }}
                                                     >
-                                                        {getInitials(member.name)}
-                                                    </Avatar>
-                                                    <Box flex={1} minWidth={0}>
-                                                        <Typography variant="body2" fontWeight={500} noWrap>
-                                                            {member.name}
-                                                        </Typography>
-                                                    </Box>
-                                                    <Chip
-                                                        label={(member as any).permission ?? (member as any).role ?? 'Viewer'}
-                                                        size="small"
-                                                        sx={{ height: 20, fontSize: '0.65rem', fontWeight: 600 }}
-                                                    />
-                                                </Box>
-                                            ))}
-
-                                            {permissionsEdit && (
-                                                <Button
-                                                    size="small"
-                                                    onClick={permissionsEdit}
-                                                    sx={{
-                                                        textTransform: 'none',
-                                                        color: 'text.secondary',
-                                                        justifyContent: 'flex-start',
-                                                        pl: 0,
-                                                        mt: 0.5,
-                                                    }}
-                                                >
-                                                    Manage permissions →
-                                                </Button>
-                                            )}
-                                        </Stack>
-                                    ) : (
-                                        <EmptyState
-                                            icon={SecurityRounded}
-                                            title="No permissions configured"
-                                            description="Manage who can view and edit this company"
-                                            actionLabel={permissionsEdit ? 'Manage Permissions' : undefined}
-                                            onAction={permissionsEdit}
-                                        />
-                                    )}
-                                </Box>
-                            </Paper>
+                                                        Manage permissions →
+                                                    </Button>
+                                                )}
+                                            </Stack>
+                                        ) : (
+                                            <EmptyState
+                                                icon={SecurityRounded}
+                                                title="No permissions configured"
+                                                description="Manage who can view and edit this company"
+                                                actionLabel={permissionsEdit ? 'Manage Permissions' : undefined}
+                                                onAction={permissionsEdit}
+                                            />
+                                        )}
+                                    </Box>
+                                </Paper>
+                            )}
 
                             {canViewPrivateSection('projectTypes') && (
                                 <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>

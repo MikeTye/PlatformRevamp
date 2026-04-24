@@ -46,16 +46,39 @@ import type {
     ProjectSectionKey,
     ProjectStage,
     ProjectTeamMember,
+    ProjectTeamSaveMember,
     ProjectUpdate,
     SectionVisibility,
+    ProjectRole,
 } from '../projectProfile.types';
 import { PROJECT_STAGE_OPTIONS } from '../../../constants/projectStages';
 import { stageDescriptions } from '../projectProfile.constants';
 
+import ProjectTeamEditorSection from './SidebarTeamSection';
+import ProjectPermissionEditorSection from './SidebarPermissionSection';
+
+import {
+    dedupeTeamMembers,
+    getEditorMemberDisplayName,
+    getEditorMemberSecondary,
+    normalizeTeamMember,
+    PlatformCollaboratorOption,
+    toSaveTeamMember,
+    type TeamEditorMember,
+} from './projectTeamEditor.shared';
+import SidebarUpdatesSection from './SidebarUpdatesSection';
+
 type EditableProjectPatch = Omit<
     Partial<ProjectProfileData>,
-    'team' | 'sectionVisibility' | 'opportunities' | 'updates'
+    'team' | 'sectionVisibility'
 >;
+
+const REGISTRY_STATUS_OPTIONS = [
+    'Not Started',
+    'PDD Submitted',
+    'PDD Approved',
+    'Credits Issued',
+] as const;
 
 type MeResponse = {
     ok?: boolean;
@@ -66,48 +89,6 @@ type MeResponse = {
         avatarUrl?: string | null;
     };
 };
-
-type PlatformCollaboratorOption = {
-    id: string;
-    entityType: 'user' | 'company';
-    name: string;
-    email?: string;
-    companyName?: string;
-    avatarUrl?: string | null;
-    subtitle?: string;
-};
-
-type TeamEditorMember =
-    | {
-        id: string;
-        memberType: 'user';
-        memberId?: string | null;
-        userId?: string | null;
-        companyId?: null;
-        name: string;
-        role?: string | null;
-        companyName?: string;
-        avatarUrl?: string | null;
-        permission?: 'creator' | 'viewer' | null;
-        isPlatformMember: boolean;
-        manualName?: string | null;
-        manualOrganization?: string | null;
-    }
-    | {
-        id: string;
-        memberType: 'company';
-        memberId?: string | null;
-        companyId?: string | null;
-        userId?: null;
-        name: string;
-        role?: string | null;
-        companyName?: string;
-        avatarUrl?: string | null;
-        permission?: null;
-        isPlatformMember: boolean;
-        manualName?: string | null;
-        manualOrganization?: string | null;
-    };
 
 const API_BASE_URL =
     import.meta.env.VITE_API_BASE_URL ??
@@ -144,36 +125,7 @@ type ProjectDocumentStatus = 'Draft' | 'Final';
 
 export type SaveProjectPatch = EditableProjectPatch & {
     projectVisibility?: SectionVisibility;
-    team?: Array<
-        | {
-            memberType: 'user';
-            memberId?: string | null;
-            userId?: string | null;
-            companyId?: null;
-            name?: string;
-            companyName?: string;
-            avatarUrl?: string | null;
-            role?: string | null;
-            permission?: 'creator' | 'viewer';
-            isPlatformMember?: boolean;
-            manualName?: string | null;
-            manualOrganization?: string | null;
-        }
-        | {
-            memberType: 'company';
-            memberId?: string | null;
-            companyId?: string | null;
-            userId?: null;
-            name?: string;
-            companyName?: string;
-            avatarUrl?: string | null;
-            role?: string | null;
-            permission?: null;
-            isPlatformMember?: boolean;
-            manualName?: string | null;
-            manualOrganization?: string | null;
-        }
-    >;
+    team?: ProjectTeamSaveMember[];
     sectionVisibility?: Partial<Record<ProjectSectionKey, SectionVisibility>>;
 };
 
@@ -202,7 +154,7 @@ const SECTION_LABELS: Record<ProjectEditorTarget, string> = {
     updates: 'Updates',
     documents: 'Documents',
     media: 'Media',
-    team: 'Team',
+    team: 'Project Partners',
     settings: 'Settings',
 };
 
@@ -246,108 +198,6 @@ function ProjectVisibilityField({
     );
 }
 
-function normalizeTeamMember(member: ProjectTeamMember): TeamEditorMember | null {
-    const isPlatformMember =
-        typeof member.isPlatformMember === 'boolean'
-            ? member.isPlatformMember
-            : Boolean(member.userId ?? member.companyId ?? member.memberId);
-
-    if (member.memberType === 'company') {
-        const companyId = member.companyId ?? member.memberId ?? null;
-
-        if (isPlatformMember && !companyId) return null;
-
-        return {
-            id: member.id ?? crypto.randomUUID(),
-            memberType: 'company',
-            memberId: companyId,
-            companyId,
-            userId: null,
-            name:
-                member.name ??
-                member.companyName ??
-                member.manualName ??
-                member.manualOrganization ??
-                '',
-            role: member.role ?? '',
-            companyName:
-                member.companyName ??
-                member.manualOrganization ??
-                member.name ??
-                '',
-            avatarUrl: member.avatarUrl ?? null,
-            permission: null,
-            isPlatformMember,
-            manualName: member.manualName ?? null,
-            manualOrganization: member.manualOrganization ?? null,
-        };
-    }
-
-    const userId = member.userId ?? member.memberId ?? null;
-
-    if (isPlatformMember && !userId) return null;
-
-    return {
-        id: member.id ?? crypto.randomUUID(),
-        memberType: 'user',
-        memberId: userId,
-        userId,
-        companyId: null,
-        name: member.name ?? member.manualName ?? '',
-        role: member.role ?? '',
-        companyName:
-            member.companyName ??
-            member.manualOrganization ??
-            '',
-        avatarUrl: member.avatarUrl ?? null,
-        permission: member.permission ?? 'viewer',
-        isPlatformMember,
-        manualName: member.manualName ?? null,
-        manualOrganization: member.manualOrganization ?? null,
-    };
-}
-
-function getEditorMemberDisplayName(member: TeamEditorMember): string {
-    if (!member.isPlatformMember) {
-        if (member.memberType === 'company') {
-            return (
-                member.manualOrganization?.trim() ||
-                member.companyName?.trim() ||
-                member.manualName?.trim() ||
-                member.name?.trim() ||
-                ''
-            );
-        }
-
-        return (
-            member.manualName?.trim() ||
-            member.name?.trim() ||
-            ''
-        );
-    }
-
-    if (member.memberType === 'company') {
-        return member.companyName?.trim() || member.name?.trim() || '';
-    }
-
-    return member.name?.trim() || '';
-}
-
-function getEditorMemberSecondary(member: TeamEditorMember): string {
-    const roleLabel = member.role?.trim();
-
-    if (!member.isPlatformMember) {
-        if (member.memberType === 'company') {
-            return roleLabel || 'External company';
-        }
-
-        const org = member.manualOrganization?.trim() || member.companyName?.trim();
-        return roleLabel ? (org ? `${roleLabel} · ${org}` : roleLabel) : org || 'External collaborator';
-    }
-
-    return roleLabel || member.companyName?.trim() || (member.memberType === 'company' ? 'Company' : 'Platform user');
-}
-
 type ProjectEditorForm = Omit<Partial<ProjectProfileData>, 'team' | 'sectionVisibility'> & {
     team?: TeamEditorMember[];
     sectionVisibility?: Partial<Record<ProjectSectionKey, SectionVisibility>>;
@@ -386,6 +236,53 @@ function getErrorMessage(payload: any, fallback: string) {
     );
 }
 
+function normalizeRegistryStatus(value: unknown): string {
+    const raw = typeof value === 'string' ? value.trim() : '';
+
+    if (!raw) return 'Not Started';
+
+    return REGISTRY_STATUS_OPTIONS.includes(raw as (typeof REGISTRY_STATUS_OPTIONS)[number])
+        ? raw
+        : 'Not Started';
+}
+
+function sanitizeEstimatedAnnualRemoval(value: unknown): string | null {
+    if (value == null) return null;
+
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+
+        if (!trimmed) return null;
+        if (trimmed === '{}' || trimmed === '{"value":"{}"}') return null;
+
+        try {
+            const parsed = JSON.parse(trimmed);
+
+            if (parsed == null) return null;
+
+            if (typeof parsed === 'string') {
+                const nested = parsed.trim();
+                return nested && nested !== '{}' ? nested : null;
+            }
+
+            if (typeof parsed === 'object') {
+                const nestedValue =
+                    typeof (parsed as any).value === 'string'
+                        ? (parsed as any).value.trim()
+                        : '';
+
+                return nestedValue && nestedValue !== '{}' ? nestedValue : null;
+            }
+        } catch {
+            return trimmed;
+        }
+
+        return trimmed;
+    }
+
+    return String(value);
+}
+
 export default function ProjectSidebarEditor({
     open,
     section,
@@ -400,20 +297,11 @@ export default function ProjectSidebarEditor({
 }: ProjectSidebarEditorProps) {
     const [saving, setSaving] = useState(false);
     const [form, setForm] = useState<ProjectEditorForm>({});
-    const [teamSearch, setTeamSearch] = useState('');
-    const [collaboratorOptions, setCollaboratorOptions] = useState<PlatformCollaboratorOption[]>([]);
-    const [optionsLoading, setOptionsLoading] = useState(false);
     const [mediaUpload, setMediaUpload] = useState<UploadState>({ busy: false, error: null });
     const [documentUpload, setDocumentUpload] = useState<UploadState>({ busy: false, error: null });
-    const [teamRole, setTeamRole] = useState<'user' | 'company'>('user');
-    const [baseTeam, setBaseTeam] = useState<TeamEditorMember[]>([]);
     const [currentUserName, setCurrentUserName] = useState('');
     const [meLoading, setMeLoading] = useState(false);
 
-    const [teamManualMode, setTeamManualMode] = useState(false);
-    const [teamName, setTeamName] = useState('');
-    const [teamProjectRole, setTeamProjectRole] = useState('');
-    const [teamSelectedPlatform, setTeamSelectedPlatform] = useState<PlatformCollaboratorOption | null>(null);
     const [editingMediaId, setEditingMediaId] = useState<string | null>(null);
     const [mediaCaption, setMediaCaption] = useState('');
 
@@ -587,65 +475,52 @@ export default function ProjectSidebarEditor({
         setMediaUpload({ busy: false, error: null });
     };
 
-    const loadCollaboratorOptions = async (q = '', mode: 'user' | 'company' = 'user') => {
-        try {
-            setOptionsLoading(true);
+    const syncProjectState = React.useCallback(
+        (nextProject: Partial<ProjectProfileData> | null | undefined) => {
+            if (!nextProject) return;
+            commitProjectPatch(nextProject);
+        },
+        [commitProjectPatch]
+    );
 
-            const endpoint =
-                mode === 'company'
-                    ? `${API_BASE_URL}/companies/options?q=${encodeURIComponent(q)}`
-                    : `${API_BASE_URL}/users/options?q=${encodeURIComponent(q)}`;
+    const reloadProjectUpdates = async (): Promise<ProjectUpdate[]> => {
+        const projectId = requireProjectId();
 
-            const response = await fetch(endpoint, {
-                method: 'GET',
-                credentials: 'include',
-                headers: { Accept: 'application/json' },
-            });
+        const response = await fetch(`${API_BASE_URL}/projects/${projectId}/updates`, {
+            method: 'GET',
+            credentials: 'include',
+            headers: { Accept: 'application/json' },
+        });
 
-            const payload = await response.json().catch(() => null);
+        const payload = await parseJsonSafe(response);
 
-            if (!response.ok) {
-                throw new Error(payload?.error || `Failed to load ${mode}s (${response.status})`);
-            }
-
-            const items = Array.isArray(payload?.items)
-                ? payload.items
-                : Array.isArray(payload?.data)
-                    ? payload.data
-                    : [];
-
-            const mapped: PlatformCollaboratorOption[] =
-                mode === 'company'
-                    ? items.map((item: any) => ({
-                        id: String(item.id),
-                        entityType: 'company',
-                        name: String(item.displayName ?? item.name ?? ''),
-                        companyName: String(item.displayName ?? item.name ?? ''),
-                        avatarUrl: item.logoUrl ?? item.avatarUrl ?? null,
-                        subtitle: item.primaryCountry ?? item.businessFunction ?? 'Company',
-                    }))
-                    : items.map((item: any) => ({
-                        id: String(item.id),
-                        entityType: 'user',
-                        name: String(item.name ?? ''),
-                        email: item.email ?? undefined,
-                        companyName: item.companyName ?? undefined,
-                        avatarUrl: item.avatarUrl ?? null,
-                        subtitle: item.email ?? item.companyName ?? 'User',
-                    }));
-
-            setCollaboratorOptions(mapped);
-        } catch (error) {
-            console.error(error);
-            setCollaboratorOptions([]);
-        } finally {
-            setOptionsLoading(false);
+        if (!response.ok) {
+            throw new Error(
+                getErrorMessage(payload, `Failed to reload project updates (${response.status})`)
+            );
         }
-    };
 
-    const syncProjectState = (nextProject: Partial<ProjectProfileData> | null | undefined) => {
-        if (!nextProject) return;
-        commitProjectPatch(nextProject);
+        const items = Array.isArray(payload?.items)
+            ? payload.items
+            : Array.isArray(payload?.data?.items)
+                ? payload.data.items
+                : [];
+
+        const nextUpdates: ProjectUpdate[] = items.map((item: any) => ({
+            id: item.id,
+            title: item.title ?? '',
+            description: item.description ?? null,
+            dateLabel: item.dateLabel ?? null,
+            authorName: item.authorName ?? null,
+            type: item.type === 'stage' ? 'stage' : 'progress',
+            sortOrder: Number(item.sortOrder ?? 0),
+            isActive: Boolean(item.isActive ?? true),
+            createdAt: item.createdAt ?? null,
+        }));
+
+        commitProjectPatch({ updates: nextUpdates });
+
+        return nextUpdates;
     };
 
     useEffect(() => {
@@ -718,22 +593,6 @@ export default function ProjectSidebarEditor({
 
 
     useEffect(() => {
-        if (!open || (section !== 'team' && section !== 'settings')) return;
-
-        const q = teamSearch.trim();
-        if (!q) {
-            setCollaboratorOptions([]);
-            return;
-        }
-
-        const timeout = window.setTimeout(() => {
-            void loadCollaboratorOptions(q, teamRole);
-        }, 250);
-
-        return () => window.clearTimeout(timeout);
-    }, [open, section, teamSearch, teamRole]);
-
-    useEffect(() => {
         if (!open || !project || !section) return;
 
         switch (section) {
@@ -751,7 +610,7 @@ export default function ProjectSidebarEditor({
                     type: project.type ?? '',
                     description: project.description ?? '',
                     coverImageUrl: project.coverImageUrl ?? '',
-                    estimatedAnnualRemoval: project.estimatedAnnualRemoval ?? '',
+                    estimatedAnnualRemoval: sanitizeEstimatedAnnualRemoval(project.estimatedAnnualRemoval) ?? '',
                     projectVisibility: toUiVisibility(
                         (project as any).projectVisibility ?? 'private'
                     ),
@@ -798,7 +657,7 @@ export default function ProjectSidebarEditor({
                     registrationPlatform: project.registrationPlatform ?? '',
                     registryId: project.registryId ?? '',
                     registryProjectUrl: project.registryProjectUrl ?? '',
-                    registryStatus: project.registryStatus ?? '',
+                    registryStatus: normalizeRegistryStatus(project.registryStatus),
                     methodology: project.methodology ?? '',
                     sectionVisibility: {
                         ...project.sectionVisibility,
@@ -914,43 +773,30 @@ export default function ProjectSidebarEditor({
                     .map(normalizeTeamMember)
                     .filter((member): member is TeamEditorMember => Boolean(member));
 
-                setBaseTeam(existingTeam);
                 setForm({
-                    team: [],
+                    team: existingTeam,
                 });
-                setTeamSearch('');
-                setCollaboratorOptions([]);
-                setTeamRole('user');
                 break;
             }
 
-            case 'settings':
+            case 'settings': {
+                const permissionCandidates = (project.team ?? [])
+                    .map(normalizeTeamMember)
+                    .filter((member): member is TeamEditorMember => Boolean(member))
+                    .filter(
+                        (member) =>
+                            member.memberType === 'user' &&
+                            member.isPlatformMember
+                    );
+
                 setForm({
-                    team: (project.team ?? [])
-                        .map(normalizeTeamMember)
-                        .filter((member): member is TeamEditorMember => Boolean(member)),
+                    team: permissionCandidates,
                 });
-                setTeamSearch('');
-                setCollaboratorOptions([]);
-                setTeamRole('user');
                 break;
+            }
 
             default:
                 setForm({});
-        }
-
-        if (section === 'team' || section === 'settings') {
-            setTeamSearch('');
-            setCollaboratorOptions([]);
-            setTeamRole('user');
-            setTeamManualMode(false);
-            setTeamName('');
-            setTeamProjectRole('');
-            setTeamSelectedPlatform(null);
-        }
-
-        if (section !== 'team') {
-            setBaseTeam([]);
         }
 
         if (section !== 'media') {
@@ -979,7 +825,7 @@ export default function ProjectSidebarEditor({
             setUpdateType('progress');
         }
 
-    }, [open, project, section, initialMediaId, clearPendingMedia, clearPendingDocument, editingDocumentId]);
+    }, [open, project, section, initialMediaId, clearPendingMedia, clearPendingDocument]);
 
     useEffect(() => {
         if (!open || section !== 'updates' || !currentUserName) return;
@@ -1051,6 +897,12 @@ export default function ProjectSidebarEditor({
         return nextProject;
     };
 
+    const refreshParentProject = React.useCallback(async () => {
+        const nextProject = await reloadProjectSnapshot();
+        syncProjectState(nextProject);
+        return nextProject;
+    }, [reloadProjectSnapshot, syncProjectState]);
+
     const requireProjectId = () => {
         if (!project?.id) {
             throw new Error('Project id is missing');
@@ -1077,7 +929,7 @@ export default function ProjectSidebarEditor({
                     caption: mediaCaption.trim() || null,
                 });
 
-                const nextProject = await reloadProjectSnapshot();
+                const nextProject = await refreshParentProject();
 
                 setForm((prev) => ({
                     ...prev,
@@ -1108,7 +960,7 @@ export default function ProjectSidebarEditor({
                 isCover: false,
             });
 
-            const nextProject = await reloadProjectSnapshot();
+            const nextProject = await refreshParentProject();
 
             setForm((prev) => ({
                 ...prev,
@@ -1196,7 +1048,7 @@ export default function ProjectSidebarEditor({
                     status: documentStatus,
                 });
 
-                const nextProject = await reloadProjectSnapshot();
+                const nextProject = await refreshParentProject();
 
                 setForm((prev) => ({
                     ...prev,
@@ -1225,7 +1077,7 @@ export default function ProjectSidebarEditor({
                 status: documentStatus,
             });
 
-            const nextProject = await reloadProjectSnapshot();
+            const nextProject = await refreshParentProject();
 
             setForm((prev) => ({
                 ...prev,
@@ -1267,30 +1119,35 @@ export default function ProjectSidebarEditor({
             throw new Error('Opportunity type is required');
         }
 
-        let nextProject: Partial<ProjectProfileData>;
-
         if (editingOpportunityId) {
-            nextProject = await updateOpportunityRecord(editingOpportunityId, input);
+            await updateOpportunityRecord(editingOpportunityId, input);
         } else {
-            nextProject = await createOpportunityRecord(input);
+            await createOpportunityRecord(input);
         }
 
-        syncProjectState(nextProject);
+        const nextProject = await refreshParentProject();
+        const latestItems = nextProject.opportunities ?? [];
 
-        const latestItems = nextProject.opportunities ?? project?.opportunities ?? [];
         const saved =
             latestItems.find((item) =>
-                editingOpportunityId ? item.id === editingOpportunityId : (
-                    item.type === input.type &&
-                    (item.description ?? null) === input.description &&
-                    Boolean(item.urgent) === input.urgent
-                )
+                editingOpportunityId
+                    ? item.id === editingOpportunityId
+                    : (
+                        item.type === input.type &&
+                        (item.description ?? null) === input.description &&
+                        Boolean(item.urgent) === input.urgent
+                    )
             ) ?? null;
 
+        setForm((prev) => ({
+            ...prev,
+            opportunities: [...latestItems],
+        }));
+
         setEditingOpportunityId(saved?.id ?? null);
-        setOpportunityType(saved?.type ?? '');
-        setOpportunityDescription(saved?.description ?? '');
-        setOpportunityUrgent(Boolean(saved?.urgent));
+        setOpportunityType(saved?.type ?? input.type);
+        setOpportunityDescription(saved?.description ?? input.description ?? '');
+        setOpportunityUrgent(Boolean(saved?.urgent ?? input.urgent));
     };
 
     const createOpportunityRecord = async (
@@ -1499,24 +1356,23 @@ export default function ProjectSidebarEditor({
             throw new Error('Update title is required');
         }
 
-        let nextProject: Partial<ProjectProfileData>;
-
         if (editingUpdateId) {
-            nextProject = await updateUpdateRecord(editingUpdateId, input);
+            await updateUpdateRecord(editingUpdateId, input);
         } else {
-            nextProject = await createUpdateRecord(input);
+            await createUpdateRecord(input);
         }
 
-        syncProjectState(nextProject);
+        const latestItems = await reloadProjectUpdates();
 
-        const latestItems = nextProject.updates ?? project?.updates ?? [];
         const saved =
             latestItems.find((item) =>
-                editingUpdateId ? item.id === editingUpdateId : (
-                    item.title === input.title &&
-                    (item.description ?? null) === input.description &&
-                    (item.dateLabel ?? null) === input.dateLabel
-                )
+                editingUpdateId
+                    ? item.id === editingUpdateId
+                    : (
+                        item.title === input.title &&
+                        (item.description ?? null) === input.description &&
+                        (item.dateLabel ?? null) === input.dateLabel
+                    )
             ) ?? null;
 
         setEditingUpdateId(saved?.id ?? null);
@@ -1524,8 +1380,7 @@ export default function ProjectSidebarEditor({
         setUpdateDescription(saved?.description ?? input.description ?? '');
         setUpdateDateLabel(saved?.dateLabel ?? input.dateLabel ?? '');
         setUpdateAuthorName(saved?.authorName ?? input.authorName ?? '');
-        // setUpdateType(saved?.type === 'stage' ? 'stage' : 'progress');
-        setUpdateType('progress');
+        setUpdateType(saved?.type === 'stage' ? 'stage' : 'progress');
     };
 
     const createUpdateRecord = async (input: {
@@ -1553,7 +1408,13 @@ export default function ProjectSidebarEditor({
             }),
         });
 
-        return refreshProjectFromResponse(response);
+        const payload = await parseJsonSafe(response);
+
+        if (!response.ok) {
+            throw new Error(getErrorMessage(payload, `Failed to create update (${response.status})`));
+        }
+
+        return payload?.data ?? payload;
     };
 
     const updateUpdateRecord = async (
@@ -1582,120 +1443,150 @@ export default function ProjectSidebarEditor({
             }),
         });
 
-        return refreshProjectFromResponse(response);
+        const payload = await parseJsonSafe(response);
+
+        if (!response.ok) {
+            throw new Error(getErrorMessage(payload, `Failed to update update (${response.status})`));
+        }
+
+        return payload?.data ?? payload;
     };
 
     const handleSave = async () => {
         try {
             setSaving(true);
 
-            const normalizedSectionVisibility = form.sectionVisibility ?? undefined;
+            const normalizedSectionVisibility = form.sectionVisibility
+                ? Object.fromEntries(
+                    Object.entries(form.sectionVisibility).map(([key, value]) => [
+                        key,
+                        toApiVisibility(value),
+                    ])
+                ) as Partial<Record<ProjectSectionKey, 'public' | 'private'>>
+                : undefined;
 
-            if (section === 'media') {
-                await handleMediaSave();
-                onClose();
-                return;
+            switch (section) {
+                case 'cover': {
+                    await refreshParentProject();
+                    onClose();
+                    return;
+                }
+
+                case 'media': {
+                    await handleMediaSave();
+                    onClose();
+                    return;
+                }
+
+                case 'documents': {
+                    await handleDocumentSave();
+                    onClose();
+                    return;
+                }
+
+                case 'opportunities': {
+                    await handleOpportunitySave();
+                    onClose();
+                    return;
+                }
+
+                case 'updates': {
+                    await handleUpdateSave();
+                    onClose();
+                    return;
+                }
+
+                case 'team': {
+                    await onSave({
+                        team: ((form.team ?? []) as TeamEditorMember[]).map(toSaveTeamMember),
+                    });
+                    onClose();
+                    return;
+                }
+
+                case 'settings': {
+                    await onSave({
+                        team: ((form.team ?? []) as TeamEditorMember[]).map(toSaveTeamMember),
+                    });
+                    onClose();
+                    return;
+                }
+
+                case 'overview': {
+                    await onSave({
+                        name: form.name ?? '',
+                        stage: form.stage,
+                        type: form.type ?? '',
+                        description: form.description ?? '',
+                        estimatedAnnualRemoval: form.estimatedAnnualRemoval ?? null,
+                        projectVisibility: projectVisibilityValue,
+                    });
+                    onClose();
+                    return;
+                }
+
+                case 'story': {
+                    await onSave({
+                        storyProblem: form.storyProblem ?? '',
+                        storyApproach: form.storyApproach ?? '',
+                        sectionVisibility: normalizedSectionVisibility,
+                    });
+                    onClose();
+                    return;
+                }
+
+                case 'location': {
+                    await onSave({
+                        country: form.country ?? '',
+                        region: form.region ?? '',
+                        latitude: form.latitude ?? null,
+                        longitude: form.longitude ?? null,
+                        totalAreaHa: form.totalAreaHa ?? null,
+                        sectionVisibility: normalizedSectionVisibility,
+                    });
+                    onClose();
+                    return;
+                }
+
+                case 'readiness': {
+                    await onSave({
+                        stage: form.stage,
+                        sectionVisibility: normalizedSectionVisibility,
+                    });
+                    onClose();
+                    return;
+                }
+
+                case 'registry': {
+                    await onSave({
+                        registrationPlatform: form.registrationPlatform ?? '',
+                        registryId: form.registryId ?? '',
+                        registryProjectUrl: form.registryProjectUrl ?? '',
+                        registryStatus: form.registryStatus ?? '',
+                        methodology: form.methodology ?? '',
+                        sectionVisibility: normalizedSectionVisibility,
+                    });
+                    onClose();
+                    return;
+                }
+
+                case 'impact': {
+                    await onSave({
+                        totalCreditsIssued: form.totalCreditsIssued ?? null,
+                        annualEstimatedCredits: form.annualEstimatedCredits ?? null,
+                        annualEstimateUnit: form.annualEstimateUnit ?? null,
+                        creditingStart: form.creditingStart ?? null,
+                        creditingEnd: form.creditingEnd ?? null,
+                        sectionVisibility: normalizedSectionVisibility,
+                    });
+                    onClose();
+                    return;
+                }
+
+                default:
+                    onClose();
+                    return;
             }
-
-            if (section === 'documents') {
-                await handleDocumentSave();
-                onClose();
-                return;
-            }
-
-            if (section === 'opportunities') {
-                await handleOpportunitySave();
-                onClose();
-                return;
-            }
-
-            if (section === 'updates') {
-                await handleUpdateSave();
-                onClose();
-                return;
-            }
-
-            let payload: SaveProjectPatch;
-
-            if (section === 'team') {
-                const combinedTeam = [...baseTeam, ...(form.team ?? [])];
-
-                const dedupedTeam = Array.from(
-                    new Map(
-                        combinedTeam.map((member) => {
-                            const key = member.isPlatformMember
-                                ? member.memberType === 'company'
-                                    ? `company:${member.companyId ?? member.memberId}`
-                                    : `user:${member.userId ?? member.memberId}`
-                                : `manual:${member.memberType}:${member.name.trim().toLowerCase()}:${member.role ?? ''}`;
-
-                            return [key, member];
-                        })
-                    ).values()
-                );
-
-                payload = {
-                    team: dedupedTeam.map((member) => {
-                        if (member.memberType === 'company') {
-                            return {
-                                memberType: 'company' as const,
-                                memberId: member.companyId ?? member.memberId ?? null,
-                                companyId: member.companyId ?? member.memberId ?? null,
-                                userId: null,
-                                name: member.name,
-                                companyName: member.companyName ?? member.name,
-                                avatarUrl: member.avatarUrl ?? null,
-                                role: member.role ?? null,
-                                permission: null,
-                                isPlatformMember: member.isPlatformMember,
-                                manualName: member.isPlatformMember ? null : (member.manualName ?? member.name ?? null),
-                                manualOrganization: member.isPlatformMember
-                                    ? null
-                                    : (member.manualOrganization ?? member.companyName ?? member.name ?? null),
-                            };
-                        }
-
-                        return {
-                            memberType: 'user' as const,
-                            memberId: member.userId ?? member.memberId ?? null,
-                            userId: member.userId ?? member.memberId ?? null,
-                            companyId: null,
-                            name: member.name,
-                            companyName: member.companyName ?? '',
-                            avatarUrl: member.avatarUrl ?? null,
-                            role: member.role ?? null,
-                            permission: member.permission === 'creator' ? 'creator' : 'viewer',
-                            isPlatformMember: member.isPlatformMember,
-                            manualName: member.isPlatformMember ? null : (member.manualName ?? member.name ?? null),
-                            manualOrganization: member.isPlatformMember
-                                ? null
-                                : (member.manualOrganization ?? member.companyName ?? null),
-                        };
-                    }),
-                };
-            } else {
-                const {
-                    team,
-                    sectionVisibility,
-                    projectVisibility,
-                    documents,
-                    media,
-                    coverImageUrl,
-                    ...rest
-                } = form as ProjectEditorForm & { projectVisibility?: SectionVisibility };
-
-                payload = {
-                    ...rest,
-                    projectVisibility:
-                        section === 'overview' && projectVisibility
-                            ? toApiVisibility(projectVisibility)
-                            : undefined,
-                    sectionVisibility: normalizedSectionVisibility,
-                };
-            }
-
-            await onSave(payload);
-            onClose();
         } finally {
             setSaving(false);
         }
@@ -1762,350 +1653,13 @@ export default function ProjectSidebarEditor({
         setForm((prev) => ({ ...prev, [key]: value }));
     };
 
-    const renderSettings = () => {
-        const items = (form.team ?? []) as TeamEditorMember[];
-
-        const selectedKeys = new Set(items.map((item) => item.memberId));
-
-        const searchResults = collaboratorOptions.filter(
-            (entry) => !selectedKeys.has(entry.id)
-        );
-
-        const addPermissionMember = (entry: PlatformCollaboratorOption) => {
-            const nextMember: TeamEditorMember = {
-                id: crypto.randomUUID(),
-                memberType: 'user',
-                memberId: entry.id,
-                userId: entry.id,
-                companyId: null,
-                name: entry.name,
-                role: '',
-                companyName: entry.companyName ?? '',
-                avatarUrl: entry.avatarUrl ?? null,
-                permission: 'viewer',
-                isPlatformMember: true,
-                manualName: null,
-                manualOrganization: null,
-            };
-
-            setField('team', [...items, nextMember]);
-            setTeamSearch('');
-            setCollaboratorOptions([]);
-        };
-
-        return (
-            <Stack spacing={3}>
-                <Box>
-                    <Typography
-                        variant="caption"
-                        fontWeight={600}
-                        color="text.secondary"
-                        sx={{
-                            textTransform: 'uppercase',
-                            letterSpacing: 0.5,
-                            display: 'block',
-                            mb: 0.5,
-                        }}
-                    >
-                        Permissions
-                    </Typography>
-
-                    <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{
-                            display: 'block',
-                            mb: 1.5,
-                        }}
-                    >
-                        Control who can access this project. Only existing platform users can be added here.
-                    </Typography>
-
-                    <Stack spacing={1} mb={3.5}>
-                        {items.length > 0 ? (
-                            items.map((member, index) => {
-                                const isCreator = member.permission === 'creator';
-
-                                return (
-                                    <Box
-                                        key={`${member.memberId}:${index}`}
-                                        display="flex"
-                                        alignItems="center"
-                                        gap={1.5}
-                                        p={1.25}
-                                        borderRadius={1}
-                                        sx={{
-                                            border: '1px solid',
-                                            borderColor: 'grey.100',
-                                            bgcolor: 'white',
-                                        }}
-                                    >
-                                        <Avatar
-                                            src={member.avatarUrl ?? undefined}
-                                            sx={{
-                                                width: 32,
-                                                height: 32,
-                                                bgcolor: 'grey.200',
-                                                fontSize: '0.7rem',
-                                                fontWeight: 600,
-                                                flexShrink: 0,
-                                            }}
-                                        >
-                                            {getEditorMemberDisplayName(member)
-                                                .split(' ')
-                                                .map((n) => n[0])
-                                                .join('')
-                                                .slice(0, 2)
-                                                .toUpperCase()}
-                                        </Avatar>
-
-                                        <Box flex={1} minWidth={0} overflow="hidden">
-                                            <Typography
-                                                variant="body2"
-                                                fontWeight={500}
-                                                sx={{
-                                                    display: '-webkit-box',
-                                                    WebkitLineClamp: 2,
-                                                    WebkitBoxOrient: 'vertical',
-                                                    overflow: 'hidden',
-                                                    wordBreak: 'break-word',
-                                                    lineHeight: 1.4,
-                                                }}
-                                            >
-                                                {getEditorMemberDisplayName(member)}
-                                            </Typography>
-
-                                            <Typography
-                                                variant="caption"
-                                                color="text.secondary"
-                                                sx={{
-                                                    display: 'block',
-                                                    overflow: 'hidden',
-                                                    textOverflow: 'ellipsis',
-                                                    whiteSpace: 'nowrap',
-                                                }}
-                                            >
-                                                {getEditorMemberSecondary(member)}
-                                            </Typography>
-                                        </Box>
-
-                                        <FormControl
-                                            size="small"
-                                            sx={{
-                                                minWidth: 100,
-                                                flexShrink: 0,
-                                            }}
-                                        >
-                                            <Select
-                                                value={isCreator ? 'creator' : 'viewer'}
-                                                disabled
-                                                sx={{
-                                                    fontSize: '0.75rem',
-                                                    height: 28,
-                                                }}
-                                            >
-                                                {isCreator ? (
-                                                    <MenuItem value="creator">
-                                                        <Typography variant="caption">Owner</Typography>
-                                                    </MenuItem>
-                                                ) : (
-                                                    <MenuItem value="viewer">
-                                                        <Typography variant="caption">Viewer</Typography>
-                                                    </MenuItem>
-                                                )}
-                                            </Select>
-                                        </FormControl>
-
-                                        {!isCreator && (
-                                            <IconButton
-                                                size="small"
-                                                sx={{
-                                                    color: 'grey.400',
-                                                    flexShrink: 0,
-                                                }}
-                                                onClick={() => {
-                                                    const next = items.filter((_, i) => i !== index);
-                                                    setField('team', next);
-                                                }}
-                                            >
-                                                <CloseRounded sx={{ fontSize: 14 }} />
-                                            </IconButton>
-                                        )}
-                                    </Box>
-                                );
-                            })
-                        ) : (
-                            <Alert severity="info">No users with project permissions yet.</Alert>
-                        )}
-                    </Stack>
-
-                    <Typography
-                        variant="caption"
-                        fontWeight={600}
-                        color="text.secondary"
-                        sx={{
-                            textTransform: 'uppercase',
-                            letterSpacing: 0.5,
-                            display: 'block',
-                            mb: 2.5,
-                        }}
-                    >
-                        Add Member
-                    </Typography>
-
-                    <Stack spacing={2}>
-                        <Box>
-                            <TextField
-                                size="small"
-                                fullWidth
-                                label="Search existing users"
-                                placeholder="Name or email address..."
-                                value={teamSearch}
-                                onChange={(e) => setTeamSearch(e.target.value)}
-                                InputProps={{
-                                    startAdornment: (
-                                        <InputAdornment position="start">
-                                            <SearchRounded
-                                                sx={{
-                                                    fontSize: 16,
-                                                    color: 'grey.400',
-                                                }}
-                                            />
-                                        </InputAdornment>
-                                    ),
-                                    endAdornment: teamSearch ? (
-                                        <InputAdornment position="end">
-                                            <IconButton size="small" onClick={() => setTeamSearch('')}>
-                                                <CloseRounded sx={{ fontSize: 16 }} />
-                                            </IconButton>
-                                        </InputAdornment>
-                                    ) : undefined,
-                                }}
-                            />
-
-                            {teamSearch.trim() ? (
-                                <Paper
-                                    variant="outlined"
-                                    sx={{
-                                        mt: 1,
-                                        borderRadius: 1.5,
-                                        overflow: 'hidden',
-                                    }}
-                                >
-                                    {optionsLoading ? (
-                                        <Box px={1.5} py={1.5}>
-                                            <Typography variant="body2" color="text.secondary">
-                                                Loading users...
-                                            </Typography>
-                                        </Box>
-                                    ) : searchResults.length > 0 ? (
-                                        searchResults.map((result, index) => (
-                                            <Box
-                                                key={result.id}
-                                                onClick={() => addPermissionMember(result)}
-                                                sx={{
-                                                    px: 1.5,
-                                                    py: 1.25,
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: 1.25,
-                                                    cursor: 'pointer',
-                                                    borderBottom:
-                                                        index === searchResults.length - 1
-                                                            ? 'none'
-                                                            : '1px solid',
-                                                    borderColor: 'grey.100',
-                                                    '&:hover': { bgcolor: 'grey.50' },
-                                                }}
-                                            >
-                                                <Avatar
-                                                    src={result.avatarUrl ?? undefined}
-                                                    sx={{
-                                                        width: 32,
-                                                        height: 32,
-                                                        bgcolor: 'grey.200',
-                                                        color: 'text.primary',
-                                                    }}
-                                                >
-                                                    {result.name
-                                                        .split(' ')
-                                                        .map((part) => part[0])
-                                                        .join('')
-                                                        .slice(0, 2)
-                                                        .toUpperCase()}
-                                                </Avatar>
-
-                                                <Box flex={1} minWidth={0}>
-                                                    <Typography variant="body2" fontWeight={600} noWrap>
-                                                        {result.name}
-                                                    </Typography>
-                                                    <Typography variant="caption" color="text.secondary" noWrap>
-                                                        {result.email || result.companyName || 'User'}
-                                                    </Typography>
-                                                </Box>
-                                            </Box>
-                                        ))
-                                    ) : (
-                                        <Box px={1.5} py={1.5}>
-                                            <Typography variant="body2" color="text.secondary">
-                                                No matching users found.
-                                            </Typography>
-                                        </Box>
-                                    )}
-                                </Paper>
-                            ) : null}
-                        </Box>
-
-                        <FormControl size="small" fullWidth disabled>
-                            <InputLabel>Permission Level</InputLabel>
-                            <Select value="viewer" label="Permission Level">
-                                <MenuItem value="viewer">Viewer</MenuItem>
-                            </Select>
-                        </FormControl>
-                    </Stack>
-                </Box>
-
-                <Divider />
-
-                <Paper
-                    variant="outlined"
-                    sx={{
-                        p: 2,
-                        borderRadius: 1.5,
-                        bgcolor: 'grey.50',
-                    }}
-                >
-                    <Typography
-                        variant="caption"
-                        fontWeight={600}
-                        color="text.secondary"
-                        display="block"
-                        mb={1}
-                    >
-                        Permission Levels
-                    </Typography>
-
-                    <Box display="flex" gap={1} mb={0.5}>
-                        <Typography variant="caption" fontWeight={600} sx={{ minWidth: 48 }}>
-                            Owner
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                            Original project owner. This role cannot currently be reassigned here.
-                        </Typography>
-                    </Box>
-
-                    <Box display="flex" gap={1}>
-                        <Typography variant="caption" fontWeight={600} sx={{ minWidth: 48 }}>
-                            Viewer
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                            Read-only access.
-                        </Typography>
-                    </Box>
-                </Paper>
-            </Stack>
-        );
-    };
+    const renderSettings = () => (
+        <ProjectPermissionEditorSection
+            apiBaseUrl={API_BASE_URL}
+            value={(form.team ?? []) as TeamEditorMember[]}
+            onChange={(next) => setField('team', next)}
+        />
+    );
 
     const renderCover = () => (
         <Stack spacing={3}>
@@ -2669,13 +2223,20 @@ export default function ProjectSidebarEditor({
                 placeholder="https://registry.verra.org/..."
             />
 
-            <TextField
-                label="Registry status"
-                size="small"
-                fullWidth
-                value={(form.registryStatus as string) ?? ''}
-                onChange={(e) => setField('registryStatus', e.target.value)}
-            />
+            <FormControl fullWidth size="small">
+                <InputLabel>Registry status</InputLabel>
+                <Select
+                    value={normalizeRegistryStatus(form.registryStatus)}
+                    label="Registry status"
+                    onChange={(e) => setField('registryStatus', e.target.value)}
+                >
+                    {REGISTRY_STATUS_OPTIONS.map((option) => (
+                        <MenuItem key={option} value={option}>
+                            {option}
+                        </MenuItem>
+                    ))}
+                </Select>
+            </FormControl>
 
             <TextField
                 label="Methodology"
@@ -2798,157 +2359,19 @@ export default function ProjectSidebarEditor({
                 : null;
 
         return (
-            <Stack spacing={3}>
-                <Box>
-                    <Typography variant="subtitle1" fontWeight={700} gutterBottom>
-                        {editingItem ? 'Edit Update' : 'Post Update'}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                        Share progress with followers.
-                    </Typography>
-                </Box>
-
-                {/* <Box>
-                    <Typography
-                        variant="caption"
-                        fontWeight={600}
-                        color="text.secondary"
-                        sx={{
-                            textTransform: 'uppercase',
-                            letterSpacing: 0.5,
-                            display: 'block',
-                            mb: 1,
-                        }}
-                    >
-                        Update Type
-                    </Typography>
-
-                    <Box display="flex" gap={1}>
-                        <Paper
-                            variant="outlined"
-                            onClick={() => setUpdateType('progress')}
-                            sx={{
-                                flex: 1,
-                                p: 1.5,
-                                cursor: 'pointer',
-                                borderColor:
-                                    updateType === 'progress' ? 'primary.main' : 'grey.200',
-                                bgcolor:
-                                    updateType === 'progress' ? 'primary.50' : 'transparent',
-                                '&:hover': {
-                                    borderColor: 'primary.main',
-                                },
-                                transition: 'all 0.15s ease',
-                            }}
-                        >
-                            <Typography
-                                variant="caption"
-                                fontWeight={updateType === 'progress' ? 700 : 500}
-                                color={
-                                    updateType === 'progress'
-                                        ? 'primary.main'
-                                        : 'text.primary'
-                                }
-                            >
-                                Progress
-                            </Typography>
-                            <Typography
-                                variant="caption"
-                                color="text.secondary"
-                                display="block"
-                                sx={{ fontSize: '0.65rem' }}
-                            >
-                                Milestones & activities
-                            </Typography>
-                        </Paper>
-
-                        <Paper
-                            variant="outlined"
-                            onClick={() => setUpdateType('stage')}
-                            sx={{
-                                flex: 1,
-                                p: 1.5,
-                                cursor: 'pointer',
-                                borderColor:
-                                    updateType === 'stage' ? 'primary.main' : 'grey.200',
-                                bgcolor:
-                                    updateType === 'stage' ? 'primary.50' : 'transparent',
-                                '&:hover': {
-                                    borderColor: 'primary.main',
-                                },
-                                transition: 'all 0.15s ease',
-                            }}
-                        >
-                            <Typography
-                                variant="caption"
-                                fontWeight={updateType === 'stage' ? 700 : 500}
-                                color={
-                                    updateType === 'stage'
-                                        ? 'primary.main'
-                                        : 'text.primary'
-                                }
-                            >
-                                Stage Change
-                            </Typography>
-                            <Typography
-                                variant="caption"
-                                color="text.secondary"
-                                display="block"
-                                sx={{ fontSize: '0.65rem' }}
-                            >
-                                New project stage
-                            </Typography>
-                        </Paper>
-                    </Box>
-                </Box> */}
-
-                {updateType === 'stage' && (
-                    <FormControl fullWidth size="small">
-                        <InputLabel>New Stage</InputLabel>
-                        <Select
-                            value={(form.stage as ProjectStage) ?? project.stage ?? ''}
-                            label="New Stage"
-                            onChange={(e) => setField('stage', e.target.value as ProjectStage)}
-                        >
-                            {PROJECT_STAGE_OPTIONS.map((option) => (
-                                <MenuItem key={option.value} value={option.value}>
-                                    {option.label}
-                                </MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
-                )}
-
-                <TextField
-                    label="Title"
-                    fullWidth
-                    size="small"
-                    value={updateTitle}
-                    onChange={(e) => setUpdateTitle(e.target.value)}
-                    placeholder="e.g. Baseline survey completed"
-                />
-
-                <TextField
-                    label="Date"
-                    type="date"
-                    fullWidth
-                    size="small"
-                    value={updateDateLabel}
-                    onChange={(e) => setUpdateDateLabel(e.target.value)}
-                    InputLabelProps={{ shrink: true }}
-                />
-
-                <TextField
-                    label="Description"
-                    fullWidth
-                    size="small"
-                    multiline
-                    minRows={4}
-                    value={updateDescription}
-                    onChange={(e) => setUpdateDescription(e.target.value)}
-                    placeholder="Share what's new..."
-                />
-            </Stack>
+            <SidebarUpdatesSection
+                editingItem={editingItem}
+                updateType={updateType}
+                stageValue={(form.stage as ProjectStage) ?? project.stage ?? ''}
+                stageOptions={PROJECT_STAGE_OPTIONS}
+                updateTitle={updateTitle}
+                updateDateLabel={updateDateLabel}
+                updateDescription={updateDescription}
+                onStageChange={(value) => setField('stage', value)}
+                onUpdateTitleChange={setUpdateTitle}
+                onUpdateDateLabelChange={setUpdateDateLabel}
+                onUpdateDescriptionChange={setUpdateDescription}
+            />
         );
     };
 
@@ -2987,451 +2410,13 @@ export default function ProjectSidebarEditor({
         />
     );
 
-    const renderTeam = () => {
-        const items = (form.team ?? []) as TeamEditorMember[];
-
-        const selectedKeys = new Set(
-            items.map((item) =>
-                item.isPlatformMember
-                    ? `${item.memberType}:${item.memberId ?? item.userId ?? item.companyId}`
-                    : `manual:${item.id}`
-            ),
-        );
-
-        const searchResults = collaboratorOptions.filter(
-            (entry) => !selectedKeys.has(`${entry.entityType}:${entry.id}`),
-        );
-
-        const addSelectedTeamMember = () => {
-            if (teamManualMode) {
-                const trimmedName = teamName.trim();
-                if (!trimmedName) return;
-
-                const nextMember: TeamEditorMember =
-                    teamRole === 'company'
-                        ? {
-                            id: crypto.randomUUID(),
-                            memberType: 'company',
-                            memberId: null,
-                            companyId: null,
-                            userId: null,
-                            name: trimmedName,
-                            companyName: trimmedName,
-                            avatarUrl: null,
-                            role: teamProjectRole || '',
-                            permission: null,
-                            isPlatformMember: false,
-                            manualName: null,
-                            manualOrganization: trimmedName,
-                        }
-                        : {
-                            id: crypto.randomUUID(),
-                            memberType: 'user',
-                            memberId: null,
-                            userId: null,
-                            companyId: null,
-                            name: trimmedName,
-                            companyName: '',
-                            avatarUrl: null,
-                            role: teamProjectRole || '',
-                            permission: 'viewer',
-                            isPlatformMember: false,
-                            manualName: trimmedName,
-                            manualOrganization: '',
-                        };
-
-                setField('team', [...items, nextMember]);
-                setTeamName('');
-                setTeamProjectRole('');
-                setTeamManualMode(false);
-                return;
-            }
-
-            if (!teamSelectedPlatform) return;
-
-            const nextMember: TeamEditorMember =
-                teamSelectedPlatform.entityType === 'company'
-                    ? {
-                        id: crypto.randomUUID(),
-                        memberType: 'company',
-                        memberId: teamSelectedPlatform.id,
-                        companyId: teamSelectedPlatform.id,
-                        userId: null,
-                        name: teamSelectedPlatform.name,
-                        companyName: teamSelectedPlatform.companyName ?? teamSelectedPlatform.name,
-                        avatarUrl: teamSelectedPlatform.avatarUrl ?? null,
-                        role: teamProjectRole || '',
-                        permission: null,
-                        isPlatformMember: true,
-                    }
-                    : {
-                        id: crypto.randomUUID(),
-                        memberType: 'user',
-                        memberId: teamSelectedPlatform.id,
-                        userId: teamSelectedPlatform.id,
-                        companyId: null,
-                        name: teamSelectedPlatform.name,
-                        companyName: teamSelectedPlatform.companyName ?? '',
-                        avatarUrl: teamSelectedPlatform.avatarUrl ?? null,
-                        role: teamProjectRole || '',
-                        permission: 'viewer',
-                        isPlatformMember: true,
-                    };
-
-            setField('team', [...items, nextMember]);
-            setTeamSelectedPlatform(null);
-            setTeamSearch('');
-            setTeamProjectRole('');
-            setCollaboratorOptions([]);
-        };
-
-        return (
-            <Stack spacing={3}>
-                <Box>
-                    <Typography variant="subtitle1" fontWeight={700} gutterBottom>
-                        Project Team
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                        Add platform users/companies or manually add external collaborators.
-                    </Typography>
-                </Box>
-
-                <ToggleButtonGroup
-                    value={teamRole}
-                    exclusive
-                    fullWidth
-                    size="small"
-                    onChange={(_, value) => {
-                        if (!value) return;
-                        setTeamRole(value);
-                        setTeamSearch('');
-                        setCollaboratorOptions([]);
-                        setTeamManualMode(false);
-                        setTeamName('');
-                        setTeamProjectRole('');
-                        setTeamSelectedPlatform(null);
-                    }}
-                >
-                    <ToggleButton value="company" sx={{ textTransform: 'none', flex: 1 }}>
-                        Company
-                    </ToggleButton>
-                    <ToggleButton value="user" sx={{ textTransform: 'none', flex: 1 }}>
-                        Individual
-                    </ToggleButton>
-                </ToggleButtonGroup>
-
-                {!teamManualMode ? (
-                    <Box>
-                        <TextField
-                            fullWidth
-                            size="small"
-                            label={teamRole === 'company' ? 'Search companies' : 'Search users'}
-                            placeholder={teamRole === 'company' ? 'Search companies...' : 'Search people...'}
-                            value={teamSearch}
-                            onChange={(e) => {
-                                setTeamSearch(e.target.value);
-                                setTeamSelectedPlatform(null);
-                            }}
-                            InputProps={{
-                                startAdornment: (
-                                    <InputAdornment position="start">
-                                        <SearchRounded sx={{ fontSize: 18, color: 'grey.500' }} />
-                                    </InputAdornment>
-                                ),
-                                endAdornment: teamSearch ? (
-                                    <InputAdornment position="end">
-                                        <IconButton size="small" onClick={() => setTeamSearch('')}>
-                                            <CloseRounded sx={{ fontSize: 16 }} />
-                                        </IconButton>
-                                    </InputAdornment>
-                                ) : undefined,
-                            }}
-                        />
-
-                        {teamSearch.trim() ? (
-                            <Paper variant="outlined" sx={{ mt: 1, borderRadius: 2, overflow: 'hidden' }}>
-                                {optionsLoading ? (
-                                    <Box px={1.5} py={1.5}>
-                                        <Typography variant="body2" color="text.secondary">
-                                            Loading {teamRole === 'company' ? 'companies' : 'users'}...
-                                        </Typography>
-                                    </Box>
-                                ) : searchResults.length > 0 ? (
-                                    searchResults.map((result, index) => (
-                                        <Box
-                                            key={`${result.entityType}:${result.id}`}
-                                            onClick={() => {
-                                                setTeamSelectedPlatform(result);
-                                                setTeamSearch('');
-                                            }}
-                                            sx={{
-                                                px: 1.5,
-                                                py: 1.25,
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: 1.25,
-                                                cursor: 'pointer',
-                                                borderBottom: index === searchResults.length - 1 ? 'none' : '1px solid',
-                                                borderColor: 'grey.100',
-                                                '&:hover': { bgcolor: 'grey.50' },
-                                            }}
-                                        >
-                                            <Avatar
-                                                src={result.avatarUrl ?? undefined}
-                                                sx={{
-                                                    width: 32,
-                                                    height: 32,
-                                                    bgcolor: 'grey.200',
-                                                    color: 'text.primary',
-                                                    borderRadius: result.entityType === 'company' ? 1 : '50%',
-                                                }}
-                                            >
-                                                {result.entityType === 'company' ? (
-                                                    <BusinessRounded sx={{ fontSize: 16, color: 'grey.600' }} />
-                                                ) : (
-                                                    result.name
-                                                        .split(' ')
-                                                        .map((part) => part[0])
-                                                        .join('')
-                                                        .slice(0, 2)
-                                                        .toUpperCase()
-                                                )}
-                                            </Avatar>
-
-                                            <Box flex={1} minWidth={0}>
-                                                <Stack direction="row" spacing={0.75} alignItems="center">
-                                                    <Typography variant="body2" fontWeight={600} noWrap>
-                                                        {result.name}
-                                                    </Typography>
-                                                    <Chip label="On platform" size="small" sx={{ height: 18, fontSize: '0.65rem' }} />
-                                                </Stack>
-                                                <Typography variant="caption" color="text.secondary" noWrap>
-                                                    {result.subtitle ?? (result.entityType === 'company' ? 'Company' : 'User')}
-                                                </Typography>
-                                            </Box>
-                                        </Box>
-                                    ))
-                                ) : (
-                                    <Box px={1.5} py={1.5}>
-                                        <Typography variant="body2" color="text.secondary">
-                                            No matching {teamRole === 'company' ? 'companies' : 'users'} found.
-                                        </Typography>
-                                    </Box>
-                                )}
-
-                                <Box
-                                    onClick={() => {
-                                        setTeamManualMode(true);
-                                        setTeamName(teamSearch);
-                                        setTeamSearch('');
-                                        setTeamSelectedPlatform(null);
-                                    }}
-                                    sx={{
-                                        px: 1.5,
-                                        py: 1.25,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 1,
-                                        cursor: 'pointer',
-                                        bgcolor: 'grey.50',
-                                        '&:hover': { bgcolor: 'grey.100' },
-                                        borderTop: '1px solid',
-                                        borderColor: 'grey.100',
-                                    }}
-                                >
-                                    <Typography variant="body2" color="text.secondary">
-                                        Not on platform? Add manually
-                                    </Typography>
-                                </Box>
-                            </Paper>
-                        ) : null}
-
-                        <Button
-                            size="small"
-                            onClick={() => {
-                                setTeamManualMode(true);
-                                setTeamSelectedPlatform(null);
-                                setTeamSearch('');
-                            }}
-                            sx={{ mt: 1, textTransform: 'none' }}
-                        >
-                            + Add manually
-                        </Button>
-                    </Box>
-                ) : (
-                    <Stack spacing={2}>
-                        <Box display="flex" alignItems="center" justifyContent="space-between">
-                            <Typography variant="caption" color="text.secondary" fontWeight="medium">
-                                Manual entry
-                            </Typography>
-                            <Button
-                                size="small"
-                                onClick={() => {
-                                    setTeamManualMode(false);
-                                    setTeamName('');
-                                }}
-                                sx={{ textTransform: 'none' }}
-                            >
-                                Search instead
-                            </Button>
-                        </Box>
-
-                        <TextField
-                            label={teamRole === 'company' ? 'Company name' : 'Full name'}
-                            fullWidth
-                            value={teamName}
-                            onChange={(e) => setTeamName(e.target.value)}
-                            placeholder={teamRole === 'company' ? 'e.g. South Pole' : 'e.g. Jane Smith'}
-                        />
-                    </Stack>
-                )}
-
-                {(teamSelectedPlatform || teamManualMode) ? (
-                    <>
-                        <FormControl fullWidth size="small">
-                            <InputLabel>Project role</InputLabel>
-                            <Select
-                                value={teamProjectRole}
-                                label="Project role"
-                                onChange={(e) => setTeamProjectRole(e.target.value)}
-                            >
-                                {TEAM_PROJECT_ROLE_OPTIONS.map((option) => (
-                                    <MenuItem key={option} value={option}>
-                                        {option}
-                                    </MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
-
-                        <Button variant="contained" onClick={addSelectedTeamMember}>
-                            Add to team
-                        </Button>
-                    </>
-                ) : null}
-
-                <Stack spacing={2}>
-                    {items.map((item, index) => {
-                        const isCreator =
-                            item.memberType === 'user' && item.permission === 'creator';
-
-                        return (
-                            <Paper
-                                key={`${item.memberType}:${item.memberId ?? item.id}:${index}`}
-                                variant="outlined"
-                                sx={{ p: 2, borderRadius: 2 }}
-                            >
-                                <Stack spacing={2}>
-                                    <Stack direction="row" spacing={1.5} alignItems="center">
-                                        <Avatar
-                                            src={item.avatarUrl ?? undefined}
-                                            sx={{
-                                                width: 40,
-                                                height: 40,
-                                                bgcolor: 'grey.200',
-                                                color: 'text.primary',
-                                                borderRadius: item.memberType === 'company' ? 1 : '50%',
-                                            }}
-                                        >
-                                            {item.memberType === 'company' ? (
-                                                <BusinessRounded sx={{ fontSize: 18, color: 'grey.600' }} />
-                                            ) : (
-                                                item.name
-                                                    .split(' ')
-                                                    .map((part) => part[0])
-                                                    .join('')
-                                                    .slice(0, 2)
-                                                    .toUpperCase()
-                                            )}
-                                        </Avatar>
-
-                                        <Box flex={1} minWidth={0}>
-                                            <Stack direction="row" spacing={0.75} alignItems="center">
-                                                <Typography variant="body2" fontWeight={700} noWrap>
-                                                    {item.name}
-                                                </Typography>
-                                                {item.isPlatformMember ? (
-                                                    <Chip label="On platform" size="small" sx={{ height: 18, fontSize: '0.65rem' }} />
-                                                ) : (
-                                                    <Chip label="Manual" size="small" sx={{ height: 18, fontSize: '0.65rem' }} />
-                                                )}
-                                            </Stack>
-
-                                            <Typography variant="caption" color="text.secondary" noWrap>
-                                                {item.memberType === 'company'
-                                                    ? item.companyName || 'Company'
-                                                    : isCreator
-                                                        ? 'Project creator'
-                                                        : item.companyName || (item.isPlatformMember ? 'Platform user' : 'External individual')}
-                                            </Typography>
-                                        </Box>
-
-                                        {!isCreator && (
-                                            <IconButton
-                                                size="small"
-                                                onClick={() => {
-                                                    const next = items.filter((_, i) => i !== index);
-                                                    setField('team', next);
-                                                }}
-                                            >
-                                                <CloseRounded sx={{ fontSize: 18 }} />
-                                            </IconButton>
-                                        )}
-                                    </Stack>
-
-                                    <FormControl fullWidth size="small">
-                                        <InputLabel>Project role</InputLabel>
-                                        <Select
-                                            value={item.role ?? ''}
-                                            label="Project role"
-                                            onChange={(e) => {
-                                                const next = [...items];
-                                                next[index] = {
-                                                    ...next[index],
-                                                    role: e.target.value,
-                                                } as TeamEditorMember;
-                                                setField('team', next);
-                                            }}
-                                        >
-                                            {TEAM_PROJECT_ROLE_OPTIONS.map((option) => (
-                                                <MenuItem key={option} value={option}>
-                                                    {option}
-                                                </MenuItem>
-                                            ))}
-                                        </Select>
-                                    </FormControl>
-
-                                    {item.memberType === 'user' ? (
-                                        <FormControl fullWidth size="small" disabled={isCreator}>
-                                            <InputLabel>Permission</InputLabel>
-                                            <Select
-                                                value={isCreator ? 'creator' : item.permission ?? 'viewer'}
-                                                label="Permission"
-                                                onChange={(e) => {
-                                                    const next = [...items];
-                                                    next[index] = {
-                                                        ...next[index],
-                                                        permission: e.target.value as 'creator' | 'viewer',
-                                                    } as TeamEditorMember;
-                                                    setField('team', next);
-                                                }}
-                                            >
-                                                {isCreator && <MenuItem value="creator">Creator</MenuItem>}
-                                                <MenuItem value="viewer">Viewer</MenuItem>
-                                            </Select>
-                                        </FormControl>
-                                    ) : (
-                                        <Alert severity="info" sx={{ py: 0 }}>
-                                            Company collaborators do not carry project permissions.
-                                        </Alert>
-                                    )}
-                                </Stack>
-                            </Paper>
-                        );
-                    })}
-                </Stack>
-            </Stack>
-        );
-    };
+    const renderTeam = () => (
+        <ProjectTeamEditorSection
+            apiBaseUrl={API_BASE_URL}
+            value={(form.team ?? []) as TeamEditorMember[]}
+            onChange={(next) => setField('team', next)}
+        />
+    );
 
     return (
         <SidebarPanel

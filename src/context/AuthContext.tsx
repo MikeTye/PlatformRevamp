@@ -6,6 +6,13 @@ import React, {
     useState,
 } from 'react';
 
+import {
+    initAnalytics,
+    resetAnalyticsUser,
+    setAnalyticsUser,
+    setAnalyticsUserProperties,
+} from '../lib/analytics';
+
 export interface User {
     id?: string;
     name?: string;
@@ -84,6 +91,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             return null;
         }
     };
+
+    useEffect(() => {
+        initAnalytics();
+
+        if (user?.id) {
+            setAnalyticsUser(user.id);
+            setAnalyticsUserProperties({
+                user_email_domain: user.email?.split('@')[1] ?? null,
+                has_name: Boolean(user.name),
+            });
+            return;
+        }
+
+        resetAnalyticsUser();
+    }, [user?.id, user?.email, user?.name]);
 
     useEffect(() => {
         let isMounted = true;

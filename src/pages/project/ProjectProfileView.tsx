@@ -45,8 +45,10 @@ import { ProjectSectionCard } from './ProjectSectionCard';
 import {
     STAGE_ORDER,
     stageDescriptions,
-    STAGE_COMPLETENESS_RULES,
+    getProjectCompletenessItems
 } from './projectProfile.constants.ts';
+
+import { CountryFlagLabel } from '../../components/common/CountryFlagLabel';
 
 import type {
     ProjectAccess,
@@ -64,55 +66,10 @@ import type {
     ProjectUpdate,
     SectionVisibility,
 } from './projectProfile.types';
+import ProjectUpdatesSection from './ProjectUpdatesSection.tsx';
+import ProjectTeamSection from './ProjectTeamSection.tsx';
 
 export type CollaboratorEntityType = 'user' | 'company';
-
-function getTeamMemberDisplayName(member: ProjectTeamMember): string {
-    if (member.isPlatformMember === false) {
-        if (member.memberType === 'company') {
-            return (
-                member.manualOrganization?.trim() ||
-                member.companyName?.trim() ||
-                member.manualName?.trim() ||
-                member.name?.trim() ||
-                'External company'
-            );
-        }
-
-        return (
-            member.manualName?.trim() ||
-            member.name?.trim() ||
-            member.manualOrganization?.trim() ||
-            'External collaborator'
-        );
-    }
-
-    if (member.memberType === 'company') {
-        return member.companyName?.trim() || member.name?.trim() || 'Company';
-    }
-
-    return member.name?.trim() || member.manualName?.trim() || 'User';
-}
-
-function getTeamMemberSubtitle(member: ProjectTeamMember): string {
-    const roleLabel = member.role?.trim();
-
-    if (member.isPlatformMember === false) {
-        if (member.memberType === 'company') {
-            return roleLabel || 'External company';
-        }
-
-        const org = member.manualOrganization?.trim() || member.companyName?.trim();
-        return roleLabel ? (org ? `${roleLabel} · ${org}` : roleLabel) : org || 'External collaborator';
-    }
-
-    if (roleLabel) return roleLabel;
-
-    if (member.permission === 'viewer') return 'Viewer';
-    if (member.memberType === 'company') return 'Company Collaborator';
-
-    return 'Team Member';
-}
 
 export type ProjectDocumentStatus = 'Draft' | 'Final';
 
@@ -125,8 +82,12 @@ export interface ProjectProfileViewProps {
     isSaved?: boolean;
     onToggleSave?: () => void;
     onBack?: () => void;
-    shareUrl?: string;
-    shareTitle?: string;
+
+    shareAnchorEl: HTMLElement | null;
+    onOpenShare: (el: HTMLElement) => void;
+    onCloseShare: () => void;
+    resolveShareUrl?: () => Promise<string>;
+
     onOpenEditor?: (
         section: ProjectEditorTarget,
         itemId?: string | null
@@ -165,19 +126,47 @@ export interface ProjectProfileViewProps {
     focusSection?: ProjectSectionKey | null;
     highlightedUpdateId?: string | null;
     onSectionFocusHandled?: () => void;
+    onTeamMenuClick?: (
+        event: React.MouseEvent<HTMLElement>,
+        member: ProjectTeamMember
+    ) => void;
 }
 
-function getProjectCompletenessItems(project: ProjectProfileData): CompletenessItem[] {
-    const rules = STAGE_COMPLETENESS_RULES[project.stage] || [];
+type ChecklistStageColumn =
+    | 'Exploration'
+    | 'Concept'
+    | 'Design'
+    | 'Listed'
+    | 'Validation'
+    | 'Registered'
+    | 'Issued';
 
-    return rules.map((rule) => ({
-        id: rule.id,
-        label: rule.label,
-        description: rule.description,
-        isComplete: rule.isComplete(project),
-        section: rule.section,
-        requiredForStage: project.stage,
-    }));
+type ProjectChecklistDefinition = {
+    id: string;
+    label: string;
+    description?: string;
+    section: ProjectSectionKey;
+    stages: ChecklistStageColumn[];
+    isComplete: (project: ProjectProfileData) => boolean;
+};
+
+function hasText(value: unknown): boolean {
+    return typeof value === 'string' ? value.trim().length > 0 : false;
+}
+
+function hasValidUrl(value: unknown): boolean {
+    if (!hasText(value)) return false;
+
+    try {
+        new URL(String(value).trim());
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function hasCoordinates(project: ProjectProfileData): boolean {
+    return project.latitude != null && project.longitude != null;
 }
 
 function formatCompactNumber(value?: number | null): string {
@@ -219,6 +208,47 @@ function getCreditingPeriodLabel(project: ProjectProfileData): string {
     }
 
     return '—';
+}
+
+function sanitizeEstimatedAnnualRemoval(value: unknown): string | null {
+    if (value == null) return null;
+
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+
+        if (!trimmed) return null;
+        if (trimmed === '{}' || trimmed === '{"value":"{}"}') return null;
+
+        try {
+            const parsed = JSON.parse(trimmed);
+
+            if (parsed == null) return null;
+
+            if (typeof parsed === 'string') {
+                const nested = parsed.trim();
+                return nested && nested !== '{}' ? nested : null;
+            }
+
+            if (typeof parsed === 'object') {
+                const nestedValue =
+                    typeof (parsed as any).value === 'string'
+                        ? (parsed as any).value.trim()
+                        : '';
+
+                return nestedValue && nestedValue !== '{}' ? nestedValue : null;
+            }
+        } catch {
+            return trimmed;
+        }
+
+        return trimmed;
+    }
+
+    return String(value);
+}
+
+function getAnnualRemovalLabel(project: ProjectProfileData): string {
+    return sanitizeEstimatedAnnualRemoval(project.estimatedAnnualRemoval) ?? '—';
 }
 
 function getVisibleSections(project: ProjectProfileData, access: ProjectAccess): Set<ProjectSectionKey> {
@@ -266,8 +296,15 @@ function shouldShowStageSection(section: ProjectSectionKey, stage: ProjectStage)
         // case 'registry':
         //     return ['Design', 'Listed', 'Validation', 'Registered', 'Issued', 'Closed'].includes(stage);
 
+        // case 'impact':
+        //     return ['Registered', 'Issued', 'Closed'].includes(stage);
+
         case 'impact':
-            return ['Registered', 'Issued', 'Closed'].includes(stage);
+            return !['Exploration', 'Concept', 'Design'].includes(stage);
+
+        case 'registry':
+            return !['Exploration', 'Concept', 'Design'].includes(stage);
+
 
         // case 'opportunities':
         //     return !['Closed'].includes(stage);
@@ -294,176 +331,6 @@ const sectionHeaderIconButtonSx = {
     },
 } as const;
 
-function CollaboratorsCard({
-    project,
-    canEdit,
-    onOpenEditor,
-    sidebarEditSx,
-}: {
-    project: ProjectProfileData;
-    canEdit: boolean;
-    onOpenEditor?: (section: ProjectEditorTarget) => void;
-    sidebarEditSx: Record<string, unknown>;
-}) {
-    const developerName = project.companyName?.trim();
-
-    const visibleTeam = React.useMemo(
-        () => (project.team || []).filter((member) => member.permission !== 'creator'),
-        [project.team]
-    );
-
-    const hasDeveloper = Boolean(developerName);
-    const hasTeam = visibleTeam.length > 0;
-    const hasPeople = hasDeveloper || hasTeam;
-
-    const sectionLabelSx = {
-        display: 'block',
-        mb: 1,
-        color: 'text.disabled',
-        fontSize: '0.75rem',
-        fontWeight: 500,
-    } as const;
-
-    const rowSx = {
-        display: 'flex',
-        alignItems: 'center',
-        gap: 1.5,
-        mx: -1,
-        px: 1,
-        py: 0.875,
-        borderRadius: 1.5,
-        minWidth: 0,
-        '&:hover': {
-            bgcolor: 'grey.50',
-        },
-    } as const;
-
-    const iconBoxSx = {
-        width: 32,
-        height: 32,
-        borderRadius: 1,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexShrink: 0,
-        border: '1px solid',
-        borderColor: 'grey.200',
-        bgcolor: 'grey.50',
-    } as const;
-
-    return (
-        <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden', width: '100%' }}>
-            <Box
-                p={1.5}
-                borderBottom={1}
-                borderColor="grey.100"
-                display="flex"
-                alignItems="center"
-                justifyContent="space-between"
-                bgcolor="grey.50"
-            >
-                <Typography variant="caption" fontWeight="bold" color="text.primary">
-                    Project Partners
-                </Typography>
-
-                {canEdit ? (
-                    <IconButton size="small" onClick={() => onOpenEditor?.('team')} sx={sidebarEditSx}>
-                        <AddRounded sx={{ fontSize: 16 }} />
-                    </IconButton>
-                ) : null}
-            </Box>
-
-            <Box p={2}>
-                {hasPeople ? (
-                    <Stack spacing={2}>
-                        {hasDeveloper ? (
-                            <Box>
-                                <Typography sx={sectionLabelSx}>Developer</Typography>
-
-                                <Box sx={rowSx}>
-                                    <Box sx={{ ...iconBoxSx, bgcolor: 'grey.100', borderColor: 'transparent' }}>
-                                        <BusinessRounded sx={{ fontSize: 16, color: 'grey.500' }} />
-                                    </Box>
-
-                                    <Box minWidth={0} flex={1}>
-                                        <Typography variant="body2" fontWeight={600} color="text.primary" noWrap>
-                                            {developerName}
-                                        </Typography>
-                                        <Typography variant="caption" color="text.secondary">
-                                            Lead Developer
-                                        </Typography>
-                                    </Box>
-                                </Box>
-                            </Box>
-                        ) : null}
-
-                        {hasTeam ? (
-                            <Box>
-                                <Typography sx={sectionLabelSx}>Partners</Typography>
-
-                                <Stack spacing={0.5}>
-                                    {visibleTeam.map((member) => {
-                                        const key =
-                                            member.memberId ||
-                                            member.userId ||
-                                            member.companyId ||
-                                            member.id;
-
-                                        const isCompanyMember = member.memberType === 'company';
-                                        const isExternal = member.isPlatformMember === false;
-
-                                        return (
-                                            <Box key={key} sx={rowSx}>
-                                                {isCompanyMember ? (
-                                                    <Box sx={iconBoxSx}>
-                                                        <BusinessRounded sx={{ fontSize: 16, color: 'grey.500' }} />
-                                                    </Box>
-                                                ) : member.avatarUrl ? (
-                                                    <Avatar src={member.avatarUrl} alt={member.name} sx={{ width: 32, height: 32 }} />
-                                                ) : (
-                                                    <Box sx={iconBoxSx}>
-                                                        <PeopleRounded sx={{ fontSize: 16, color: 'grey.500' }} />
-                                                    </Box>
-                                                )}
-
-                                                <Box minWidth={0} flex={1}>
-                                                    <Stack minWidth={0} flex={1} spacing={0.5}>
-                                                        <Typography variant="body2" fontWeight={600} color="text.primary" noWrap>
-                                                            {getTeamMemberDisplayName(member)}
-                                                        </Typography>
-
-                                                        <Stack direction="row" spacing={0.75} alignItems="center" minWidth={0}>
-                                                            <Typography variant="caption" color="text.secondary" noWrap>
-                                                                {getTeamMemberSubtitle(member)}
-                                                            </Typography>
-
-                                                            {isExternal ? (
-                                                                <Chip
-                                                                    label="External"
-                                                                    size="small"
-                                                                    sx={{ height: 20, fontSize: '0.6rem', flexShrink: 0 }}
-                                                                />
-                                                            ) : null}
-                                                        </Stack>
-                                                    </Stack>
-                                                </Box>
-                                            </Box>
-                                        );
-                                    })}
-                                </Stack>
-                            </Box>
-                        ) : null}
-                    </Stack>
-                ) : (
-                    <Typography variant="body2" color="text.secondary">
-                        No collaborators added yet.
-                    </Typography>
-                )}
-            </Box>
-        </Paper>
-    );
-}
-
 function StagePill({ stage }: { stage: ProjectStage }) {
     const index = STAGE_ORDER.indexOf(stage);
     return (
@@ -475,20 +342,6 @@ function StagePill({ stage }: { stage: ProjectStage }) {
             />
         </Tooltip>
     );
-}
-
-function ReadinessChip({ status }: { status: ProjectReadinessItem['status'] }) {
-    const map: Record<
-        ProjectReadinessItem['status'],
-        { label: string; color: 'default' | 'success' | 'warning' | 'info' }
-    > = {
-        yes: { label: 'Ready', color: 'success' },
-        progress: { label: 'In progress', color: 'info' },
-        seeking: { label: 'Seeking', color: 'warning' },
-        na: { label: 'Not started', color: 'default' },
-    };
-
-    return <Chip size="small" label={map[status].label} color={map[status].color} variant="outlined" />;
 }
 
 function SidebarCard({
@@ -705,8 +558,10 @@ export default function ProjectProfileView({
     isSaved,
     onToggleSave,
     onBack,
-    shareUrl,
-    shareTitle,
+    shareAnchorEl,
+    onOpenShare,
+    onCloseShare,
+    resolveShareUrl,
     onOpenEditor,
     onOpenSettings,
     onMediaMenuClick,
@@ -718,6 +573,7 @@ export default function ProjectProfileView({
     focusSection = null,
     highlightedUpdateId = null,
     onSectionFocusHandled,
+    onTeamMenuClick,
 }: ProjectProfileViewProps) {
     const visibleSections = getVisibleSections(project, access);
     const [coachMarkOpen, setCoachMarkOpen] = React.useState(false);
@@ -726,16 +582,6 @@ export default function ProjectProfileView({
     const updatesSectionRef = React.useRef<HTMLDivElement | null>(null);
     const [updatesSectionFlash, setUpdatesSectionFlash] = React.useState(false);
     const [highlightedUpdateFlashId, setHighlightedUpdateFlashId] = React.useState<string | null>(null);
-
-    const [shareAnchorEl, setShareAnchorEl] = React.useState<HTMLElement | null>(null);
-
-    const handleOpenShareMenu = (event: React.MouseEvent<HTMLElement>) => {
-        setShareAnchorEl(event.currentTarget);
-    };
-
-    const handleCloseShareMenu = () => {
-        setShareAnchorEl(null);
-    };
 
     const canSee = (key: ProjectSectionKey) =>
         visibleSections.has(key) && shouldShowStageSection(key, project.stage);
@@ -759,7 +605,10 @@ export default function ProjectProfileView({
         },
     } as const;
 
-    const completenessItems = getProjectCompletenessItems(project);
+    const completenessItems = React.useMemo(
+        () => getProjectCompletenessItems(project),
+        [project]
+    );
 
     const getSectionVisibility = (key: ProjectSectionKey): SectionVisibility =>
         project.sectionVisibility?.[key] ?? 'public';
@@ -1069,11 +918,30 @@ export default function ProjectProfileView({
 
                             <Box display="flex" flexWrap="wrap" alignItems="center" gap={2}>
                                 {project.country || project.region ? (
-                                    <Box display="flex" alignItems="center" gap={0.75}>
+                                    <Box display="flex" alignItems="center" gap={0.75} flexWrap="wrap">
                                         <LocationOnRounded sx={{ fontSize: 16, color: 'text.secondary' }} />
-                                        <Typography variant="body2" color="text.secondary">
-                                            {[project.region, project.country].filter(Boolean).join(', ')}
-                                        </Typography>
+
+                                        {project.region ? (
+                                            <Typography variant="body2" color="text.secondary">
+                                                {project.region}
+                                            </Typography>
+                                        ) : null}
+
+                                        {project.region && project.country ? (
+                                            <Typography variant="body2" color="text.secondary">
+                                                ,
+                                            </Typography>
+                                        ) : null}
+
+                                        {project.country ? (
+                                            <CountryFlagLabel
+                                                country={project.country}
+                                                size="sm"
+                                                textVariant="body2"
+                                                color="text.secondary"
+                                                gap={0.5}
+                                            />
+                                        ) : null}
                                     </Box>
                                 ) : null}
 
@@ -1083,11 +951,18 @@ export default function ProjectProfileView({
                                         label={project.companyName}
                                         size="small"
                                         variant="outlined"
+                                        component={project.companyId ? RouterLink : 'div'}
+                                        to={project.companyId ? `/companies/${project.companyId}` : undefined}
+                                        clickable={Boolean(project.companyId)}
                                         sx={{
                                             height: 24,
                                             fontSize: '0.75rem',
                                             borderColor: 'grey.300',
-                                            color: 'text.secondary',
+                                            color: project.companyId ? 'primary.main' : 'text.secondary',
+                                            textDecoration: 'none',
+                                            '&:hover': project.companyId
+                                                ? { bgcolor: 'grey.50' }
+                                                : undefined,
                                         }}
                                     />
                                 ) : null}
@@ -1113,6 +988,19 @@ export default function ProjectProfileView({
                                 >
                                     Edit Project
                                 </Button>
+                            ) : project.companyEmail ? (
+                                <Button
+                                    variant="contained"
+                                    fullWidth
+                                    component="a"
+                                    href={`mailto:${project.companyEmail}?subject=${encodeURIComponent(
+                                        `Enquiry about ${project.name}`
+                                    )}`}
+                                    startIcon={<BusinessRounded sx={{ fontSize: 16 }} />}
+                                    sx={{ textTransform: 'none' }}
+                                >
+                                    Contact Developer
+                                </Button>
                             ) : null}
 
                             <Stack direction="row" spacing={1}>
@@ -1120,7 +1008,13 @@ export default function ProjectProfileView({
                                     <Button
                                         variant="outlined"
                                         fullWidth
-                                        startIcon={isSaved ? <BookmarkRounded sx={{ fontSize: 14 }} /> : <BookmarkBorderRounded sx={{ fontSize: 14 }} />}
+                                        startIcon={
+                                            isSaved ? (
+                                                <BookmarkRounded sx={{ fontSize: 14 }} />
+                                            ) : (
+                                                <BookmarkBorderRounded sx={{ fontSize: 14 }} />
+                                            )
+                                        }
                                         onClick={onToggleSave}
                                         sx={{
                                             borderColor: isSaved ? 'primary.main' : 'grey.200',
@@ -1128,7 +1022,6 @@ export default function ProjectProfileView({
                                             textTransform: 'none',
                                             '&:hover': {
                                                 bgcolor: isSaved ? 'primary.50' : 'grey.50',
-                                                borderColor: isSaved ? 'primary.main' : 'grey.300',
                                             },
                                         }}
                                     >
@@ -1136,25 +1029,22 @@ export default function ProjectProfileView({
                                     </Button>
                                 ) : null}
 
-                                {shareUrl ? (
-                                    <Button
-                                        variant="outlined"
-                                        fullWidth
-                                        startIcon={<ShareRounded sx={{ fontSize: 14 }} />}
-                                        onClick={handleOpenShareMenu}
-                                        sx={{
-                                            borderColor: 'grey.200',
-                                            color: 'text.secondary',
-                                            textTransform: 'none',
-                                            '&:hover': {
-                                                bgcolor: 'grey.50',
-                                                borderColor: 'grey.300',
-                                            },
-                                        }}
-                                    >
-                                        Share
-                                    </Button>
-                                ) : null}
+                                <Button
+                                    variant="outlined"
+                                    fullWidth
+                                    startIcon={<ShareRounded sx={{ fontSize: 14 }} />}
+                                    onClick={(event) => onOpenShare(event.currentTarget)}
+                                    sx={{
+                                        borderColor: 'grey.200',
+                                        color: 'text.secondary',
+                                        textTransform: 'none',
+                                        '&:hover': {
+                                            bgcolor: 'grey.50',
+                                        },
+                                    }}
+                                >
+                                    Share
+                                </Button>
                             </Stack>
                         </Box>
                     </Box>
@@ -1266,108 +1156,21 @@ export default function ProjectProfileView({
                             ) : null}
 
                             {canSee('updates') ? (
-                                <Box
-                                    ref={updatesSectionRef}
-                                    sx={{
-                                        scrollMarginTop: 96,
-                                        borderRadius: 2,
-                                        transition: 'box-shadow 0.25s ease, background-color 0.25s ease',
-                                        boxShadow: updatesSectionFlash ? '0 0 0 3px rgba(0, 137, 147, 0.18)' : 'none',
-                                        bgcolor: updatesSectionFlash ? 'rgba(0, 137, 147, 0.04)' : 'transparent',
-                                    }}
-                                >
-                                    <ProjectSectionCard
-                                        title="Updates"
-                                        subtitle="Latest project news and milestones"
-                                        addable={canEdit}
-                                        isOwner={canEdit}
-                                        visibility={getSectionVisibility('updates')}
-                                        onVisibilityChange={
-                                            canEdit
-                                                ? (value) => onSectionVisibilityChange?.('updates', value)
-                                                : undefined
-                                        }
-                                        empty={!project.updates?.length}
-                                        emptyText="No updates yet"
-                                        emptyActionLabel={canEdit ? 'Post Update' : undefined}
-                                        onEmptyAction={canEdit ? () => onOpenEditor?.('updates', null) : undefined}
-                                        onAdd={canEdit ? () => onOpenEditor?.('updates', null) : undefined}
-                                    >
-                                        <Stack spacing={2}>
-                                            {project.updates?.length
-                                                ? project.updates.map((update, index) => {
-                                                    const isHighlighted = highlightedUpdateFlashId === update.id;
-
-                                                    return (
-                                                        <Paper
-                                                            key={update.id}
-                                                            variant="outlined"
-                                                            sx={{
-                                                                p: 2,
-                                                                borderRadius: 2,
-                                                                transition: 'box-shadow 0.25s ease, border-color 0.25s ease, background-color 0.25s ease',
-                                                                borderColor: isHighlighted ? 'primary.main' : 'grey.200',
-                                                                boxShadow: isHighlighted
-                                                                    ? '0 0 0 3px rgba(0, 137, 147, 0.14)'
-                                                                    : 'none',
-                                                                bgcolor: isHighlighted ? 'primary.50' : 'background.paper',
-                                                            }}
-                                                        >
-                                                            <Stack spacing={1}>
-                                                                <Stack
-                                                                    direction={{ xs: 'column', sm: 'row' }}
-                                                                    justifyContent="space-between"
-                                                                    spacing={1}
-                                                                >
-                                                                    <Box sx={{ minWidth: 0, flex: 1 }}>
-                                                                        <Typography variant="body2" fontWeight={700}>
-                                                                            {update.title}
-                                                                        </Typography>
-
-                                                                        {update.authorName || update.dateLabel ? (
-                                                                            <Typography variant="caption" color="text.secondary">
-                                                                                {[update.authorName, update.dateLabel]
-                                                                                    .filter(Boolean)
-                                                                                    .join(' • ')}
-                                                                            </Typography>
-                                                                        ) : null}
-                                                                    </Box>
-
-                                                                    <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end">
-                                                                        {/* {update.type ? (
-                                                                            <Chip
-                                                                                size="small"
-                                                                                label={update.type === 'stage' ? 'Stage change' : 'Progress'}
-                                                                                variant="outlined"
-                                                                                color={update.type === 'stage' ? 'primary' : 'default'}
-                                                                            />
-                                                                        ) : null} */}
-
-                                                                        {canEdit ? (
-                                                                            <IconButton
-                                                                                size="small"
-                                                                                onClick={(event) => onUpdateMenuClick?.(event, update, index)}
-                                                                                sx={{ color: 'grey.500' }}
-                                                                            >
-                                                                                <MoreVertRounded sx={{ fontSize: 18 }} />
-                                                                            </IconButton>
-                                                                        ) : null}
-                                                                    </Stack>
-                                                                </Stack>
-
-                                                                {update.description ? (
-                                                                    <Typography variant="body2" color="text.secondary">
-                                                                        {update.description}
-                                                                    </Typography>
-                                                                ) : null}
-                                                            </Stack>
-                                                        </Paper>
-                                                    );
-                                                })
-                                                : null}
-                                        </Stack>
-                                    </ProjectSectionCard>
-                                </Box>
+                                <ProjectUpdatesSection
+                                    updates={project.updates}
+                                    canEdit={canEdit}
+                                    visibility={getSectionVisibility('updates')}
+                                    onVisibilityChange={
+                                        canEdit
+                                            ? (value) => onSectionVisibilityChange?.('updates', value)
+                                            : undefined
+                                    }
+                                    onOpenEditor={onOpenEditor}
+                                    onUpdateMenuClick={onUpdateMenuClick}
+                                    highlightedUpdateId={highlightedUpdateFlashId}
+                                    sectionRef={updatesSectionRef}
+                                    sectionFlash={updatesSectionFlash}
+                                />
                             ) : null}
 
                             {canSee('documents') ? (
@@ -1445,7 +1248,7 @@ export default function ProjectProfileView({
                                                     value:
                                                         project.annualEstimatedCredits != null
                                                             ? `${formatCompactNumber(project.annualEstimatedCredits)}${project.annualEstimateUnit ? ` ${project.annualEstimateUnit}` : ''}`
-                                                            : project.estimatedAnnualRemoval || '—',
+                                                            : getAnnualRemovalLabel(project),
                                                     label:
                                                         project.annualEstimatedCredits != null
                                                             ? 'Annual Estimate'
@@ -1499,38 +1302,27 @@ export default function ProjectProfileView({
                                 </Paper>
                             ) : null}
 
-                            {canEdit ? (
-                                <Stack spacing={1}>
-                                    <ProfileCompleteness
-                                        title="Improve Listing"
-                                        items={completenessItems}
-                                        onItemClick={(item) => onOpenEditor?.(item.section as ProjectSectionKey)}
-                                    />
-
-                                    <Button
-                                        component={RouterLink}
-                                        to="/project-stages-guide"
-                                        variant="text"
-                                        size="small"
-                                        sx={{
-                                            alignSelf: 'flex-start',
-                                            textTransform: 'none',
-                                            px: 0,
-                                            minWidth: 0,
-                                        }}
-                                    >
-                                        View project stages guide
-                                    </Button>
-                                </Stack>
+                            {canEdit && completenessItems.length > 0 ? (
+                                <ProfileCompleteness
+                                    title={`${project.stage} checklist`}
+                                    items={completenessItems}
+                                    onItemClick={(item) => onOpenEditor?.(item.section as ProjectEditorTarget)}
+                                />
                             ) : null}
 
                             <Box display={{ xs: 'none', md: 'block' }}>
                                 {canSee('team') ? (
-                                    <CollaboratorsCard
+                                    <ProjectTeamSection
                                         project={project}
                                         canEdit={canEdit}
+                                        visibility={getSectionVisibility('team')}
+                                        onVisibilityChange={
+                                            canEdit
+                                                ? (value) => onSectionVisibilityChange?.('team', value)
+                                                : undefined
+                                        }
                                         onOpenEditor={onOpenEditor}
-                                        sidebarEditSx={sidebarEditSx}
+                                        onTeamMenuClick={onTeamMenuClick}
                                     />
                                 ) : null}
                             </Box>
@@ -1694,13 +1486,6 @@ export default function ProjectProfileView({
                     </Box>
                 </Box>
             </Stack>
-            <ShareMenu
-                anchorEl={shareAnchorEl}
-                open={Boolean(shareAnchorEl)}
-                onClose={handleCloseShareMenu}
-                shareUrl={shareUrl || window.location.href}
-                shareTitle={shareTitle || project.name}
-            />
         </Box>
     );
 }

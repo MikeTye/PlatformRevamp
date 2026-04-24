@@ -9,7 +9,7 @@ import {
     CompanySidebarEditor,
     ExistingUserOption,
     SidebarSavePayload,
-} from './CompanySidebarEditor';
+} from './CompanySidebar/CompanySidebarEditor';
 import { canEditCompany, canViewCompanySection } from './companyProfile.access';
 import MoreVertRounded from '@mui/icons-material/MoreVertRounded';
 import { IconButton, Menu, MenuItem } from '@mui/material';
@@ -17,6 +17,13 @@ import { ProjectWizard, type ProjectFormData, type WizardCloseResult } from '../
 import MoreHorizRounded from '@mui/icons-material/MoreHorizRounded';
 import EditRounded from '@mui/icons-material/EditRounded';
 import DeleteRounded from '@mui/icons-material/DeleteRounded';
+
+import {
+    trackEvent,
+    trackCompanyPageContentUpdated,
+    trackCompanyPermissionsUpdated,
+    trackCompanyTeamUpdated,
+} from '../../lib/analytics';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -47,6 +54,8 @@ export function MyCompany() {
     const [documentMenuAnchorEl, setDocumentMenuAnchorEl] = useState<HTMLElement | null>(null);
     const [documentMenuItem, setDocumentMenuItem] = useState<any>(null);
     const [documentMenuIndex, setDocumentMenuIndex] = useState<number | null>(null);
+
+    const [companyShareUrl, setCompanyShareUrl] = useState<string>('');
 
     const handleMediaMenuOpen = (
         event: React.MouseEvent<HTMLElement>,
@@ -109,6 +118,14 @@ export function MyCompany() {
                 throw new Error(data?.error || data?.message || 'Failed to delete document');
             }
 
+            trackCompanyPageContentUpdated({
+                companyId: company.id,
+                companyName: company.displayName,
+                section: 'documents',
+                editType: 'remove',
+                itemId: documentMenuItem.id,
+            });
+
             await loadCompany();
         } catch (err) {
             setSaveError(err instanceof Error ? err.message : 'Failed to delete document');
@@ -145,6 +162,14 @@ export function MyCompany() {
             if (!res.ok) {
                 throw new Error(data?.error || data?.message || 'Failed to delete media');
             }
+
+            trackCompanyPageContentUpdated({
+                companyId: company.id,
+                companyName: company.displayName,
+                section: 'media',
+                editType: 'remove',
+                itemId: mediaMenuItem.id,
+            });
 
             applyCompanyMediaItems(extractItemsArray<CompanyMediaItem>(data));
         } catch (err) {
@@ -215,6 +240,21 @@ export function MyCompany() {
         }
     }, [id]);
 
+    const hasTrackedOwnPageViewRef = useRef(false);
+
+    useEffect(() => {
+        if (!company?.id || hasTrackedOwnPageViewRef.current) return;
+
+        trackEvent('Company page viewed', {
+            company_id: company.id,
+            company_name: company.displayName,
+            is_own_company: true,
+            entry_point: 'my_companies',
+        });
+
+        hasTrackedOwnPageViewRef.current = true;
+    }, [company]);
+
     function getDefaultPrivacyMap(): CompanyPrivacyMap {
         return {
             header: 'public',
@@ -264,6 +304,7 @@ export function MyCompany() {
                         roles: payload.values.roles,
                         type: payload.values.roles[0] as any,
                         website: payload.values.website,
+                        companyEmail: payload.values.companyEmail, // add this
                         description: payload.values.description,
                         country: payload.values.country,
                         countryCode: payload.values.countryCode ?? null,
@@ -407,13 +448,8 @@ export function MyCompany() {
         }
     }
 
-    function toBackendSectionPayload(
-        payload: SidebarSavePayload
-    ):
-        | {
-            section: 'header' | 'about' | 'services' | 'serviceCategories' | 'geographicalCoverage' | 'permissions' | 'team' | 'projectTypes';
-            data: Record<string, unknown>;
-        }
+    function toBackendSectionPayload(payload: SidebarSavePayload):
+        | { section: any; data: Record<string, unknown> }
         | null {
         switch (payload.section) {
             case 'header':
@@ -421,11 +457,12 @@ export function MyCompany() {
                     section: 'header',
                     data: {
                         displayName: payload.values.displayName,
-                        description: payload.values.description,
+                        roles: payload.values.roles,
                         website: payload.values.website,
+                        companyEmail: payload.values.companyEmail, // add this
+                        description: payload.values.description,
                         country: payload.values.country,
                         countryCode: payload.values.countryCode,
-                        roles: payload.values.roles,
                         sectionPrivacy: {
                             sectionKey: 'header',
                             visibility: payload.values.visibility,
@@ -779,6 +816,16 @@ export function MyCompany() {
         await loadCompany();
     };
 
+    function getCompanyEditType(payload: SidebarSavePayload): 'update' | 'upload' | 'remove' | 'visibility_change' {
+        switch (payload.section) {
+            case 'media':
+            case 'documents':
+                return payload.values.file ? 'upload' : 'update';
+            default:
+                return 'update';
+        }
+    }
+
     const handleSidebarSave = async (payload: SidebarSavePayload) => {
         if (!company) return;
 
@@ -815,6 +862,49 @@ export function MyCompany() {
 
                 await loadCompany();
             }
+
+            const companyName = updatedCompany.displayName ?? previous.displayName ?? '';
+
+            if (payload.section === 'team') {
+                trackCompanyTeamUpdated({
+                    companyId: company.id,
+                    companyName,
+                    action: payload.values.action === 'remove'
+                        ? 'remove'
+                        : editingItem
+                            ? 'edit'
+                            : 'add',
+                    userId: payload.values.action === 'remove' ? payload.values.userId : payload.values.userId,
+                    email: payload.values.action === 'remove' ? payload.values.email : payload.values.email,
+                    role: payload.values.action === 'remove' ? undefined : payload.values.role,
+                });
+            } else if (payload.section === 'permissions') {
+                trackCompanyPermissionsUpdated({
+                    companyId: company.id,
+                    companyName,
+                    action: 'bulk_save',
+                    permissionsCount: payload.values.permissions.length,
+                    inheritToProjects: payload.values.inheritCompanyPermissionsToProjects,
+                });
+            } else {
+                trackCompanyPageContentUpdated({
+                    companyId: company.id,
+                    companyName,
+                    section: payload.section,
+                    editType: getCompanyEditType(payload),
+                    visibility: payload.values.visibility,
+                    hasFile:
+                        payload.section === 'header'
+                            ? Boolean(payload.values.logoFile)
+                            : payload.section === 'media' || payload.section === 'documents'
+                                ? Boolean(payload.values.file)
+                                : false,
+                    itemId:
+                        payload.section === 'media' || payload.section === 'documents'
+                            ? payload.values.id
+                            : undefined,
+                });
+            }
         } catch (err) {
             setCompany(previous);
             setSaveError(err instanceof Error ? err.message : 'Failed to save changes');
@@ -835,6 +925,10 @@ export function MyCompany() {
     useEffect(() => {
         void loadCompany();
     }, [loadCompany]);
+
+    useEffect(() => {
+        setCompanyShareUrl('');
+    }, [id]);
 
     const openEditor = (section: CompanyEditorSection, item?: any) => {
         setSidebarSection(section);
@@ -865,6 +959,59 @@ export function MyCompany() {
         // remain on the same company page
         navigate(`/companies/${id}`, { replace: true });
     };
+
+    function extractShareUrl(payload: any): string {
+        const candidates = [
+            payload?.share?.url,
+            payload?.share?.externalShareUrl,
+            payload?.share?.link,
+            payload?.data?.url,
+            payload?.data?.shareUrl,
+            payload?.url,
+            payload?.shareUrl,
+            payload?.link,
+        ];
+
+        const found = candidates.find((value) => typeof value === 'string' && value.trim());
+        if (!found) {
+            throw new Error('Share link was created but no URL was returned by the server');
+        }
+
+        return found;
+    }
+
+    const ensureCompanyShareUrl = useCallback(async () => {
+        if (companyShareUrl?.trim()) {
+            return companyShareUrl;
+        }
+
+        if (!company?.id) {
+            throw new Error('Company is not loaded yet');
+        }
+
+        const res = await fetch(`${API_BASE_URL}/share-links`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                entityType: 'company',
+                entityId: company.id,
+            }),
+        });
+
+        const data = await readJsonSafe(res);
+
+        if (!res.ok) {
+            throw new Error(data?.message || data?.error || 'Failed to create share link');
+        }
+
+        const nextUrl = extractShareUrl(data);
+        setCompanyShareUrl(nextUrl);
+        return nextUrl;
+    }, [company?.id, companyShareUrl]);
 
     if (loading) return <Box p={3}>Loading...</Box>;
     if (!company) return <Box p={3}>Company not found.</Box>;
@@ -900,7 +1047,12 @@ export function MyCompany() {
                 shareAnchorEl={shareAnchorEl}
                 onOpenShare={setShareAnchorEl}
                 onCloseShare={() => setShareAnchorEl(null)}
+                resolveShareUrl={ensureCompanyShareUrl}
                 canViewPrivateSection={(section) => canViewCompanySection(company, section)}
+                trackingContext={{
+                    entryPoint: 'my_companies',
+                    isOwnCompany: true,
+                }}
                 onEditSection={(section) => {
                     if (section === 'header') {
                         openEditor('header');
@@ -927,7 +1079,6 @@ export function MyCompany() {
                         <MoreVertRounded sx={{ fontSize: 18 }} />
                     </IconButton>
                 )}
-
                 renderDocumentActions={(doc, index) => (
                     <IconButton
                         size="small"
@@ -1072,6 +1223,20 @@ export function MyCompany() {
                 draft={projectWizardDraft}
                 onDraftChange={setProjectWizardDraft}
                 isOnboarding={false}
+            />
+
+            <ProjectWizard
+                open={projectWizardOpen}
+                onClose={handleProjectWizardClose}
+                hasCompanies
+                draft={projectWizardDraft}
+                onDraftChange={setProjectWizardDraft}
+                preferredCompanyId={company.id}
+                trackingContext={{
+                    entryPoint: 'sidebar_nav',
+                    draftOrigin: projectWizardDraft ? 'project_drafts' : 'none',
+                    isFirstProjectPublish: false, // only set true when you actually know
+                }}
             />
         </>
     );

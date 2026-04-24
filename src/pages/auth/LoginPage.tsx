@@ -16,9 +16,13 @@ import EmailRounded from '@mui/icons-material/EmailRounded';
 import { useAuth } from '../../context/AuthContext';
 import {
     clearAllAccessContext,
+    clearShareContext,
     getInviteRedirectPath,
     getShareRedirectPath,
+    persistShareContext,
 } from '../../utils/authAccessContext';
+
+import { trackEvent } from '../../lib/analytics';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? '';
@@ -41,10 +45,23 @@ type LoginResponse = {
     projectSlug?: string;
 };
 
+type SharePreviewResponse = {
+    ok?: boolean;
+    share?: {
+        token?: string;
+        redirectTo?: string;
+        entityType?: 'company' | 'project';
+        entityId?: string;
+        entitySlug?: string;
+        title?: string;
+    };
+    message?: string;
+};
+
 export function LoginPage() {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
-    const { refreshSession } = useAuth();
+    const { refreshSession, isAuthenticated, isAuthLoading } = useAuth();
 
     const companyInviteToken = useMemo(
         () => (searchParams.get('companyInvite') ?? '').trim(),
@@ -71,6 +88,11 @@ export function LoginPage() {
     const latestInviteTokenRef = useRef(companyInviteToken);
     const latestShareTokenRef = useRef(shareToken);
 
+    const [shareLoading, setShareLoading] = useState(false);
+    const [shareError, setShareError] = useState('');
+    const [sharePreview, setSharePreview] = useState<SharePreviewResponse['share'] | null>(null);
+    const [shareTitle, setShareTitle] = useState('');
+
     useEffect(() => {
         latestEmailRef.current = email;
     }, [email]);
@@ -95,6 +117,176 @@ export function LoginPage() {
         return '';
     };
 
+    const hasTrackedLoginViewRef = useRef(false);
+
+    const getLoginTrackingProps = () => ({
+        page: 'login',
+        has_company_invite_token: Boolean(companyInviteToken),
+        has_share_token: Boolean(shareToken),
+        share_entity_type: sharePreview?.entityType ?? null,
+        share_entity_id: sharePreview?.entityId ?? null,
+        share_title: shareTitle || sharePreview?.title || null,
+    });
+
+    useEffect(() => {
+        if (hasTrackedLoginViewRef.current) return;
+
+        trackEvent('login page viewed', getLoginTrackingProps());
+        hasTrackedLoginViewRef.current = true;
+    }, [companyInviteToken, shareToken, sharePreview, shareTitle]);
+
+    const buildSignupUrl = () => {
+        if (companyInviteToken || shareToken) {
+            return `/signup?${new URLSearchParams({
+                ...(companyInviteToken ? { companyInvite: companyInviteToken } : {}),
+                ...(shareToken ? { share: shareToken } : {}),
+            }).toString()}`;
+        }
+
+        return '/signup';
+    };
+
+    const handleRegisterNowClick = () => {
+        trackEvent('register now clicked on login page', {
+            page: 'login',
+            has_company_invite_token: Boolean(companyInviteToken),
+            has_share_token: Boolean(shareToken),
+        });
+    };
+
+    useEffect(() => {
+        if (!shareToken) {
+            clearShareContext();
+            setShareLoading(false);
+            setShareError('');
+            setShareTitle('');
+            return;
+        }
+
+        let cancelled = false;
+
+        const run = async () => {
+            try {
+                setShareLoading(true);
+                setShareError('');
+
+                const resp = await fetch(
+                    `${API_BASE_URL}/auth/share-links/preview?token=${encodeURIComponent(shareToken)}`,
+                    {
+                        method: 'GET',
+                        credentials: 'include',
+                        headers: { Accept: 'application/json' },
+                    }
+                );
+
+                const data = (await resp.json().catch(() => ({}))) as SharePreviewResponse;
+                persistShareContext(shareToken, data.share ?? null);
+                setSharePreview(data.share ?? null);
+
+                if (!resp.ok) {
+                    throw new Error(data.message || 'This shared link is invalid.');
+                }
+
+                if (!cancelled) {
+                    persistShareContext(shareToken, data.share ?? null);
+                    setShareTitle(data.share?.title ?? '');
+                }
+            } catch (err) {
+                if (!cancelled) {
+                    clearShareContext();
+                    setShareTitle('');
+                    setShareError(err instanceof Error ? err.message : 'This shared link is invalid.');
+                }
+            } finally {
+                if (!cancelled) {
+                    setShareLoading(false);
+                }
+            }
+        };
+
+        void run();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [shareToken]);
+
+    useEffect(() => {
+        if (!shareToken) return;
+        if (isAuthLoading) return;
+        if (!isAuthenticated) return;
+        if (shareLoading) return;
+        if (shareError) return;
+
+        const redirectPath = getShareRedirectPath(sharePreview ?? undefined);
+        navigate(redirectPath, { replace: true });
+    }, [
+        shareToken,
+        isAuthLoading,
+        isAuthenticated,
+        shareLoading,
+        shareError,
+        sharePreview,
+        navigate,
+    ]);
+
+    const resolvePostLoginPath = async (
+        options?: {
+            inviteToken?: string;
+            shareToken?: string;
+            loginData?: LoginResponse;
+        }
+    ) => {
+        const inviteToken = options?.inviteToken?.trim();
+        const shareToken = options?.shareToken?.trim();
+        const loginData = options?.loginData;
+
+        if (inviteToken) {
+            return getInviteRedirectPath(loginData);
+        }
+
+        if (shareToken) {
+            return getShareRedirectPath(loginData);
+        }
+
+        const onboardingResp = await fetch(`${API_BASE_URL}/user-profiles/me/onboarding`, {
+            method: 'GET',
+            credentials: 'include',
+        });
+
+        let onboarding:
+            | {
+                onboardingStatus?: 'not_started' | 'in_progress' | 'completed' | 'skipped';
+                onboardingStep?: number;
+                onboardingSelectedRoles?: string[];
+            }
+            | undefined;
+
+        if (onboardingResp.ok) {
+            const onboardingJson = await onboardingResp.json().catch(() => ({}));
+            onboarding = onboardingJson?.data;
+        }
+
+        const shouldResumeOnboarding =
+            onboarding?.onboardingStatus === 'in_progress' ||
+            (
+                onboarding?.onboardingStatus !== 'completed' &&
+                onboarding?.onboardingStatus !== 'skipped' &&
+                (
+                    (Array.isArray(onboarding?.onboardingSelectedRoles) &&
+                        onboarding.onboardingSelectedRoles.length > 0) ||
+                    (typeof onboarding?.onboardingStep === 'number' &&
+                        onboarding.onboardingStep > 0)
+                )
+            );
+
+        if (shouldResumeOnboarding) {
+            return '/onboarding';
+        }
+
+        return '/dashboard';
+    };
+
     useEffect(() => {
         if (!window.google || !googleButtonRef.current || !GOOGLE_CLIENT_ID) return;
         if (googleInitializedRef.current) return;
@@ -116,6 +308,12 @@ export function LoginPage() {
 
                 setIsLoading(true);
 
+                trackEvent('login with google selected', {
+                    ...getLoginTrackingProps(),
+                    login_method: 'google',
+                    entered_email: Boolean(currentEmail.trim()),
+                });
+
                 const resp = await fetch(`${API_BASE_URL}/auth/google/sign-in`, {
                     method: 'POST',
                     headers: {
@@ -135,21 +333,49 @@ export function LoginPage() {
                 if (resp.ok) {
                     await refreshSession();
 
-                    if (currentInviteToken) {
-                        const redirectPath = getInviteRedirectPath(data);
-                        clearAllAccessContext();
-                        navigate(redirectPath, { replace: true });
-                        return;
+                    trackEvent('login successful', {
+                        page: 'login',
+                        login_method: 'google',
+                        has_company_invite_token: Boolean(currentInviteToken),
+                        has_share_token: Boolean(currentShareToken),
+                    });
+
+                    const redirectPath = await resolvePostLoginPath({
+                        inviteToken: currentInviteToken,
+                        shareToken: currentShareToken,
+                        loginData: data,
+                    });
+
+                    if (redirectPath === '/onboarding' && currentEmail.trim()) {
+                        sessionStorage.setItem('tce_onboarding_email', currentEmail.trim().toLowerCase());
                     }
 
-                    if (currentShareToken) {
-                        const redirectPath = getShareRedirectPath(data);
-                        clearAllAccessContext();
-                        navigate(redirectPath, { replace: true });
-                        return;
+                    let resolvedEmail = currentEmail.trim().toLowerCase();
+
+                    if (!resolvedEmail && response.credential) {
+                        try {
+                            const payloadBase64 = response.credential.split('.')[1];
+                            if (payloadBase64) {
+                                const normalized = payloadBase64.replace(/-/g, '+').replace(/_/g, '/');
+                                const json = JSON.parse(window.atob(normalized));
+                                if (typeof json?.email === 'string') {
+                                    resolvedEmail = json.email.trim().toLowerCase();
+                                }
+                            }
+                        } catch {
+                            // ignore decode failure
+                        }
                     }
 
-                    navigate('/dashboard', { replace: true });
+                    if (redirectPath === '/onboarding') {
+                        if (resolvedEmail) {
+                            sessionStorage.setItem('tce_onboarding_email', resolvedEmail);
+                        } else {
+                            sessionStorage.removeItem('tce_onboarding_email');
+                        }
+                    }
+
+                    navigate(redirectPath, { replace: true });
                     return;
                 }
 
@@ -185,7 +411,7 @@ export function LoginPage() {
             theme: 'outline',
             size: 'large',
             shape: 'pill',
-            width: 360,
+            width: Math.min(360, Math.max(220, googleButtonRef.current.offsetWidth)),
             text: 'continue_with',
             logo_alignment: 'left',
         });
@@ -204,6 +430,12 @@ export function LoginPage() {
 
         try {
             setIsLoading(true);
+
+            trackEvent('login with email selected', {
+                ...getLoginTrackingProps(),
+                login_method: 'email',
+                entered_email: Boolean(email.trim()),
+            });
 
             const resp = await fetch(`${API_BASE_URL}/auth/email/request-code`, {
                 method: 'POST',
@@ -234,7 +466,11 @@ export function LoginPage() {
                 return;
             }
 
-            if (data.code === 'ACCOUNT_NOT_FOUND' || data.next === 'signup') {
+            if (
+                data.code === 'ACCOUNT_NOT_FOUND' ||
+                data.code === 'SIGNUP_REQUIRED' ||
+                data.next === 'signup'
+            ) {
                 setFormError('No account exists for this email. Please sign up first.');
                 return;
             }
@@ -283,6 +519,16 @@ export function LoginPage() {
                                 : 'Sign in to access your dashboard and projects.'}
                         </Typography>
 
+                        {shareToken && (
+                            <Alert severity={shareError ? 'error' : 'info'} sx={{ mb: 3 }}>
+                                {shareLoading
+                                    ? 'Checking shared link…'
+                                    : shareError
+                                        ? shareError
+                                        : `Sign in to continue to ${shareTitle || 'the shared page'}.`}
+                            </Alert>
+                        )}
+
                         <form onSubmit={handleSubmit}>
                             <Stack spacing={3}>
                                 {formError && (
@@ -326,6 +572,11 @@ export function LoginPage() {
                                 <Box
                                     sx={{
                                         width: '100%',
+                                        overflow: 'hidden',
+                                        display: 'flex',
+                                        justifyContent: 'center',
+                                        alignItems: 'center',
+                                        minHeight: 44,
                                         '& > div': {
                                             width: '100%',
                                             display: 'flex',
@@ -378,7 +629,7 @@ export function LoginPage() {
                                             fullWidth
                                             variant="contained"
                                             size="large"
-                                            disabled={isLoading}
+                                            disabled={isLoading || !!shareError}
                                             sx={{
                                                 py: 1.5,
                                                 fontWeight: 600,
@@ -397,14 +648,8 @@ export function LoginPage() {
                                 Don't have an account?{' '}
                                 <Link
                                     component={RouterLink}
-                                    to={
-                                        companyInviteToken || shareToken
-                                            ? `/signup?${new URLSearchParams({
-                                                ...(companyInviteToken ? { companyInvite: companyInviteToken } : {}),
-                                                ...(shareToken ? { share: shareToken } : {}),
-                                            }).toString()}`
-                                            : '/signup'
-                                    }
+                                    to={buildSignupUrl()}
+                                    onClick={handleRegisterNowClick}
                                     fontWeight="medium"
                                     color="primary.main"
                                     underline="hover"
